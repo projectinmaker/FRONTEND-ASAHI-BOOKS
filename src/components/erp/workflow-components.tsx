@@ -90,7 +90,7 @@ interface WorkflowActionsCellProps {
 export function WorkflowActionsCell({ documentType, documentId, version, availableActions, onDone, onEdit }: WorkflowActionsCellProps) {
   const { error: stockError, clearError: clearStockError, handleError: handleStockError } = useStockOperationError(documentType);
   const [validationError, setValidationError] = React.useState('');
-  const openFormTab = useTabStore((s) => s.openFormTab);
+  const openFormTab = useTabStore(s => s.openFormTab);
   const [pendingAction, setPendingAction] = React.useState<WorkflowAction | null>(null);
   const [reason, setReason] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
@@ -132,10 +132,8 @@ export function WorkflowActionsCell({ documentType, documentId, version, availab
 
   const handleClick = (action: WorkflowAction) => {
     if (submitting) return;
-    if (ACTION_CONFIG[action]?.needsReason) {
-      setReason('');
-      setPendingAction(action);
-    } else void runAction(action);
+    if (ACTION_CONFIG[action]?.needsReason) { setReason(''); setPendingAction(action); }
+    else void runAction(action);
   };
 
   const confirmReason = React.useCallback(() => {
@@ -147,38 +145,33 @@ export function WorkflowActionsCell({ documentType, documentId, version, availab
 
   return (
     <>
-      <div className={submitting ? 'pointer-events-none opacity-60' : undefined} aria-busy={submitting}>
-        <WorkflowActions actions={availableActions} onAction={handleClick} />
-      </div>
+      <div className={submitting ? 'pointer-events-none opacity-60' : undefined} aria-busy={submitting}><WorkflowActions actions={availableActions} onAction={handleClick} /></div>
       <StockOperationErrorDialog error={stockError} onClose={clearStockError} />
-      <AlertDialog
-        open={!!validationError}
-        onOpenChange={(open) => {
-          if (!open) setValidationError('');
-        }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{documentType === 'jurnal_umum' ? 'Aksi Jurnal Ditolak' : validationError.includes('Gudang wajib diisi') ? 'Gudang Belum Diisi' : validationError.includes('FEFO') && validationError.includes('tanggal_kedaluwarsa') ? 'Tanggal Kedaluwarsa Belum Diisi' : 'Penyesuaian Tidak Dapat Diproses'}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {validationError}
-              {documentType === 'jurnal_umum' && <span className="mt-2 block text-xs text-muted-foreground">Dokumen tetap pada status workflow saat ini — belum terposting. Gunakan alur koreksi draft sesuai status workflow bila perlu perbaikan.</span>}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Tutup</AlertDialogCancel>
-            {(validationError.includes('Gudang wajib diisi') || (validationError.includes('FEFO') && validationError.includes('tanggal_kedaluwarsa'))) && (
-              <AlertDialogAction
-                onClick={() => {
-                  setValidationError('');
-                  if (onEdit) onEdit();
-                  else openFormTab({ title: 'Edit Penyesuaian Persediaan', module: 'inventory', subPage: 'penyesuaian', formKey: 'penyesuaian-edit', formProps: { id: documentId } });
-                }}>
-                Edit Penyesuaian
-              </AlertDialogAction>
-            )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AlertDialog open={!!validationError} onOpenChange={open => { if (!open) setValidationError(''); }}><AlertDialogContent><AlertDialogHeader>
+        <AlertDialogTitle>
+          {documentType === 'jurnal_umum'
+            ? 'Aksi Jurnal Ditolak'
+            : validationError.includes('Gudang wajib diisi')
+              ? 'Gudang Belum Diisi'
+              : validationError.includes('FEFO') && validationError.includes('tanggal_kedaluwarsa')
+                ? 'Tanggal Kedaluwarsa Belum Diisi'
+                : 'Penyesuaian Tidak Dapat Diproses'}
+        </AlertDialogTitle>
+        <AlertDialogDescription>
+          {validationError}
+          {documentType === 'jurnal_umum' && (
+            <span className="mt-2 block text-xs text-muted-foreground">
+              Dokumen tetap pada status workflow saat ini — belum terposting. Gunakan alur koreksi draft sesuai status workflow bila perlu perbaikan.
+            </span>
+          )}
+        </AlertDialogDescription>
+      </AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Tutup</AlertDialogCancel>
+        {(validationError.includes('Gudang wajib diisi') || (validationError.includes('FEFO') && validationError.includes('tanggal_kedaluwarsa'))) && <AlertDialogAction onClick={() => {
+          setValidationError('');
+          if (onEdit) onEdit();
+          else openFormTab({ title: 'Edit Penyesuaian Persediaan', module: 'inventory', subPage: 'penyesuaian', formKey: 'penyesuaian-edit', formProps: { id: documentId } });
+        }}>Edit Penyesuaian</AlertDialogAction>}
+      </AlertDialogFooter></AlertDialogContent></AlertDialog>
 
       <AlertDialog
         open={pendingAction !== null}

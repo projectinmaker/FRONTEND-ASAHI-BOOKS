@@ -399,7 +399,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     const e: Record<string, string> = {}
     if (!isEdit && !kasBankId) e.kasBank = 'Kas/Bank wajib dipilih'
     if (!tanggal) e.tanggal = 'Tanggal wajib diisi'
-    if (!noNukti.trim()) e.noNukti = 'No Nukti wajib diisi'
+    if (!noNukti.trim()) e.noNukti = 'No Bukti wajib diisi'
     if (!isEdit) {
       if (rincianRows.length === 0) e.rincian = 'Rincian penerimaan wajib diisi'
       const hasEmptyNilai = rincianRows.some(r => !r.nilai || parseInt(r.nilai.replace(/\D/g, ''), 10) <= 0)
@@ -475,7 +475,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
             {/* Read-only info bar (edit mode) */}
             {isEdit && (
               <div className="flex flex-wrap gap-3 rounded-md bg-muted/50 p-3">
-                <div className="flex items-center gap-1.5 text-xs"><Info className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-muted-foreground">No Bukti:</span><span className="font-medium">{editNoBukti}</span></div>
+                <div className="flex items-center gap-1.5 text-xs"><Info className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-muted-foreground">No. Dokumen:</span><span className="font-medium">{editNoBukti}</span></div>
                 <div className="flex items-center gap-1.5 text-xs"><Info className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-muted-foreground">Status:</span><StatusBadge status={editStatus} /></div>
                 <div className="flex items-center gap-1.5 text-xs"><Info className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-muted-foreground">Total Nilai:</span><span className="font-medium">{formatRp(editTotalNilai)}</span></div>
               </div>
@@ -495,10 +495,10 @@ export default function PenerimaanForm({ mode, id }: Props) {
               </div>
             </div>
 
-            {/* Row 2: No Nukti */}
+            {/* Row 2: No Bukti (nomor bukti fisik, bukan nomor dokumen sistem) */}
             <div className="space-y-1.5">
-              <Req label="No Nukti" />
-              <Input value={noNukti} onChange={e => setNoNukti(e.target.value)} placeholder="Masukkan no nukti" className={errors.noNukti ? 'border-destructive' : ''} />
+              <Req label="No Bukti" />
+              <Input value={noNukti} onChange={e => setNoNukti(e.target.value)} placeholder="Masukkan no bukti" className={errors.noNukti ? 'border-destructive' : ''} />
               <FieldError msg={errors.noNukti} />
             </div>
 

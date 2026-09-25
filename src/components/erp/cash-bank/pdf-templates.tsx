@@ -22,6 +22,8 @@ export interface PembayaranRincianItem {
 
 export interface PembayaranKasData {
   noBukti: string;
+  /** Nomor bukti fisik yang diinput user (wire: noNukti) */
+  noBuktiFisik: string;
   tanggal: string;
   kasBankNama: string;
   penerima: string;
@@ -36,6 +38,8 @@ export interface PembayaranKasData {
 
 export interface PenerimaanKasData {
   noBukti: string;
+  /** Nomor bukti fisik yang diinput user (wire: noNukti) */
+  noBuktiFisik: string;
   tanggal: string;
   kasBankNama: string;
   pemberi: string;
@@ -221,7 +225,8 @@ export function PembayaranKasPDFTemplate({ data, elementId = 'pdf-content' }: { 
       <div className="grid grid-cols-2 gap-4 mb-4">
         {/* Left column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <InfoCell label="No. Bukti" value={data.noBukti} />
+          <InfoCell label="No. Dokumen" value={data.noBukti} />
+          <InfoCell label="No. Bukti" value={data.noBuktiFisik} />
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
           <InfoCell label="Kas/Bank" value={data.kasBankNama} />
         </div>
@@ -312,7 +317,8 @@ export function PenerimaanKasPDFTemplate({ data, elementId = 'pdf-content' }: { 
       <div className="grid grid-cols-2 gap-4 mb-4">
         {/* Left column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <InfoCell label="No. Bukti" value={data.noBukti} />
+          <InfoCell label="No. Dokumen" value={data.noBukti} />
+          <InfoCell label="No. Bukti" value={data.noBuktiFisik} />
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
           <InfoCell label="Kas/Bank" value={data.kasBankNama} />
         </div>

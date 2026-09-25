@@ -198,11 +198,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, satuanOptions }: {
                   <TableCell>
                     <SearchableDropdown value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
                   </TableCell>
-                  {satuanOptions && (
-                    <TableCell>
-                      <SearchableDropdown value={row.satuanId} onValueChange={(value) => updateRow(row.id, 'satuanId', value)} options={satuanOptions.map((unit) => ({ id: unit.id, label: unit.nama }))} placeholder="Satuan (opsional)" allOption={{ id: '', label: 'Belum ditentukan' }} compact />
-                    </TableCell>
-                  )}
+                  {satuanOptions && <TableCell><SearchableDropdown value={row.satuanId} onValueChange={value => updateRow(row.id, 'satuanId', value)} options={satuanOptions.map(unit => ({ id: unit.id, label: unit.nama }))} placeholder="Satuan (opsional)" allOption={{ id: '', label: 'Belum ditentukan' }} compact /></TableCell>}
                   <TableCell>
                     <Input type="number" className="h-8 text-right text-xs" value={row.harga} onChange={(e) => updateRow(row.id, 'harga', e.target.value)} />
                   </TableCell>
@@ -489,17 +485,13 @@ interface PurchasingPageProps {
 // FORM: Pesanan Pembelian — Create
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PesananCreateForm() {
-  return <OrderDocumentForm kind="purchase" />;
-}
+function PesananCreateForm() { return <OrderDocumentForm kind="purchase" />; }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // FORM: Pesanan Pembelian — Edit
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PesananEditForm({ editId }: { editId: string }) {
-  return <OrderDocumentForm kind="purchase" editId={editId} />;
-}
+function PesananEditForm({ editId }: { editId: string }) { return <OrderDocumentForm kind="purchase" editId={editId} />; }
 
 // ═════════════════════════════════════════════════════════════════════════════
 // ── Tahap 2: hook untuk fetch invoice yang belum di-POST (DRAFT/DIPROSES) dari supplier tertentu ──
@@ -509,19 +501,15 @@ function useUnpostedInvoiceOptions(supplierId: string | null, refreshKey?: numbe
   useEffect(() => {
     if (!supplierId) return;
     let active = true;
-    loadReceiptInvoiceOptions(supplierId)
-      .then((options) => {
-        if (active) setState({ supplierId, attempt, options, error: '' });
-      })
-      .catch((error) => {
-        if (active) setState({ supplierId, attempt, options: [], error: error instanceof Error ? error.message : 'Gagal memuat invoice' });
-      });
-    return () => {
-      active = false;
-    };
+    loadReceiptInvoiceOptions(supplierId).then(options => {
+      if (active) setState({ supplierId, attempt, options, error: '' });
+    }).catch(error => {
+      if (active) setState({ supplierId, attempt, options: [], error: error instanceof Error ? error.message : 'Gagal memuat invoice' });
+    });
+    return () => { active = false; };
   }, [supplierId, attempt, refreshKey]);
   const current = state?.supplierId === supplierId && state.attempt === attempt ? state : null;
-  return { options: current?.options || [], loading: !!supplierId && !current, error: current?.error || '', retry: () => setAttempt((value) => value + 1) };
+  return { options: current?.options || [], loading: !!supplierId && !current, error: current?.error || '', retry: () => setAttempt(value => value + 1) };
 }
 
 // ── Retur pembelian: hook untuk fetch invoice supplier yang SUDAH di-POST (SELESAI) ──
@@ -532,19 +520,15 @@ function usePostedInvoiceOptions(supplierId: string | null) {
   useEffect(() => {
     if (!supplierId) return;
     let active = true;
-    loadPostedInvoiceOptions(supplierId)
-      .then((options) => {
-        if (active) setState({ supplierId, attempt, options, error: '' });
-      })
-      .catch((error) => {
-        if (active) setState({ supplierId, attempt, options: [], error: error instanceof Error ? error.message : 'Gagal memuat invoice' });
-      });
-    return () => {
-      active = false;
-    };
+    loadPostedInvoiceOptions(supplierId).then(options => {
+      if (active) setState({ supplierId, attempt, options, error: '' });
+    }).catch(error => {
+      if (active) setState({ supplierId, attempt, options: [], error: error instanceof Error ? error.message : 'Gagal memuat invoice' });
+    });
+    return () => { active = false; };
   }, [supplierId, attempt]);
   const current = state?.supplierId === supplierId && state.attempt === attempt ? state : null;
-  return { options: current?.options || [], loading: !!supplierId && !current, error: current?.error || '', retry: () => setAttempt((value) => value + 1) };
+  return { options: current?.options || [], loading: !!supplierId && !current, error: current?.error || '', retry: () => setAttempt(value => value + 1) };
 }
 
 // FORM: Penerimaan Barang — Create
@@ -643,15 +627,7 @@ function PenerimaanCreateForm() {
               <Label className="text-xs font-medium">
                 Supplier <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown
-                value={fSupplierId}
-                onValueChange={(value) => {
-                  setFSupplierId(value);
-                  setFPurchaseInvoiceId('');
-                }}
-                options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
-                placeholder="Pilih supplier..."
-              />
+              <SearchableDropdown value={fSupplierId} onValueChange={value => { setFSupplierId(value); setFPurchaseInvoiceId(''); }} options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih supplier..." />
               {formErrors.supplierId && <p className="text-xs text-destructive mt-1">{formErrors.supplierId}</p>}
             </div>
           </div>
@@ -662,9 +638,7 @@ function PenerimaanCreateForm() {
               {formErrors.tanggal && <p className="text-xs text-destructive">{formErrors.tanggal}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">
-                Gudang <span className="text-destructive">*</span>
-              </Label>
+              <Label className="text-xs font-medium">Gudang <span className="text-destructive">*</span></Label>
               <SearchableDropdown value={fGudangId} onValueChange={setFGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
               {formErrors.gudangId && <p className="text-xs text-destructive">{formErrors.gudangId}</p>}
             </div>
@@ -677,17 +651,8 @@ function PenerimaanCreateForm() {
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Link ke Invoice Pembelian (opsional)</Label>
               <SearchableDropdown value={fPurchaseInvoiceId} onValueChange={setFPurchaseInvoiceId} options={unpostedInvoiceOptions.map((inv) => ({ id: inv.id, label: inv.noForm, subtitle: inv.noFaktur || inv.tanggal ? `${inv.noFaktur || '-'} \u00b7 ${inv.tanggal ? inv.tanggal.slice(0, 10) : '-'}` : undefined }))} placeholder={fSupplierId ? 'Pilih invoice (opsional — boleh kosong)' : 'Pilih supplier dulu...'} loading={invoiceOptionsLoading} emptyText={fSupplierId ? 'Tidak ada invoice yang belum di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'} allOption={{ id: '', label: 'Tanpa invoice — invoice menyusul' }} />
-              {invoiceOptionsError && (
-                <div role="alert" className="text-xs text-destructive">
-                  {invoiceOptionsError}{' '}
-                  <Button type="button" variant="outline" size="sm" onClick={retryInvoiceOptions}>
-                    Coba Lagi
-                  </Button>
-                </div>
-              )}
-              <p className="text-[11px] text-muted-foreground leading-relaxed" title="Invoice boleh kosong, datang kemudian">
-                Invoice boleh kosong, datang kemudian. Jika sudah tersedia, pilih invoice supplier yang belum diposting.
-              </p>
+              {invoiceOptionsError && <div role="alert" className="text-xs text-destructive">{invoiceOptionsError} <Button type="button" variant="outline" size="sm" onClick={retryInvoiceOptions}>Coba Lagi</Button></div>}
+              <p className="text-[11px] text-muted-foreground leading-relaxed" title="Invoice boleh kosong, datang kemudian">Invoice boleh kosong, datang kemudian. Jika sudah tersedia, pilih invoice supplier yang belum diposting.</p>
             </div>
           </div>
           <Separator />
@@ -825,11 +790,7 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
     <FormTabShell title="Edit Penerimaan Barang">
       <Card className="max-w-5xl">
         <CardContent className="p-6 space-y-4">
-          {recordError && (
-            <p role="alert" className="text-sm text-destructive">
-              {recordError}
-            </p>
-          )}
+          {recordError && <p role="alert" className="text-sm text-destructive">{recordError}</p>}
           <p className="text-sm text-muted-foreground">Perbarui data header penerimaan (detail barang tidak dapat diubah)</p>
           <div className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-4 py-3">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -860,24 +821,14 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">
-                Purchase Order <span className="text-destructive">*</span>
-              </Label>
+              <Label className="text-xs font-medium">Purchase Order <span className="text-destructive">*</span></Label>
               <SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO (wajib)..." />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">
                 Supplier <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown
-                value={editSupplierId}
-                onValueChange={(value) => {
-                  setEditSupplierId(value);
-                  setEditPurchaseInvoiceId('');
-                }}
-                options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
-                placeholder="Pilih supplier..."
-              />
+              <SearchableDropdown value={editSupplierId} onValueChange={value => { setEditSupplierId(value); setEditPurchaseInvoiceId(''); }} options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih supplier..." />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -886,9 +837,7 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
               <Input type="date" className="h-9 text-xs" value={editTanggal} onChange={(e) => setEditTanggal(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">
-                Gudang <span className="text-destructive">*</span>
-              </Label>
+              <Label className="text-xs font-medium">Gudang <span className="text-destructive">*</span></Label>
               <SearchableDropdown value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
             </div>
           </div>
@@ -899,45 +848,13 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Link ke Invoice Pembelian (opsional)</Label>
-              <SearchableDropdown value={editPurchaseInvoiceId} onValueChange={setEditPurchaseInvoiceId} options={[...(editPurchaseInvoiceId && !unpostedInvoiceOptions.some((inv) => inv.id === editPurchaseInvoiceId) ? [{ id: editPurchaseInvoiceId, label: `Invoice tertaut: ${editPurchaseInvoiceId}`, subtitle: 'Tidak ada dalam pilihan invoice saat ini; boleh dikosongkan.' }] : []), ...unpostedInvoiceOptions.map((inv) => ({ id: inv.id, label: inv.noForm, subtitle: inv.noFaktur || inv.tanggal ? `${inv.noFaktur || '-'} \u00b7 ${inv.tanggal ? inv.tanggal.slice(0, 10) : '-'}` : undefined }))]} placeholder={editSupplierId ? 'Pilih invoice (opsional — boleh kosong)' : 'Pilih supplier dulu...'} loading={invoiceOptionsLoading} emptyText={editSupplierId ? 'Tidak ada invoice yang belum di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'} allOption={{ id: '', label: 'Tanpa invoice — invoice menyusul' }} />
-              {invoiceOptionsError && (
-                <div role="alert" className="text-xs text-destructive">
-                  {invoiceOptionsError}{' '}
-                  <Button type="button" variant="outline" size="sm" onClick={retryInvoiceOptions}>
-                    Coba Lagi
-                  </Button>
-                </div>
-              )}
-              <p className="text-[11px] text-muted-foreground leading-relaxed" title="Invoice boleh kosong, datang kemudian">
-                Invoice boleh kosong, datang kemudian. Jika sudah tersedia, pilih invoice supplier yang belum diposting.
-              </p>
+              <SearchableDropdown value={editPurchaseInvoiceId} onValueChange={setEditPurchaseInvoiceId} options={[...(editPurchaseInvoiceId && !unpostedInvoiceOptions.some(inv => inv.id === editPurchaseInvoiceId) ? [{ id: editPurchaseInvoiceId, label: `Invoice tertaut: ${editPurchaseInvoiceId}`, subtitle: 'Tidak ada dalam pilihan invoice saat ini; boleh dikosongkan.' }] : []), ...unpostedInvoiceOptions.map((inv) => ({ id: inv.id, label: inv.noForm, subtitle: inv.noFaktur || inv.tanggal ? `${inv.noFaktur || '-'} \u00b7 ${inv.tanggal ? inv.tanggal.slice(0, 10) : '-'}` : undefined }))]} placeholder={editSupplierId ? 'Pilih invoice (opsional — boleh kosong)' : 'Pilih supplier dulu...'} loading={invoiceOptionsLoading} emptyText={editSupplierId ? 'Tidak ada invoice yang belum di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'} allOption={{ id: '', label: 'Tanpa invoice — invoice menyusul' }} />
+              {invoiceOptionsError && <div role="alert" className="text-xs text-destructive">{invoiceOptionsError} <Button type="button" variant="outline" size="sm" onClick={retryInvoiceOptions}>Coba Lagi</Button></div>}
+              <p className="text-[11px] text-muted-foreground leading-relaxed" title="Invoice boleh kosong, datang kemudian">Invoice boleh kosong, datang kemudian. Jika sudah tersedia, pilih invoice supplier yang belum diposting.</p>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label>Detail Barang (tersimpan)</Label>
-            <div className="overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Barang</TableHead>
-                    <TableHead>Qty</TableHead>
-                    <TableHead>Satuan</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {editDetails.map((line) => (
-                    <TableRow key={line.id}>
-                      <TableCell>{line.barang?.nama || line.barangId}</TableCell>
-                      <TableCell className={Number(line.qty) <= 0 ? 'text-destructive' : undefined}>{line.qty}</TableCell>
-                      <TableCell>{line.satuan?.nama || line.satuanId}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <p className="text-xs text-muted-foreground">Detail tersimpan hanya dapat dilihat pada form ini. Perubahan qty/detail belum didukung.</p>
-          </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2"><Label>Detail Barang (tersimpan)</Label><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Barang</TableHead><TableHead>Qty</TableHead><TableHead>Satuan</TableHead></TableRow></TableHeader><TableBody>{editDetails.map(line => <TableRow key={line.id}><TableCell>{line.barang?.nama || line.barangId}</TableCell><TableCell className={Number(line.qty) <= 0 ? 'text-destructive' : undefined}>{line.qty}</TableCell><TableCell>{line.satuan?.nama || line.satuanId}</TableCell></TableRow>)}</TableBody></Table></div><p className="text-xs text-muted-foreground">Detail tersimpan hanya dapat dilihat pada form ini. Perubahan qty/detail belum didukung.</p></div>
+              <div className="space-y-1.5">
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={editKeterangan} onChange={(e) => setEditKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
           </div>
@@ -1038,10 +955,7 @@ function InvoiceCreateForm() {
         details,
         biayaTambahan: biaya.length > 0 ? biaya : undefined
       };
-      const result = await createPurchaseInvoice(body, (saved) => {
-        setSavedInvoice(saved);
-        refreshListTab('purchasing', 'invoice');
-      });
+      const result = await createPurchaseInvoice(body, saved => { setSavedInvoice(saved); refreshListTab('purchasing', 'invoice'); });
       if (result.mismatches.length) {
         setSaveWarning('Invoice ' + result.saved.noForm + ' sudah dibuat, tetapi backend belum menyimpan: ' + result.mismatches.join(', ') + '. Buka invoice tersebut dari daftar untuk meninjau. Jangan membuat ulang.');
         return;
@@ -1051,7 +965,7 @@ function InvoiceCreateForm() {
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
       const duplicate = duplicateInvoiceMessage(err);
-      if (duplicate) setFormErrors((prev) => ({ ...prev, noFaktur: duplicate }));
+      if (duplicate) setFormErrors(prev => ({ ...prev, noFaktur: duplicate }));
       toast.error(err instanceof ApiError ? err.detail : 'Gagal menyimpan invoice');
     } finally {
       setSubmitting(false);
@@ -1072,18 +986,8 @@ function InvoiceCreateForm() {
     <FormTabShell title="Buat Invoice Pembelian">
       <Card className="max-w-5xl">
         <CardContent className="p-6 space-y-4">
-          {saveWarning && (
-            <p role="alert" className="text-sm text-destructive">
-              {saveWarning}
-            </p>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Purchase Order (opsional)</Label>
-              <SearchableDropdown value={fPurchaseOrderId} onValueChange={setFPurchaseOrderId} options={[...(fPurchaseOrderId && !purchaseOrderOptions.some((po) => po.id === fPurchaseOrderId) ? [{ id: fPurchaseOrderId, label: savedInvoice?.purchaseOrder?.noPesanan || fPurchaseOrderId }] : []), ...purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))]} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} />
-            </div>
-            <InvoiceTypeField value={fInvoiceType} onChange={setFInvoiceType} />
-          </div>
+          {saveWarning && <p role="alert" className="text-sm text-destructive">{saveWarning}</p>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="space-y-1.5"><Label className="text-xs font-medium">Purchase Order (opsional)</Label><SearchableDropdown value={fPurchaseOrderId} onValueChange={setFPurchaseOrderId} options={[...(fPurchaseOrderId && !purchaseOrderOptions.some(po => po.id === fPurchaseOrderId) ? [{ id: fPurchaseOrderId, label: savedInvoice?.purchaseOrder?.noPesanan || fPurchaseOrderId }] : []), ...purchaseOrderOptions.map(po => ({ id: po.id, label: po.noPesanan }))]} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} /></div><InvoiceTypeField value={fInvoiceType} onChange={setFInvoiceType} /></div>
           <p className="text-sm text-muted-foreground">Isi data faktur pembelian baru</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -1219,10 +1123,7 @@ function InvoiceEditForm({ editId }: { editId: string }) {
 
   const handleEditSubmit = async () => {
     if (!savedInvoice) return;
-    if (!editNoFaktur.trim()) {
-      setSaveWarning('No Faktur wajib diisi');
-      return;
-    }
+    if (!editNoFaktur.trim()) { setSaveWarning('No Faktur wajib diisi'); return; }
     if (!editSupplierId) {
       toast.error('Supplier wajib diisi');
       return;
@@ -1248,10 +1149,7 @@ function InvoiceEditForm({ editId }: { editId: string }) {
       setSavedInvoice(saved);
       refreshListTab('purchasing', 'invoice');
       const mismatches = invoiceSaveMismatches(body, saved);
-      if (mismatches.length) {
-        setSaveWarning('Backend belum menyimpan: ' + mismatches.join(', ') + '. Data form dipertahankan.');
-        return;
-      }
+      if (mismatches.length) { setSaveWarning('Backend belum menyimpan: ' + mismatches.join(', ') + '. Data form dipertahankan.'); return; }
       toast.success('Invoice pembelian berhasil diperbarui');
       refreshListTab('purchasing', 'invoice');
       if (activeTabId) closeTab(activeTabId);
@@ -1277,18 +1175,8 @@ function InvoiceEditForm({ editId }: { editId: string }) {
     <FormTabShell title="Edit Invoice Pembelian">
       <Card className="max-w-5xl">
         <CardContent className="p-6 space-y-4">
-          {saveWarning && (
-            <p role="alert" className="text-sm text-destructive">
-              {saveWarning}
-            </p>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Purchase Order (opsional)</Label>
-              <SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={[...(editPurchaseOrderId && !purchaseOrderOptions.some((po) => po.id === editPurchaseOrderId) ? [{ id: editPurchaseOrderId, label: savedInvoice?.purchaseOrder?.noPesanan || editPurchaseOrderId }] : []), ...purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))]} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} />
-            </div>
-            <InvoiceTypeField value={editInvoiceType} onChange={setEditInvoiceType} />
-          </div>
+          {saveWarning && <p role="alert" className="text-sm text-destructive">{saveWarning}</p>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="space-y-1.5"><Label className="text-xs font-medium">Purchase Order (opsional)</Label><SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={[...(editPurchaseOrderId && !purchaseOrderOptions.some(po => po.id === editPurchaseOrderId) ? [{ id: editPurchaseOrderId, label: savedInvoice?.purchaseOrder?.noPesanan || editPurchaseOrderId }] : []), ...purchaseOrderOptions.map(po => ({ id: po.id, label: po.noPesanan }))]} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} /></div><InvoiceTypeField value={editInvoiceType} onChange={setEditInvoiceType} /></div>
           <p className="text-sm text-muted-foreground">Perbarui data header invoice (detail barang tidak dapat diubah)</p>
           <div className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-4 py-3">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -1468,15 +1356,7 @@ function ReturCreateForm() {
               <Label className="text-xs font-medium">
                 Supplier <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown
-                value={fSupplierId}
-                onValueChange={(value) => {
-                  setFSupplierId(value);
-                  setFPurchaseInvoiceId('');
-                }}
-                options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
-                placeholder="Pilih supplier..."
-              />
+              <SearchableDropdown value={fSupplierId} onValueChange={value => { setFSupplierId(value); setFPurchaseInvoiceId(''); }} options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih supplier..." />
               {formErrors.supplierId && <p className="text-xs text-destructive mt-1">{formErrors.supplierId}</p>}
             </div>
           </div>
@@ -1502,15 +1382,16 @@ function ReturCreateForm() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Invoice Pembelian (wajib sebelum posting)</Label>
-            <SearchableDropdown value={fPurchaseInvoiceId} onValueChange={setFPurchaseInvoiceId} options={postedInvoiceOptions.map((inv) => ({ id: inv.id, label: `${inv.noForm} — ${inv.noFaktur || '-'} (${formatRp(Number(inv.grandTotal))})` }))} placeholder={fSupplierId ? 'Pilih invoice pembelian supplier (posted)...' : 'Pilih supplier dulu...'} loading={postedInvoiceLoading} emptyText={fSupplierId ? 'Tidak ada invoice yang sudah di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'} allOption={{ id: '', label: 'Tanpa invoice — wajib dipilih sebelum posting' }} />
-            {postedInvoiceError && (
-              <div role="alert" className="text-xs text-destructive">
-                {postedInvoiceError}{' '}
-                <Button type="button" variant="outline" size="sm" onClick={retryPostedInvoices}>
-                  Coba Lagi
-                </Button>
-              </div>
-            )}
+            <SearchableDropdown
+              value={fPurchaseInvoiceId}
+              onValueChange={setFPurchaseInvoiceId}
+              options={postedInvoiceOptions.map((inv) => ({ id: inv.id, label: `${inv.noForm} — ${inv.noFaktur || '-'} (${formatRp(Number(inv.grandTotal))})` }))}
+              placeholder={fSupplierId ? 'Pilih invoice pembelian supplier (posted)...' : 'Pilih supplier dulu...'}
+              loading={postedInvoiceLoading}
+              emptyText={fSupplierId ? 'Tidak ada invoice yang sudah di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'}
+              allOption={{ id: '', label: 'Tanpa invoice — wajib dipilih sebelum posting' }}
+            />
+            {postedInvoiceError && <div role="alert" className="text-xs text-destructive">{postedInvoiceError} <Button type="button" variant="outline" size="sm" onClick={retryPostedInvoices}>Coba Lagi</Button></div>}
             <p className="text-[11px] text-muted-foreground leading-relaxed">Retur tidak bisa diposting tanpa invoice. Pilih invoice supplier yang sudah selesai (posted) agar hutang invoice dapat diperbarui saat posting.</p>
           </div>
           <Separator />
@@ -1537,7 +1418,7 @@ function ReturCreateForm() {
           </div>
         </CardContent>
       </Card>
-      <StockOperationErrorDialog error={returnError} onClose={clearReturnError} />
+    <StockOperationErrorDialog error={returnError} onClose={clearReturnError} />
     </FormTabShell>
   );
 }
@@ -1667,15 +1548,7 @@ function ReturEditForm({ editId }: { editId: string }) {
               <Label className="text-xs font-medium">
                 Supplier <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown
-                value={editSupplierId}
-                onValueChange={(value) => {
-                  setEditSupplierId(value);
-                  setEditPurchaseInvoiceId('');
-                }}
-                options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
-                placeholder="Pilih supplier..."
-              />
+              <SearchableDropdown value={editSupplierId} onValueChange={value => { setEditSupplierId(value); setEditPurchaseInvoiceId(''); }} options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih supplier..." />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1701,15 +1574,15 @@ function ReturEditForm({ editId }: { editId: string }) {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Invoice Pembelian (wajib sebelum posting)</Label>
-            <SearchableDropdown value={editPurchaseInvoiceId} onValueChange={setEditPurchaseInvoiceId} options={[...(editPurchaseInvoiceId && !postedInvoiceOptions.some((inv) => inv.id === editPurchaseInvoiceId) ? [{ id: editPurchaseInvoiceId, label: `Invoice tertaut: ${editPurchaseInvoiceId}`, subtitle: 'Tidak ada dalam pilihan invoice saat ini; boleh diganti.' }] : []), ...postedInvoiceOptions.map((inv) => ({ id: inv.id, label: `${inv.noForm} — ${inv.noFaktur || '-'} (${formatRp(Number(inv.grandTotal))})` }))]} placeholder={editSupplierId ? 'Pilih invoice pembelian supplier (posted)...' : 'Pilih supplier dulu...'} loading={postedInvoiceLoading} emptyText={editSupplierId ? 'Tidak ada invoice yang sudah di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'} />
-            {postedInvoiceError && (
-              <div role="alert" className="text-xs text-destructive">
-                {postedInvoiceError}{' '}
-                <Button type="button" variant="outline" size="sm" onClick={retryPostedInvoices}>
-                  Coba Lagi
-                </Button>
-              </div>
-            )}
+            <SearchableDropdown
+              value={editPurchaseInvoiceId}
+              onValueChange={setEditPurchaseInvoiceId}
+              options={[...(editPurchaseInvoiceId && !postedInvoiceOptions.some(inv => inv.id === editPurchaseInvoiceId) ? [{ id: editPurchaseInvoiceId, label: `Invoice tertaut: ${editPurchaseInvoiceId}`, subtitle: 'Tidak ada dalam pilihan invoice saat ini; boleh diganti.' }] : []), ...postedInvoiceOptions.map((inv) => ({ id: inv.id, label: `${inv.noForm} — ${inv.noFaktur || '-'} (${formatRp(Number(inv.grandTotal))})` }))]}
+              placeholder={editSupplierId ? 'Pilih invoice pembelian supplier (posted)...' : 'Pilih supplier dulu...'}
+              loading={postedInvoiceLoading}
+              emptyText={editSupplierId ? 'Tidak ada invoice yang sudah di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'}
+            />
+            {postedInvoiceError && <div role="alert" className="text-xs text-destructive">{postedInvoiceError} <Button type="button" variant="outline" size="sm" onClick={retryPostedInvoices}>Coba Lagi</Button></div>}
             <p className="text-[11px] text-muted-foreground leading-relaxed">Retur tidak bisa diposting tanpa invoice. Pilih invoice supplier yang sudah selesai (posted) agar hutang invoice dapat diperbarui saat posting.</p>
           </div>
           <div className="space-y-1.5">
@@ -1727,7 +1600,7 @@ function ReturEditForm({ editId }: { editId: string }) {
           </div>
         </CardContent>
       </Card>
-      <StockOperationErrorDialog error={returnError} onClose={clearReturnError} />
+    <StockOperationErrorDialog error={returnError} onClose={clearReturnError} />
     </FormTabShell>
   );
 }
@@ -1972,16 +1845,7 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                             return (
                               <div className="flex flex-col items-center gap-1">
                                 <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell
-                                  documentType={w.documentType}
-                                  documentId={w.documentId}
-                                  version={w.version}
-                                  availableActions={w.availableActions}
-                                  onDone={() => {
-                                    fetchData();
-                                    wfStates.refresh();
-                                  }}
-                                />
+                                <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={() => { fetchData(); wfStates.refresh(); }} />
                               </div>
                             );
                           })()}
@@ -2004,7 +1868,7 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                               title="Cetak">
                               <Printer className="h-3.5 w-3.5" />
                             </Button>
-                            {
+                            {(
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -2021,7 +1885,7 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                                 title={canEditOrder(d.status) ? 'Edit' : 'Detail'}>
                                 {canEditOrder(d.status) ? <Pencil className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
                               </Button>
-                            }
+                            )}
                             {d.status !== 'DIBATALKAN' && (
                               <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => handleCancel(d.id)}>
                                 Batal
@@ -2314,16 +2178,7 @@ function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchase
                             return (
                               <div className="flex flex-col items-center gap-1">
                                 <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell
-                                  documentType={w.documentType}
-                                  documentId={w.documentId}
-                                  version={w.version}
-                                  availableActions={w.availableActions}
-                                  onDone={() => {
-                                    fetchData();
-                                    wfStates.refresh();
-                                  }}
-                                />
+                                <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={() => { fetchData(); wfStates.refresh(); }} />
                               </div>
                             );
                           })()}
@@ -2649,8 +2504,7 @@ function InvoiceTab({ supplierOptions, barangOptions, purchaseOrderOptions, refr
                     <TableHead className="w-[130px]">No Faktur</TableHead>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
                     <TableHead>Supplier</TableHead>
-                    <TableHead>PO Number</TableHead>
-                    <TableHead>Tipe Invoice</TableHead>
+                    <TableHead>PO Number</TableHead><TableHead>Tipe Invoice</TableHead>
                     <TableHead className="text-right w-[160px]">Total</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
                     <TableHead className="w-[110px] text-center">Status Bayar</TableHead>
@@ -2674,8 +2528,7 @@ function InvoiceTab({ supplierOptions, barangOptions, purchaseOrderOptions, refr
                         <TableCell className="font-mono text-xs">{d.noFaktur}</TableCell>
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.supplier?.nama || '-'}</TableCell>
-                        <TableCell className="text-xs">{d.purchaseOrder?.noPesanan || purchaseOrderOptions.find((po) => po.id === d.purchaseOrderId)?.noPesanan || d.purchaseOrderId || '-'}</TableCell>
-                        <TableCell className="text-xs">{d.invoiceType || '-'}</TableCell>
+                        <TableCell className="text-xs">{d.purchaseOrder?.noPesanan || purchaseOrderOptions.find(po => po.id === d.purchaseOrderId)?.noPesanan || d.purchaseOrderId || '-'}</TableCell><TableCell className="text-xs">{d.invoiceType || '-'}</TableCell>
                         <TableCell className="text-right font-mono text-xs font-medium">{formatRp(Number(d.grandTotal))}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />

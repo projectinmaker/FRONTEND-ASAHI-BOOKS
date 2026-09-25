@@ -220,7 +220,7 @@ function HistoryTable({
             <Label className="text-xs text-muted-foreground">Cari</Label>
             <div className="relative mt-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari no bukti/nukti..." value={search} onChange={(e) => onSearchChange(e.target.value)} className="pl-8 h-9 text-sm" />
+              <Input placeholder="Cari no dokumen/bukti..." value={search} onChange={(e) => onSearchChange(e.target.value)} className="pl-8 h-9 text-sm" />
             </div>
           </div>
           <div className="w-full sm:w-36">
@@ -261,7 +261,7 @@ function HistoryTable({
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead className="whitespace-nowrap">Tanggal</TableHead>
-                  <TableHead className="whitespace-nowrap">No Bukti</TableHead>
+                  <TableHead className="whitespace-nowrap">No. Dokumen</TableHead>
                   <TableHead className="whitespace-nowrap">Kas/Bank</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Total Nilai</TableHead>
                   <TableHead className="whitespace-nowrap">Status</TableHead>
@@ -598,7 +598,7 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
                 <TableHeader>
                   <TableRow className="bg-muted/50">
                     <TableHead className="whitespace-nowrap">Tanggal</TableHead>
-                    <TableHead className="whitespace-nowrap">No Bukti</TableHead>
+                    <TableHead className="whitespace-nowrap">No. Dokumen</TableHead>
                     <TableHead className="whitespace-nowrap">Dari</TableHead>
                     <TableHead className="whitespace-nowrap">Ke</TableHead>
                     <TableHead className="whitespace-nowrap text-right">Nilai</TableHead>
@@ -1131,6 +1131,7 @@ function CetakTab({ type, id }: { type: CetakType; id: string }) {
         const res = await api.get<PembayaranKasResponse>(`/kas-bank/pembayaran/${id}`);
         setPembayaranData({
           noBukti: res.noBukti || '-',
+          noBuktiFisik: res.noNukti || '-',
           tanggal: res.tanggal || '',
           kasBankNama: res.kasBank?.akunPerkiraan?.nama || res.kasBank?.nama || '-',
           penerima: res.penerima || '-',
@@ -1152,6 +1153,7 @@ function CetakTab({ type, id }: { type: CetakType; id: string }) {
         const res = await api.get<PenerimaanKasResponse>(`/kas-bank/penerimaan/${id}`);
         setPenerimaanData({
           noBukti: res.noBukti || '-',
+          noBuktiFisik: res.noNukti || '-',
           tanggal: res.tanggal || '',
           kasBankNama: res.kasBank?.akunPerkiraan?.nama || res.kasBank?.nama || '-',
           pemberi: res.pemberi || '-',

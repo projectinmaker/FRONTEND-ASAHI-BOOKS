@@ -1,16 +1,12 @@
 import { api, type PaginatedResponse } from '@/lib/api';
 import type { PurchaseInvoiceResponse } from '@/types/api';
 
-export interface StockFormLine {
-  barangId: string;
-  satuanId: string;
-  qty: string | number;
-}
+export interface StockFormLine { barangId: string; satuanId: string; qty: string | number }
 
 // Only the required input constraints from the API are mirrored here.
 // Availability, over-delivery, GRNI and PO/supplier compatibility stay on the server.
 export function stockLineError(lines: StockFormLine[]): string | null {
-  if (!lines.some((line) => line.barangId)) return 'Minimal satu barang harus dipilih.';
+  if (!lines.some(line => line.barangId)) return 'Minimal satu barang harus dipilih.';
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
     if (!line.barangId && !line.satuanId) continue;
@@ -53,7 +49,7 @@ export async function loadReceiptInvoiceOptions(supplierId: string): Promise<Pur
   for (let skip = 0; ; ) {
     const query = new URLSearchParams({ supplier_id: supplierId, skip: String(skip), limit: '200' });
     const page = await api.get<PaginatedResponse<PurchaseInvoiceResponse>>(`/pembelian/purchase-invoice?${query}`);
-    invoices.push(...page.data.filter((invoice) => !invoice.jurnalUmumId && (invoice.status === 'DRAFT' || invoice.status === 'DIPROSES')));
+    invoices.push(...page.data.filter(invoice => !invoice.jurnalUmumId && (invoice.status === 'DRAFT' || invoice.status === 'DIPROSES')));
     skip += page.data.length;
     if (skip >= page.total) return invoices;
     if (!page.data.length) throw new Error('Daftar invoice belum lengkap. Coba muat ulang.');

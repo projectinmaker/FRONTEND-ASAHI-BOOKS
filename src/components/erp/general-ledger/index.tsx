@@ -282,7 +282,8 @@ function JurnalUmumDetailTab({ jurnalId }: { jurnalId: string }) {
                           formKey: 'jurnal-manual-edit',
                           formProps: { jurnalId: detail.id }
                         })
-                      }>
+                      }
+                    >
                       <Pencil className="h-4 w-4" />
                       Edit Jurnal
                     </Button>
@@ -721,7 +722,10 @@ function JurnalManualEditForm({ jurnalId }: { jurnalId: string }) {
       setLoadingData(true);
       setLoadError('');
       try {
-        const [detail, coa] = await Promise.all([api.get<JurnalUmumDetailResponse>(`/jurnal/${jurnalId}`), loadCOA({ tingkat: 'DETAIL', activeOnly: true, allowManualPosting: true }).catch(() => [] as COAResponse[])]);
+        const [detail, coa] = await Promise.all([
+          api.get<JurnalUmumDetailResponse>(`/jurnal/${jurnalId}`),
+          loadCOA({ tingkat: 'DETAIL', activeOnly: true, allowManualPosting: true }).catch(() => [] as COAResponse[])
+        ]);
         if (cancelled) return;
 
         // Guard UX — server tetap otoritatif (404/400) untuk kasus di luar cek ini.
@@ -868,7 +872,9 @@ function JurnalManualEditForm({ jurnalId }: { jurnalId: string }) {
   // 2. Akun yang valid untuk jurnal manual.
   // Catatan JRN-001: penyaringan UI tidak menggantikan validasi server.
   const coaDropdownOptions = [
-    ...[...usedAccounts.values()].filter((a) => !coaOptions.some((c) => c.id === a.id)).map((a) => ({ id: a.id, label: `${a.kode} — ${a.nama}`, disabled: true })),
+    ...[...usedAccounts.values()]
+      .filter((a) => !coaOptions.some((c) => c.id === a.id))
+      .map((a) => ({ id: a.id, label: `${a.kode} — ${a.nama}`, disabled: true })),
     ...coaOptions
       .filter((a) => canPostManually(a) && !accountErrors[a.id])
       .map((c) => ({
