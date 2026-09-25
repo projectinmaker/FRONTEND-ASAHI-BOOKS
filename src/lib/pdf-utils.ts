@@ -1,0 +1,126 @@
+// ─── Format Helpers ────────────────────────────────────────────────────────
+
+export const formatRp = (val: number) => 'Rp ' + val.toLocaleString('id-ID');
+
+export const formatNumber = (val: number) => val.toLocaleString('id-ID');
+
+export function formatDate(dateStr: string): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+}
+
+export function todayStr(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+export function generateNo(prefix: string, count: number): string {
+  return `${prefix}-${new Date().getFullYear()}-${String(count).padStart(4, '0')}`;
+}
+
+// ─── Terbilang (Number to Indonesian Words) ─────────────────────────────────
+
+const SATUAN = ['', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'];
+
+function terbilangChunk(n: number): string {
+  if (n === 0) return '';
+  if (n < 12) return SATUAN[n];
+  if (n < 20) return SATUAN[n - 10] + ' Belas';
+  if (n < 100) {
+    const r = Math.floor(n / 10);
+    const s = n % 10;
+    return SATUAN[r] + ' Puluh' + (s ? ' ' + SATUAN[s] : '');
+  }
+  if (n < 200) return 'Seratus' + (n - 100 ? ' ' + terbilangChunk(n - 100) : '');
+  if (n < 1000) {
+    const r = Math.floor(n / 100);
+    return SATUAN[r] + ' Ratus' + (n % 100 ? ' ' + terbilangChunk(n % 100) : '');
+  }
+  if (n < 2000) return 'Seribu' + (n - 1000 ? ' ' + terbilangChunk(n - 1000) : '');
+  if (n < 1000000) {
+    const r = Math.floor(n / 1000);
+    return terbilangChunk(r) + ' Ribu' + (n % 1000 ? ' ' + terbilangChunk(n % 1000) : '');
+  }
+  if (n < 1000000000) {
+    const r = Math.floor(n / 1000000);
+    return terbilangChunk(r) + ' Juta' + (n % 1000000 ? ' ' + terbilangChunk(n % 1000) : '');
+  }
+  if (n < 1000000000000) {
+    const r = Math.floor(n / 1000000);
+    return terbilangChunk(r) + ' Miliar' + (n % 1000000000 ? ' ' + terbilangChunk(n % 1000000000) : '');
+  }
+  return String(n);
+}
+
+export function terbilang(n: number): string {
+  if (n === 0) return 'Nol Rupiah';
+  const abs = Math.abs(n);
+  const words = terbilangChunk(abs).trim();
+  return words.charAt(0).toUpperCase() + words.slice(1) + ' Rupiah';
+}
+
+// ─── Company Info (static, will be configurable from Pengaturan later) ──────
+
+export const COMPANY_INFO = {
+  name: 'ASAHI Books',
+  address: 'Jalan Simpangan No.18, RT.03/RW.06, Jatireja, Kec. Cikarang Tim., Kabupaten Bekasi, Jawa Barat 17530'
+};
+
+// ─── PDF Generation Utility ────────────────────────────────────────────────
+
+export async function generatePDF(elementId: string, filename: string) {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+
+  const html2canvas = (await import('html2canvas')).default;
+  const { jsPDF } = await import('jspdf');
+
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    logging: false,
+    backgroundColor: '#ffffff'
+  });
+
+  const imgData = canvas.toDataURL('image/png');
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pdfWidth = pdf.internal.pageSize.getWidth();
+  const pdfHeight = pdf.internal.pageSize.getHeight();
+  const imgWidth = canvas.width;
+  const imgHeight = canvas.height;
+  const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+  const imgX = (pdfWidth - imgWidth * ratio) / 2;
+  const imgY = 0;
+
+  pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+  pdf.save(filename);
+}
+
+export function printElement(elementId: string) {
+  const element = document.getElementById(elementId);
+  if (!element) return;
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) return;
+  printWindow.document.write(`
+    <html>
+    <head><title>Print</title>
+    <style>
+      body { margin: 0; padding: 20px; font-family: 'Segoe UI', sans-serif; }
+      @page { size: A4; margin: 10mm; }
+      img { max-width: 100%; height: auto; }
+    </style>
+    </head>
+    <body><img src="${element.querySelector('canvas')?.toDataURL() || ''}" /></body>
+    </html>
+  `);
+  printWindow.document.close();
+}
