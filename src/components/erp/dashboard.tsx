@@ -39,7 +39,10 @@ function formatDate(dateStr: string): string {
 }
 
 function todayStr(): string {
-  return new Date().toISOString().split('T')[0];
+  // Tanggal lokal (bukan UTC) — default filter dashboard harus "hari ini"
+  // menurut zona waktu pengguna (WIB), bukan tanggal UTC.
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 // ─── Skeletons ─────────────────────────────────────────────────────────────
@@ -128,7 +131,7 @@ function RekonsiliasiPersediaanWidget() {
     setLoading(true);
     setError(null);
     try {
-      const asOf = new Date().toISOString().slice(0, 10);
+      const asOf = todayStr();
       const res = await api.get<RekonsiliasiPersediaanRingkasanResponse>(`/laporan/rekonsiliasi-persediaan/ringkasan?as_of=${asOf}`);
       setData(res);
     } catch (err) {
@@ -251,7 +254,7 @@ function AccountingHealthWidget() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const asOf = new Date().toISOString().slice(0, 10);
+      const asOf = todayStr();
       const res = await api.get<AccountingHealthResponse>(`/laporan/accounting-health?as_of=${asOf}`);
       setHealth(res);
       if (typeof window !== 'undefined') {

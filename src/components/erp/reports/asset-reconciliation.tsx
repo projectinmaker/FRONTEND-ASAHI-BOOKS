@@ -13,7 +13,11 @@ import { api, ApiError } from '@/lib/api';
 import { formatRp } from '@/lib/pdf-utils';
 import type { AssetReconciliationResponse, AssetReconciliationPerAkun } from '@/types/api';
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+// Tanggal lokal (bukan UTC) — default "as of" harus hari ini menurut zona user (WIB)
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 function num(v: number | string): number {
   return typeof v === 'string' ? Number(v) : v;

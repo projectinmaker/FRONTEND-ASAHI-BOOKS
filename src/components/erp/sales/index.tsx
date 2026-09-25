@@ -123,6 +123,8 @@ interface FormDetailRow {
   diskon: string;
   satuanId: string;
   satuanNama: string;
+  // === Fix persist salesOrderDetailId: link baris DO ke line SO ===
+  salesOrderDetailId?: string;
 }
 
 interface FormBiayaRow {
@@ -319,7 +321,14 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id}>
-                <TableCell className="font-mono text-xs">{row.kodeBarang || '-'}</TableCell>
+                <TableCell className="font-mono text-xs">
+                  {row.kodeBarang || '-'}
+                  {row.salesOrderDetailId && (
+                    <span className="ml-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700" title="Baris ter-link ke line Sales Order">
+                      SO
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <SearchableDropdown value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
                 </TableCell>
@@ -469,13 +478,17 @@ function useDropdowns() {
 // FORM: Pesanan Penjualan Create
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PesananPenjualanCreateForm({ subPage }: { subPage: string }) { return <OrderDocumentForm kind="sales" subPage={subPage} />; }
+function PesananPenjualanCreateForm({ subPage }: { subPage: string }) {
+  return <OrderDocumentForm kind="sales" subPage={subPage} />;
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // FORM: Pesanan Penjualan Edit
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PesananPenjualanEditForm({ editId, subPage }: { editId: string; subPage: string; initialNoPesanan?: string; initialStatus?: string; initialGrandTotal?: number }) { return <OrderDocumentForm kind="sales" editId={editId} subPage={subPage} />; }
+function PesananPenjualanEditForm({ editId, subPage }: { editId: string; subPage: string; initialNoPesanan?: string; initialStatus?: string; initialGrandTotal?: number }) {
+  return <OrderDocumentForm kind="sales" editId={editId} subPage={subPage} />;
+}
 
 // ═════════════════════════════════════════════════════════════════════════════
 // FORM: Pengiriman Barang Create
@@ -499,6 +512,42 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
+  const [soLoading, setSoLoading] = useState(false);
+
+  // === Fix persist salesOrderDetailId: saat SO dipilih, ambil detail SO dan
+  // prefill baris barang (qty + satuan + link line SO) serta pelanggan.
+  // Baris ter-link otomatis mengirim salesOrderDetailId sehingga validasi
+  // over-delivery per line aktif di backend (create + finish).
+  const handleSalesOrderChange = useCallback(async (soId: string) => {
+    setFSalesOrderId(soId);
+    setFormErrors((prev) => ({ ...prev, salesOrderId: '' }));
+    if (!soId) return;
+    setSoLoading(true);
+    try {
+      const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
+      setFPelangganId(so.pelangganId || '');
+      if (Array.isArray(so.details) && so.details.length > 0) {
+        setFDetail(
+          so.details.map((d) => ({
+            id: crypto.randomUUID(),
+            barangId: d.barangId,
+            kodeBarang: d.barang?.kode || '',
+            barangNama: d.barang?.nama || '',
+            harga: String(d.harga ?? 0),
+            qty: String(d.qty ?? 1),
+            diskon: '0',
+            satuanId: d.satuanId || '',
+            satuanNama: d.satuan?.nama || '',
+            salesOrderDetailId: d.id
+          }))
+        );
+      }
+    } catch {
+      // Gagal memuat detail SO — biarkan user isi baris manual (tanpa link)
+    } finally {
+      setSoLoading(false);
+    }
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     const errs: Record<string, string> = {};
@@ -520,7 +569,8 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
         .map((r) => ({
           barangId: r.barangId,
           qty: Number(r.qty),
-          satuanId: r.satuanId
+          satuanId: r.satuanId,
+          salesOrderDetailId: r.salesOrderDetailId || null
         }));
       const body: PengirimanBarangCreate = {
         tanggal: fTanggal,
@@ -563,7 +613,8 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">
                 Sales Order <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fSalesOrderId} onValueChange={setFSalesOrderId} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} placeholder="Pilih SO..." />
+              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} placeholder="Pilih SO..." disabled={soLoading} />
+              {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat detail SO...</p>}
               {formErrors.salesOrderId && <p className="text-xs text-destructive mt-1">{formErrors.salesOrderId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -581,7 +632,9 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               {formErrors.tanggal && <p className="text-xs text-destructive">{formErrors.tanggal}</p>}
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Gudang <span className="text-destructive">*</span></Label>
+              <Label className="text-xs font-medium">
+                Gudang <span className="text-destructive">*</span>
+              </Label>
               <SearchableDropdown value={fGudangId} onValueChange={setFGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
               {formErrors.gudangId && <p className="text-xs text-destructive">{formErrors.gudangId}</p>}
             </div>
@@ -602,6 +655,9 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               Detail Barang <span className="text-destructive">*</span>
             </Label>
             <DetailTableSimple rows={fDetail} setRows={setFDetail} barangOptions={barangOptions} satuanOptions={satuanOptions} />
+            <p className="text-[11px] text-muted-foreground">
+              Baris bertanda <span className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700 border-emerald-200">SO</span> otomatis ter-link ke line Sales Order — validasi over-delivery aktif. Pilih ulang SO untuk memuat ulang barisnya.
+            </p>
             {formErrors.detail && <p className="text-xs text-destructive mt-1">{formErrors.detail}</p>}
           </div>
           <Separator />
@@ -722,8 +778,12 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
             </div>
           ) : (
             <>
-              {recordError && <p role="alert" className="text-sm text-destructive">{recordError}</p>}
-          <p className="text-sm text-muted-foreground">Perbarui data header surat jalan (detail barang tidak dapat diubah)</p>
+              {recordError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {recordError}
+                </p>
+              )}
+              <p className="text-sm text-muted-foreground">Perbarui data header surat jalan (detail barang tidak dapat diubah)</p>
               <div className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-4 py-3">
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Info className="h-3.5 w-3.5" />
@@ -753,7 +813,9 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                   <Input type="date" className="h-9 text-xs" value={editTanggal} onChange={(e) => setEditTanggal(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Gudang <span className="text-destructive">*</span></Label>
+                  <Label className="text-xs font-medium">
+                    Gudang <span className="text-destructive">*</span>
+                  </Label>
                   <SearchableDropdown value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
                 </div>
               </div>
@@ -768,7 +830,40 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                 </div>
               </div>
               <Separator />
-              <div className="space-y-2"><Label>Detail Barang (tersimpan)</Label><div className="overflow-x-auto rounded-md border"><Table><TableHeader><TableRow><TableHead>Barang</TableHead><TableHead>Qty</TableHead><TableHead>Satuan</TableHead></TableRow></TableHeader><TableBody>{editDetails.map(line => <TableRow key={line.id}><TableCell>{line.barang?.nama || line.barangId}</TableCell><TableCell className={Number(line.qty) <= 0 ? 'text-destructive' : undefined}>{line.qty}</TableCell><TableCell>{line.satuan?.nama || line.satuanId}</TableCell></TableRow>)}</TableBody></Table></div><p className="text-xs text-muted-foreground">Detail tersimpan hanya dapat dilihat pada form ini. Perubahan qty/detail belum didukung.</p></div>
+              <div className="space-y-2">
+                <Label>Detail Barang (tersimpan)</Label>
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Barang</TableHead>
+                        <TableHead>Qty</TableHead>
+                        <TableHead>Satuan</TableHead>
+                        <TableHead>Line SO</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editDetails.map((line) => (
+                        <TableRow key={line.id}>
+                          <TableCell>{line.barang?.nama || line.barangId}</TableCell>
+                          <TableCell className={Number(line.qty) <= 0 ? 'text-destructive' : undefined}>{line.qty}</TableCell>
+                          <TableCell>{line.satuan?.nama || line.satuanId}</TableCell>
+                          <TableCell>
+                            {line.salesOrderDetailId ? (
+                              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700" title={`Terkait line SO ${line.salesOrderDetailId}`}>
+                                SO ✓
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <p className="text-xs text-muted-foreground">Detail tersimpan hanya dapat dilihat pada form ini. Perubahan qty/detail belum didukung. Baris berlabel SO ✓ ter-link ke line Sales Order (validasi over-delivery aktif).</p>
+              </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">Keterangan</Label>
                 <Textarea className="text-xs min-h-[60px]" value={editKeterangan} onChange={(e) => setEditKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
@@ -1222,7 +1317,6 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fPpn, setFPpn] = useState('11');
   const [fKeterangan, setFKeterangan] = useState('');
 
-
   const filteredPengirimanOptions = useMemo(() => (fPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === fPelangganId) : pengirimanOptions), [pengirimanOptions, fPelangganId]);
 
   const handleSubmit = useCallback(async () => {
@@ -1231,7 +1325,11 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
     if (!fInvoiceId) errs.invoiceId = 'Invoice wajib diisi';
     if (!fPelangganId) errs.pelangganId = 'Pelanggan wajib diisi';
     let details: SalesReturDetailCreate[] = [];
-    try { details = salesReturnDetails(source.invoice, quantities); } catch (error) { errs.detail = error instanceof Error ? error.message : 'Detail retur tidak valid'; }
+    try {
+      details = salesReturnDetails(source.invoice, quantities);
+    } catch (error) {
+      errs.detail = error instanceof Error ? error.message : 'Detail retur tidak valid';
+    }
     if (Object.keys(errs).length) {
       setFormErrors(errs);
       return;
@@ -1253,7 +1351,10 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
         keterangan: fKeterangan || null,
         details
       };
-      const result = await createSalesReturn(body, saved => { setCreatedReturn(saved); refreshListTab('sales', subPage); });
+      const result = await createSalesReturn(body, (saved) => {
+        setCreatedReturn(saved);
+        refreshListTab('sales', subPage);
+      });
       if (result.mismatches.length) {
         setSaveWarning('Retur ' + result.saved.noRetur + ' sudah dibuat, tetapi respons backend belum mengonfirmasi referensi detail invoice / harga / qty. Tinjau dokumen dari daftar sebelum posting; jangan membuat ulang.');
         return;
@@ -1282,14 +1383,28 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
     <FormTabShell title="Buat Retur Penjualan">
       <Card className="max-w-5xl">
         <CardContent className="p-6 space-y-4">
-          {saveWarning && <p role="alert" className="text-sm text-destructive">{saveWarning}</p>}
+          {saveWarning && (
+            <p role="alert" className="text-sm text-destructive">
+              {saveWarning}
+            </p>
+          )}
           <p className="text-sm text-muted-foreground">Isi data retur / pengembalian barang</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">
                 Invoice <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fInvoiceId} onValueChange={value => { setFInvoiceId(value); setQuantities({}); setFPengirimanId(''); setFormErrors({}); }} options={invoiceOptions.map((inv) => ({ id: inv.id, label: inv.noInvoice }))} placeholder="Pilih invoice..." />
+              <SearchableDropdown
+                value={fInvoiceId}
+                onValueChange={(value) => {
+                  setFInvoiceId(value);
+                  setQuantities({});
+                  setFPengirimanId('');
+                  setFormErrors({});
+                }}
+                options={invoiceOptions.map((inv) => ({ id: inv.id, label: inv.noInvoice }))}
+                placeholder="Pilih invoice..."
+              />
               {formErrors.invoiceId && <p className="text-xs text-destructive mt-1">{formErrors.invoiceId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -1330,8 +1445,15 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
               Detail Barang <span className="text-destructive">*</span>
             </Label>
             {source.loading && <p className="text-sm text-muted-foreground">Memuat invoice sumber...</p>}
-            {source.error && <div role="alert" className="text-sm text-destructive">{source.error} <Button variant="outline" size="sm" onClick={source.retry}>Coba Lagi</Button></div>}
-            {source.invoice ? <SalesReturnSourceLines invoice={source.invoice} quantities={quantities} onChange={(id, qty) => setQuantities(previous => ({ ...previous, [id]: qty }))} /> : !source.loading && !source.error && <p className="text-sm text-muted-foreground">Pilih invoice untuk mengisi detail retur.</p>}
+            {source.error && (
+              <div role="alert" className="text-sm text-destructive">
+                {source.error}{' '}
+                <Button variant="outline" size="sm" onClick={source.retry}>
+                  Coba Lagi
+                </Button>
+              </div>
+            )}
+            {source.invoice ? <SalesReturnSourceLines invoice={source.invoice} quantities={quantities} onChange={(id, qty) => setQuantities((previous) => ({ ...previous, [id]: qty }))} /> : !source.loading && !source.error && <p className="text-sm text-muted-foreground">Pilih invoice untuk mengisi detail retur.</p>}
             {formErrors.detail && <p className="text-xs text-destructive mt-1">{formErrors.detail}</p>}
           </div>
           <Separator />
@@ -1360,7 +1482,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
           </div>
         </CardContent>
       </Card>
-    <StockOperationErrorDialog error={returnError} onClose={clearReturnError} />
+      <StockOperationErrorDialog error={returnError} onClose={clearReturnError} />
     </FormTabShell>
   );
 }
@@ -1486,14 +1608,14 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Invoice</Label>
-                  <Input value={invoiceOptions.find(invoice => invoice.id === editInvoiceId)?.noInvoice || editInvoiceId} readOnly />
+                  <Input value={invoiceOptions.find((invoice) => invoice.id === editInvoiceId)?.noInvoice || editInvoiceId} readOnly />
                   <p className="text-xs text-muted-foreground">Invoice sumber tetap agar harga detail retur konsisten.</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">
                     Pelanggan <span className="text-destructive">*</span>
                   </Label>
-                  <Input value={pelangganOptions.find(customer => customer.id === editPelangganId)?.nama || editPelangganId} readOnly />
+                  <Input value={pelangganOptions.find((customer) => customer.id === editPelangganId)?.nama || editPelangganId} readOnly />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1548,7 +1670,7 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
           )}
         </CardContent>
       </Card>
-    <StockOperationErrorDialog error={returnError} onClose={clearReturnError} />
+      <StockOperationErrorDialog error={returnError} onClose={clearReturnError} />
     </FormTabShell>
   );
 }
@@ -1779,7 +1901,9 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.customerPoNumber || '-'}</TableCell>
-                        <TableCell><Badge variant="outline">{d.fulfillmentStatus || '-'}</Badge></TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{d.fulfillmentStatus || '-'}</Badge>
+                        </TableCell>
                         <TableCell className="text-right font-mono text-xs font-medium">{formatOrderMoney(d.grandTotal, d.currency)}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
@@ -1791,7 +1915,16 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                             return (
                               <div className="flex flex-col items-center gap-1">
                                 <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={() => { fetchData(); wfStates.refresh(); }} />
+                                <WorkflowActionsCell
+                                  documentType={w.documentType}
+                                  documentId={w.documentId}
+                                  version={w.version}
+                                  availableActions={w.availableActions}
+                                  onDone={() => {
+                                    fetchData();
+                                    wfStates.refresh();
+                                  }}
+                                />
                               </div>
                             );
                           })()}
@@ -1814,7 +1947,7 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                               title="Cetak">
                               <Printer className="h-3.5 w-3.5" />
                             </Button>
-                            {(
+                            {
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -1831,7 +1964,7 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                                 title={canEditOrder(d.status) ? 'Edit' : 'Detail'}>
                                 {canEditOrder(d.status) ? <Pencil className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
                               </Button>
-                            )}
+                            }
                             {d.status !== 'DIBATALKAN' && (
                               <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => handleCancel(d.id)}>
                                 Batal
@@ -2091,7 +2224,16 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
                             return (
                               <div className="flex flex-col items-center gap-1">
                                 <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={() => { fetchData(); wfStates.refresh(); }} />
+                                <WorkflowActionsCell
+                                  documentType={w.documentType}
+                                  documentId={w.documentId}
+                                  version={w.version}
+                                  availableActions={w.availableActions}
+                                  onDone={() => {
+                                    fetchData();
+                                    wfStates.refresh();
+                                  }}
+                                />
                               </div>
                             );
                           })()}

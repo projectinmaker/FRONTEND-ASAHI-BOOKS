@@ -140,7 +140,9 @@ function ReportActions({ reportName = 'laporan' }: { reportName?: string }) {
     window.print();
   };
   const handleExport = () => {
-    const today = new Date().toISOString().split('T')[0];
+    // Tanggal lokal (bukan UTC) untuk nama file ekspor
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     exportTableToCSV(`${reportName}-${today}.csv`);
   };
   return (

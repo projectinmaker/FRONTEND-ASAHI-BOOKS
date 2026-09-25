@@ -144,7 +144,10 @@ const emptyForm: FormState = {
   akunBebanId: '',
   kuantitas: '1',
   nilaiPerolehan: '',
-  tanggalMulai: new Date().toISOString().split('T')[0],
+  tanggalMulai: (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })(),
   catatan: '',
   autoPostJurnal: false,
   // === Phase 7 — acquisition source defaults ===
@@ -2095,7 +2098,10 @@ function TransaksiAsetCreateForm() {
 
   const [fAsetId, setFAsetId] = useState('');
   const [fJenis, setFJenis] = useState<JenisAsetTransaksi | ''>('');
-  const [fTanggal, setFTanggal] = useState(new Date().toISOString().slice(0, 10));
+  const [fTanggal, setFTanggal] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
 
   const [fUmurBulan, setFUmurBulan] = useState('');
   const [fNilaiSisa, setFNilaiSisa] = useState('');

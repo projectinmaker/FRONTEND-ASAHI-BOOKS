@@ -18,7 +18,9 @@ import type { AuditTransaksiPersediaanResponse, AuditPersediaanSummary, AuditTra
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Tanggal lokal (bukan UTC) — default "as of" harus hari ini menurut zona user (WIB)
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function firstDayOfMonth(): string {
