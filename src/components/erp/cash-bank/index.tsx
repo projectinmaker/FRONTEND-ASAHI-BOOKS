@@ -23,7 +23,8 @@ import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
-import type { KasBankAkunResponse, COADropdownResponse, PembayaranKasResponse, PenerimaanKasResponse, TransferBankResponse } from '@/types/api';
+import type { KasBankAkunResponse, COADropdownResponse, PembayaranKasResponse, PenerimaanKasResponse, TransferBankResponse, HardDeleteResponse } from '@/types/api';
+import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 import { Wallet, Building2, ArrowRightLeft, Plus, Download, Printer, X, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Undo2, type LucideIcon } from 'lucide-react';
 import RekonsiliasiBankTab from '@/components/erp/cash-bank/rekonsiliasi-bank';
 import PembayaranForm from '@/components/erp/cash-bank/forms/pembayaran-form';
@@ -450,21 +451,26 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
     setCancelOpen(true);
   }, []);
 
-  const handleCancel = useCallback(async () => {
-    if (!cancelTarget) return;
-    setCancelSubmitting(true);
-    try {
-      await api.post<TransferBankResponse>(`/kas-bank/transfer/${cancelTarget.id}/cancel`);
-      toast.success('Transfer berhasil dibatalkan');
-      setCancelOpen(false);
-      setCancelTarget(null);
-      fetchData();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.detail : 'Gagal membatalkan transfer');
-    } finally {
-      setCancelSubmitting(false);
-    }
-  }, [cancelTarget, fetchData]);
+  const handleCancel = useCallback(
+    async (reason?: string) => {
+      if (!cancelTarget) return;
+      setCancelSubmitting(true);
+      try {
+        const res = await api.post<HardDeleteResponse>(`/kas-bank/transfer/${cancelTarget.id}/cancel`, {
+          reason: reason || undefined
+        });
+        toast.success(res.message || `Transfer ${res.documentNumber ?? ''} dihapus permanen`);
+        setCancelOpen(false);
+        setCancelTarget(null);
+        fetchData();
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal menghapus transfer');
+      } finally {
+        setCancelSubmitting(false);
+      }
+    },
+    [cancelTarget, fetchData]
+  );
 
   // ── Reverse (Phase 6) ──
   const handleReverse = useCallback(async () => {
@@ -685,29 +691,20 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
         </CardContent>
       </Card>
 
-      {/* Cancel Confirmation AlertDialog */}
-      <AlertDialog
+      {/* Cancel = Hard Delete (hapus permanen + histori) */}
+      <HardDeleteCancelDialog
         open={cancelOpen}
         onOpenChange={(o) => {
           if (!o) {
             setCancelOpen(false);
             setCancelTarget(null);
           }
-        }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Batalkan Transfer?</AlertDialogTitle>
-            <AlertDialogDescription>Apakah Anda yakin ingin membatalkan transfer ini? Tindakan ini tidak dapat dibatalkan.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={cancelSubmitting}>Tidak</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancel} disabled={cancelSubmitting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {cancelSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Ya, Batalkan
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        }}
+        title="Batalkan Transfer?"
+        formLabel="transfer"
+        submitting={cancelSubmitting}
+        onConfirm={(reason) => handleCancel(reason)}
+      />
 
       {/* Reverse Confirmation AlertDialog — Phase 6 */}
       <AlertDialog
@@ -827,21 +824,26 @@ function PembayaranTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
     setCancelOpen(true);
   }, []);
 
-  const handleCancel = useCallback(async () => {
-    if (!cancelTarget) return;
-    setCancelSubmitting(true);
-    try {
-      await api.post<PembayaranKasResponse>(`/kas-bank/pembayaran/${cancelTarget}/cancel`);
-      toast.success('Pembayaran berhasil dibatalkan');
-      setCancelOpen(false);
-      setCancelTarget(null);
-      fetchData();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.detail : 'Gagal membatalkan pembayaran');
-    } finally {
-      setCancelSubmitting(false);
-    }
-  }, [cancelTarget, fetchData]);
+  const handleCancel = useCallback(
+    async (reason?: string) => {
+      if (!cancelTarget) return;
+      setCancelSubmitting(true);
+      try {
+        const res = await api.post<HardDeleteResponse>(`/kas-bank/pembayaran/${cancelTarget}/cancel`, {
+          reason: reason || undefined
+        });
+        toast.success(res.message || `Pembayaran ${res.documentNumber ?? ''} dihapus permanen`);
+        setCancelOpen(false);
+        setCancelTarget(null);
+        fetchData();
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal menghapus pembayaran');
+      } finally {
+        setCancelSubmitting(false);
+      }
+    },
+    [cancelTarget, fetchData]
+  );
 
   // ── Create → open form tab ──
   const openCreateTab = useCallback(() => {
@@ -897,29 +899,20 @@ function PembayaranTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
 
       <HistoryTable type="pembayaran" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={wfStates.states} onWorkflowDone={wfStates.refresh} />
 
-      {/* Cancel Confirmation AlertDialog */}
-      <AlertDialog
+      {/* Cancel = Hard Delete (hapus permanen + histori) */}
+      <HardDeleteCancelDialog
         open={cancelOpen}
         onOpenChange={(o) => {
           if (!o) {
             setCancelOpen(false);
             setCancelTarget(null);
           }
-        }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Batalkan Pembayaran?</AlertDialogTitle>
-            <AlertDialogDescription>Apakah Anda yakin ingin membatalkan pembayaran ini? Tindakan ini tidak dapat dibatalkan.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={cancelSubmitting}>Tidak</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancel} disabled={cancelSubmitting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {cancelSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Ya, Batalkan
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        }}
+        title="Batalkan Pembayaran?"
+        formLabel="pembayaran"
+        submitting={cancelSubmitting}
+        onConfirm={(reason) => handleCancel(reason)}
+      />
     </div>
   );
 }
@@ -998,21 +991,26 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
     setCancelOpen(true);
   }, []);
 
-  const handleCancel = useCallback(async () => {
-    if (!cancelTarget) return;
-    setCancelSubmitting(true);
-    try {
-      await api.post<PenerimaanKasResponse>(`/kas-bank/penerimaan/${cancelTarget}/cancel`);
-      toast.success('Penerimaan berhasil dibatalkan');
-      setCancelOpen(false);
-      setCancelTarget(null);
-      fetchData();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.detail : 'Gagal membatalkan penerimaan');
-    } finally {
-      setCancelSubmitting(false);
-    }
-  }, [cancelTarget, fetchData]);
+  const handleCancel = useCallback(
+    async (reason?: string) => {
+      if (!cancelTarget) return;
+      setCancelSubmitting(true);
+      try {
+        const res = await api.post<HardDeleteResponse>(`/kas-bank/penerimaan/${cancelTarget}/cancel`, {
+          reason: reason || undefined
+        });
+        toast.success(res.message || `Penerimaan ${res.documentNumber ?? ''} dihapus permanen`);
+        setCancelOpen(false);
+        setCancelTarget(null);
+        fetchData();
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal menghapus penerimaan');
+      } finally {
+        setCancelSubmitting(false);
+      }
+    },
+    [cancelTarget, fetchData]
+  );
 
   // ── Create → open form tab ──
   const openCreateTab = useCallback(() => {
@@ -1068,29 +1066,20 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
 
       <HistoryTable type="penerimaan" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={wfStates.states} onWorkflowDone={wfStates.refresh} />
 
-      {/* Cancel Confirmation AlertDialog */}
-      <AlertDialog
+      {/* Cancel = Hard Delete (hapus permanen + histori) */}
+      <HardDeleteCancelDialog
         open={cancelOpen}
         onOpenChange={(o) => {
           if (!o) {
             setCancelOpen(false);
             setCancelTarget(null);
           }
-        }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Batalkan Penerimaan?</AlertDialogTitle>
-            <AlertDialogDescription>Apakah Anda yakin ingin membatalkan penerimaan ini? Tindakan ini tidak dapat dibatalkan.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={cancelSubmitting}>Tidak</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancel} disabled={cancelSubmitting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {cancelSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Ya, Batalkan
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        }}
+        title="Batalkan Penerimaan?"
+        formLabel="penerimaan"
+        submitting={cancelSubmitting}
+        onConfirm={(reason) => handleCancel(reason)}
+      />
     </div>
   );
 }
