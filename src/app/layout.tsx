@@ -1,3 +1,5 @@
+import Script from 'next/script';
+
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
@@ -32,6 +34,27 @@ export default function RootLayout({
   return (
     <html lang="id" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}>
+        <Script
+          id="crypto-polyfill"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                if (typeof window === "undefined") return;
+                if (!window.crypto) { window.crypto = {}; }
+                if (typeof window.crypto.randomUUID !== "function") {
+                  window.crypto.randomUUID = function () {
+                    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+                      var r = (Math.random() * 16) | 0;
+                      var v = c === "x" ? r : (r & 0x3) | 0x8;
+                      return v.toString(16);
+                    });
+                  };
+                }
+              })();
+            `
+          }}
+        />
         {children}
         <SonnerToaster />
         <Toaster />

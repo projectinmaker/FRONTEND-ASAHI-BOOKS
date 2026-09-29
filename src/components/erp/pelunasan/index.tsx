@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
+import { useAuthStore } from '@/store/auth-store';
+import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
+import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { HandCoins, Loader2, Search, AlertCircle, CheckCircle2, Info, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -111,6 +114,16 @@ function parseRupiahInput(v: string): string {
 }
 
 // ─── Pelunasan Tab ────────────────────────────────────────────────────────────
+
+// ─── Draft Otomatis (localStorage) — bentuk data form alokasi pelunasan ─────
+
+interface PelunasanDraftData {
+  tanggal: string;
+  kasBankId: string;
+  noNukti: string;
+  catatan: string;
+  alokasi: { invoiceId: string; nilaiDisplay: string }[];
+}
 
 function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey?: number }) {
   const isPiutang = jenis === 'piutang';
@@ -244,6 +257,77 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   const selectedList = useMemo(() => Object.values(selected), [selected]);
   const totalAllocation = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.nilaiDisplay)), 0), [selectedList]);
 
+  // ── Draft otomatis (form alokasi pelunasan; dipulihkan saat kembali ke halaman ini) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<PelunasanDraftData>(draftKey(userId, 'pelunasan', isPiutang ? 'piutang' : 'hutang', 'create'));
+  const skipNextSaveRef = useRef(false);
+
+  // Tahap 1 — header pembayaran dipulihkan sekali saat mount.
+  const restoredHeaderRef = useRef(false);
+  useEffect(() => {
+    if (restoredHeaderRef.current) return;
+    restoredHeaderRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    if (d.tanggal) setTanggal(d.tanggal);
+    if (d.kasBankId) setKasBankId(d.kasBankId);
+    if (d.noNukti) setNoNukti(d.noNukti);
+    if (d.catatan) setCatatan(d.catatan);
+  }, []);
+
+  // Tahap 2 — alokasi invoice dipulihkan saat daftar tagihan selesai dimuat
+  // (perlu objek invoice untuk validasi sisa tagihan).
+  const restoredAlokasiRef = useRef(false);
+  useEffect(() => {
+    if (restoredAlokasiRef.current || loading) return;
+    if (data.length === 0 && !error) return; // tunggu fetch pertama selesai
+    restoredAlokasiRef.current = true;
+    const d = draft.peekDraft();
+    if (!d || !Array.isArray(d.alokasi) || d.alokasi.length === 0 || data.length === 0) return;
+    const map = new Map(data.map((inv) => [inv.invoiceId, inv]));
+    const restored: Record<string, AllocationRow> = {};
+    for (const a of d.alokasi) {
+      const inv = map.get(a.invoiceId);
+      if (inv) restored[a.invoiceId] = { invoice: inv, nilaiDisplay: a.nilaiDisplay || '' };
+    }
+    if (Object.keys(restored).length > 0) {
+      setSelected(restored);
+      toast.info('Draft pelunasan dipulihkan', { description: 'Pilihan invoice dan isian pembayaran dimuat kembali otomatis.' });
+    }
+  }, [data, loading, error]);
+
+  // Simpan tiap perubahan — lewati render pertama & jangan menimpa draft sebelum alokasi dipulihkan.
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    if (!restoredAlokasiRef.current) return;
+    draft.saveDraft({
+      tanggal,
+      kasBankId,
+      noNukti,
+      catatan,
+      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay }))
+    });
+  }, [tanggal, kasBankId, noNukti, catatan, selected]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setSelected({});
+    setNoNukti('');
+    setCatatan('');
+    setTanggal(todayStr());
+    setKasBankId('');
+    setErrors({});
+  }, []);
+
   // ── Pihak pelunasan diturunkan dari invoice terpilih ──
   // Backend mensyaratkan satu pihak_id per draft. Saat browsing "Semua {pihak}",
   // pihakId diambil dari invoice yang dicentang (semua harus satu pihak) —
@@ -304,6 +388,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
         duration: 8000
       });
       // Clear form + selection + refresh tagihan
+      skipNextSaveRef.current = true;
+      draft.clearDraft();
       clearSelection();
       setNoNukti('');
       setCatatan('');
@@ -351,9 +437,12 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       {/* Filter card */}
       <Card>
         <CardHeader className="pb-3">
-          <div>
-            <CardTitle className="text-base">Daftar Tagihan {isPiutang ? 'Piutang' : 'Hutang'}</CardTitle>
-            <CardDescription>Pilih {pihakLabel.toLowerCase()} dan filter tagihan untuk dilunasi</CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">Daftar Tagihan {isPiutang ? 'Piutang' : 'Hutang'}</CardTitle>
+              <CardDescription>Pilih {pihakLabel.toLowerCase()} dan filter tagihan untuk dilunasi</CardDescription>
+            </div>
+            <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel={isPiutang ? 'Pelunasan Piutang' : 'Pelunasan Hutang'} />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">

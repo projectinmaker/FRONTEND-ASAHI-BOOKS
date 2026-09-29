@@ -12,6 +12,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
+import { useAuthStore } from '@/store/auth-store';
+import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
+import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -30,6 +33,37 @@ import { isStockItemBarang } from '@/lib/master-data';
 // ─── Constants ───────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 100;
+
+// ─── Draft Otomatis (localStorage) — bentuk data per form create ──────────
+
+interface PermintaanBarangDraftData {
+  tanggal: string;
+  barangId: string;
+  qty: string;
+  diajukanOleh: string;
+  keterangan: string;
+}
+
+interface PemindahanBarangDraftData {
+  tanggal: string;
+  proses: string;
+  dariGudangId: string;
+  keGudangId: string;
+  barangId: string;
+  qty: string;
+  keterangan: string;
+}
+
+interface PenyesuaianDraftData {
+  tanggal: string;
+  barangId: string;
+  gudangId: string;
+  tipe: string;
+  qty: string;
+  biayaSatuan: string;
+  alasan: string;
+  expiry: string;
+}
 
 // ─── Status Badge ────────────────────────────────────────────────────────
 
@@ -171,6 +205,47 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
   const [formDiajukanOleh, setFormDiajukanOleh] = useState('');
   const [formKeterangan, setFormKeterangan] = useState('');
 
+  // ── Draft otomatis (mode create; dipulihkan saat kembali ke form ini) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<PermintaanBarangDraftData>(draftKey(userId, 'inventory', 'permintaan-barang', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (!isEdit || restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFormTanggal(d.tanggal || '');
+    setFormBarangId(d.barangId || '');
+    setFormQty(d.qty || '');
+    setFormDiajukanOleh(d.diajukanOleh || '');
+    setFormKeterangan(d.keterangan || '');
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Permintaan Barang dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    if (!isEdit) draft.saveDraft({ tanggal: formTanggal, barangId: formBarangId, qty: formQty, diajukanOleh: formDiajukanOleh, keterangan: formKeterangan });
+  }, [formTanggal, formBarangId, formQty, formDiajukanOleh, formKeterangan]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFormTanggal('');
+    setFormBarangId('');
+    setFormQty('');
+    setFormDiajukanOleh('');
+    setFormKeterangan('');
+  }, []);
+
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -239,6 +314,7 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
         };
         await api.post<PermintaanBarangResponse>('/persediaan/permintaan', payload);
         toast.success('Permintaan barang berhasil diajukan');
+        draft.clearDraft();
       }
       refreshListTab('inventory', 'permintaan-barang');
       if (activeTabId) closeTab(activeTabId);
@@ -292,7 +368,12 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
                 <Label>Keterangan</Label>
                 <Textarea placeholder="Keterangan permintaan..." rows={3} value={formKeterangan} onChange={(e) => setFormKeterangan(e.target.value)} />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                {!isEdit && (
+                  <div className="mr-auto">
+                    <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Permintaan Barang" />
+                  </div>
+                )}
                 <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
                   Batal
                 </Button>
@@ -328,6 +409,51 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
   const [formBarangId, setFormBarangId] = useState('');
   const [formQty, setFormQty] = useState('');
   const [formKeterangan, setFormKeterangan] = useState('');
+
+  // ── Draft otomatis (mode create; dipulihkan saat kembali ke form ini) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<PemindahanBarangDraftData>(draftKey(userId, 'inventory', 'pemindahan-barang', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (!isEdit || restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFormTanggal(d.tanggal || '');
+    setFormProses(d.proses || '');
+    setFormDariGudangId(d.dariGudangId || '');
+    setFormKeGudangId(d.keGudangId || '');
+    setFormBarangId(d.barangId || '');
+    setFormQty(d.qty || '');
+    setFormKeterangan(d.keterangan || '');
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Pemindahan Barang dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    if (!isEdit) draft.saveDraft({ tanggal: formTanggal, proses: formProses, dariGudangId: formDariGudangId, keGudangId: formKeGudangId, barangId: formBarangId, qty: formQty, keterangan: formKeterangan });
+  }, [formTanggal, formProses, formDariGudangId, formKeGudangId, formBarangId, formQty, formKeterangan]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFormTanggal('');
+    setFormProses('');
+    setFormDariGudangId('');
+    setFormKeGudangId('');
+    setFormBarangId('');
+    setFormQty('');
+    setFormKeterangan('');
+  }, []);
 
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
@@ -411,6 +537,7 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
         };
         await api.post<PemindahanBarangResponse>('/persediaan/pemindahan', payload);
         toast.success('Pemindahan barang berhasil diproses');
+        draft.clearDraft();
       }
       refreshListTab('inventory', 'pemindahan-barang');
       if (activeTabId) closeTab(activeTabId);
@@ -497,7 +624,12 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
                   <Textarea placeholder="Keterangan pemindahan..." rows={3} value={formKeterangan} onChange={(e) => setFormKeterangan(e.target.value)} />
                 </div>
               )}
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                {!isEdit && (
+                  <div className="mr-auto">
+                    <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Pemindahan Barang" />
+                  </div>
+                )}
                 <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
                   Batal
                 </Button>
@@ -535,6 +667,55 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
   const [formBiayaSatuan, setFormBiayaSatuan] = useState('');
   const [formAlasan, setFormAlasan] = useState('');
   const [formExpiry, setFormExpiry] = useState('');
+
+  // ── Draft otomatis (mode create; dipulihkan saat kembali ke form ini) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<PenyesuaianDraftData>(draftKey(userId, 'inventory', 'penyesuaian', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (!!formProps?.id || restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFormTanggal(d.tanggal || '');
+    setFormBarangId(d.barangId || '');
+    setFormGudangId(d.gudangId || '');
+    setFormTipe(d.tipe || '');
+    setFormQty(d.qty || '');
+    setFormBiayaSatuan(d.biayaSatuan || '');
+    setFormAlasan(d.alasan || '');
+    setFormExpiry(d.expiry || '');
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Penyesuaian Stok dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    if (!formProps?.id && !createdId) draft.saveDraft({ tanggal: formTanggal, barangId: formBarangId, gudangId: formGudangId, tipe: formTipe, qty: formQty, biayaSatuan: formBiayaSatuan, alasan: formAlasan, expiry: formExpiry });
+  }, [formTanggal, formBarangId, formGudangId, formTipe, formQty, formBiayaSatuan, formAlasan, formExpiry]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFormTanggal('');
+    setFormBarangId('');
+    setFormGudangId('');
+    setFormTipe('');
+    setFormQty('');
+    setFormBiayaSatuan('');
+    setFormAlasan('');
+    setFormExpiry('');
+    setBarangDetail(null);
+    setSubmitError('');
+  }, []);
   const [originalExpiry, setOriginalExpiry] = useState<string | null>(null);
   const [barangDetail, setBarangDetail] = useState<BarangResponse | null>(null);
   const [barangError, setBarangError] = useState('');
@@ -662,6 +843,7 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
           alasan: formAlasan || null
         };
         const saved = await api.post<PenyesuaianStokResponse>('/persediaan/penyesuaian-stok', payload);
+        draft.clearDraft();
         if (showExpiry && saved.tanggalKedaluwarsa !== formExpiry) {
           setCreatedId(saved.id);
           refreshListTab('inventory', 'penyesuaian');
@@ -786,7 +968,12 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
                 <Label>Alasan</Label>
                 <Textarea placeholder="Alasan penyesuaian..." rows={3} value={formAlasan} onChange={(e) => setFormAlasan(e.target.value)} />
               </div>
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                {!isEdit && (
+                  <div className="mr-auto">
+                    <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Penyesuaian Stok" />
+                  </div>
+                )}
                 <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
                   Batal
                 </Button>

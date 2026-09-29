@@ -482,6 +482,10 @@ export interface BarangCreate {
   akunHppId?: string | null;
   akunPenjualanId?: string | null;
   stockItem?: boolean;
+  // Task 27-c — dynamic form barang: metode valuasi opsional saat create (AVERAGE/FIFO/FEFO).
+  metodeValuasi?: string;
+  // Task 27-c — dynamic form barang: status opsional saat create ('AKTIF'/'NONAKTIF').
+  status?: string;
   // === Legacy ===
   jenisBarang?: JenisBarang;
   /** Tahap 1: opsional. Kirim UUID valid, atau null untuk kosong. Jangan kirim object akunPersediaan. */
@@ -3174,6 +3178,45 @@ export interface AuditLogEntry {
 /** Respons GET /access/audit-logs. */
 export interface AuditLogListResponse {
   data: AuditLogEntry[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+// ============================================================
+// HARD DELETE (pembatalan = hapus permanen + histori)
+// ============================================================
+
+/** Respons endpoint /cancel (kini hard delete dengan jejak histori). */
+export interface HardDeleteResponse {
+  success: boolean;
+  documentType: string;
+  documentId: string;
+  documentNumber: string | null;
+  deletedAt: string;
+  message: string;
+}
+
+/** Ringkasan entri GET /histori/dokumen-terhapus (tanpa snapshot). */
+export interface DeletedDocumentLogResponse {
+  id: string;
+  documentType: string;
+  documentId: string;
+  documentNumber: string | null;
+  documentDate: string | null;
+  documentStatus: string | null;
+  totalAmount: string | null;
+  deletedBy: { id: string; username: string; namaLengkap: string | null } | null;
+  deletedAt: string;
+  reason: string | null;
+}
+
+export interface DeletedDocumentLogDetailResponse extends DeletedDocumentLogResponse {
+  snapshot: Record<string, unknown>;
+}
+
+export interface DeletedDocumentLogListResponse {
+  data: DeletedDocumentLogResponse[];
   total: number;
   skip: number;
   limit: number;

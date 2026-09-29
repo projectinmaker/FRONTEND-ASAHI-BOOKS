@@ -14,6 +14,9 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
+import { useAuthStore } from '@/store/auth-store';
+import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
+import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { formatRp, formatDate } from '@/lib/pdf-utils';
@@ -282,8 +285,7 @@ function JurnalUmumDetailTab({ jurnalId }: { jurnalId: string }) {
                           formKey: 'jurnal-manual-edit',
                           formProps: { jurnalId: detail.id }
                         })
-                      }
-                    >
+                      }>
                       <Pencil className="h-4 w-4" />
                       Edit Jurnal
                     </Button>
@@ -379,6 +381,13 @@ interface JurnalManualDetailRow {
   keterangan: string;
 }
 
+/** Bentuk data draft otomatis (localStorage) untuk jurnal manual create. */
+interface JurnalManualDraftData {
+  tanggal: string;
+  keterangan: string;
+  details: JurnalManualDetailRow[];
+}
+
 // Tanggal lokal (bukan UTC) — `toISOString()` memakai UTC sehingga jam 00:00–06:59 WIB
 // masih terhitung "kemarin". Form tanggal <input type="date"> butuh tanggal lokal user.
 const toLocalDateInput = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -418,6 +427,45 @@ function JurnalManualForm() {
   const [coaOptions, setCoaOptions] = useState<COAResponse[]>([]);
   const [loadingDropdowns, setLoadingDropdowns] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<JurnalManualDraftData>(draftKey(userId, 'general-ledger', 'jurnal-manual', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    if (d.tanggal) setTanggal(d.tanggal);
+    if (d.keterangan) setKeterangan(d.keterangan);
+    if (Array.isArray(d.details) && d.details.length >= 2) setDetails(d.details);
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Jurnal Manual dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    draft.saveDraft({ tanggal, keterangan, details });
+  }, [tanggal, keterangan, details]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setTanggal(todayIso());
+    setKeterangan('');
+    setDetails([{ ...emptyDetailRow }, { ...emptyDetailRow }]);
+    setAccountErrors({});
+    setSubmitError('');
+  }, []);
 
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
@@ -516,6 +564,7 @@ function JurnalManualForm() {
       };
       await api.post<JurnalUmumDetailResponse>('/jurnal/manual', payload);
       toast.success('Jurnal manual berhasil dibuat');
+      draft.clearDraft();
       refreshListTab('general-ledger', 'jurnal-umum');
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
@@ -673,7 +722,10 @@ function JurnalManualForm() {
         </Card>
 
         {/* Actions */}
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="mr-auto">
+            <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Jurnal Manual" />
+          </div>
           <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
             Batal
           </Button>
@@ -722,10 +774,7 @@ function JurnalManualEditForm({ jurnalId }: { jurnalId: string }) {
       setLoadingData(true);
       setLoadError('');
       try {
-        const [detail, coa] = await Promise.all([
-          api.get<JurnalUmumDetailResponse>(`/jurnal/${jurnalId}`),
-          loadCOA({ tingkat: 'DETAIL', activeOnly: true, allowManualPosting: true }).catch(() => [] as COAResponse[])
-        ]);
+        const [detail, coa] = await Promise.all([api.get<JurnalUmumDetailResponse>(`/jurnal/${jurnalId}`), loadCOA({ tingkat: 'DETAIL', activeOnly: true, allowManualPosting: true }).catch(() => [] as COAResponse[])]);
         if (cancelled) return;
 
         // Guard UX — server tetap otoritatif (404/400) untuk kasus di luar cek ini.
@@ -872,9 +921,7 @@ function JurnalManualEditForm({ jurnalId }: { jurnalId: string }) {
   // 2. Akun yang valid untuk jurnal manual.
   // Catatan JRN-001: penyaringan UI tidak menggantikan validasi server.
   const coaDropdownOptions = [
-    ...[...usedAccounts.values()]
-      .filter((a) => !coaOptions.some((c) => c.id === a.id))
-      .map((a) => ({ id: a.id, label: `${a.kode} — ${a.nama}`, disabled: true })),
+    ...[...usedAccounts.values()].filter((a) => !coaOptions.some((c) => c.id === a.id)).map((a) => ({ id: a.id, label: `${a.kode} — ${a.nama}`, disabled: true })),
     ...coaOptions
       .filter((a) => canPostManually(a) && !accountErrors[a.id])
       .map((c) => ({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,10 @@ import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 import { api, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
+import { useAuthStore } from '@/store/auth-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
+import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
+import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { Loader2, Check, ChevronDown, Info } from 'lucide-react';
 import type { KasBankAkunResponse, RekonsiliasiBankResponse, RekonsiliasiBankCreate, SaldoBukuPreviewResponse } from '@/types/api';
 
@@ -86,6 +89,14 @@ interface Props {
   id?: string;
 }
 
+/** Bentuk data draft otomatis (localStorage) untuk mode create. */
+interface RekonsiliasiDraftData {
+  kasBankId: string;
+  tanggal: string;
+  saldoBank: string;
+  keterangan: string;
+}
+
 export default function RekonsiliasiBankForm({ mode }: Props) {
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
@@ -93,6 +104,11 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
   const refreshListTab = useTabStore((s) => s.refreshListTab);
 
   const title = 'Buat Rekonsiliasi Bank';
+
+  // ── Draft otomatis (form ini selalu mode create) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<RekonsiliasiDraftData>(draftKey(userId, 'kasbank', 'rekonsiliasi-bank', 'create'));
+  const skipNextSaveRef = useRef(false);
 
   // ── Dropdown data ──
   const [kasBankOptions, setKasBankOptions] = useState<KasBankAkunResponse[]>([]);
@@ -109,6 +125,46 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
   // ── Preview saldo ──
   const [previewSaldo, setPreviewSaldo] = useState<SaldoBukuPreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // ── Draft otomatis: pulihkan sekali saat mount (ada draft) ──
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setKasBankId(d.kasBankId || '');
+    setTanggal(d.tanggal || todayStr());
+    setSaldoBank(d.saldoBank || '');
+    setKeterangan(d.keterangan || '');
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Rekonsiliasi Bank dimuat kembali otomatis.' });
+  }, []);
+
+  // ── Draft otomatis: simpan tiap perubahan (lewati render pertama agar form kosong tidak menimpa draft) ──
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    draft.saveDraft({ kasBankId, tanggal, saldoBank, keterangan });
+  }, [kasBankId, tanggal, saldoBank, keterangan]);
+
+  // ── Draft otomatis: buang draft → kosongkan form ──
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setKasBankId('');
+    setTanggal(todayStr());
+    setSaldoBank('');
+    setKeterangan('');
+    setPreviewSaldo(null);
+    setErrors({});
+  }, []);
 
   // ── Fetch dropdowns ──
   const fetchDropdowns = useCallback(async () => {
@@ -172,6 +228,7 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
       };
       const res = await api.post<RekonsiliasiBankResponse>('/kas-bank/rekonsiliasi-bank', payload);
       toast.success('Rekonsiliasi bank berhasil dibuat (DRAFT)');
+      draft.clearDraft();
       refreshListTab('cash-bank', 'rekonsiliasi-bank');
       // Open detail in new tab, then close this tab
       openFormTab({
@@ -284,7 +341,10 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 mt-6">
+          <div className="flex flex-wrap items-center justify-end gap-2 mt-6">
+            <div className="mr-auto">
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Rekonsiliasi Bank" />
+            </div>
             <Button variant="outline" onClick={handleClose} disabled={submitting}>
               Batal
             </Button>

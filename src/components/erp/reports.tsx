@@ -27,6 +27,7 @@ const AuditPersediaanPage = dynamic(() => import('@/components/erp/reports/audit
 const AssetReconciliationPage = dynamic(() => import('@/components/erp/reports/asset-reconciliation'), { ssr: false });
 // Phase 9: Accounting Health + Reconciliation Detail (GRNI / Cash Flow vs BS / Equity vs BS)
 const AccountingHealthPage = dynamic(() => import('@/components/erp/reports/accounting-health'), { ssr: false });
+const HistoriDokumenTerhapusPage = dynamic(() => import('@/components/erp/reports/histori-dokumen-terhapus'), { ssr: false });
 const ReconciliationDetailPage = dynamic(() => import('@/components/erp/reports/reconciliation-detail'), { ssr: false });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ const subPageTitles: Record<string, string> = {
   'audit-persediaan': 'Audit Persediaan',
   'rekonsiliasi-aset': 'Rekonsiliasi Aset',
   'accounting-health': 'Accounting Health',
+  'histori-dokumen-terhapus': 'Histori Dokumen Terhapus',
   'rekonsiliasi-grni': 'GRNI vs GL',
   'rekonsiliasi-cf-bs': 'Cash Flow vs Neraca',
   'rekonsiliasi-eq-bs': 'Ekuitas vs Neraca',
@@ -1619,6 +1621,8 @@ export default function ReportsModule({ subPage: propsSubPage, refreshKey, formM
         return <AssetReconciliationPage />;
       case 'accounting-health':
         return <AccountingHealthPage />;
+      case 'histori-dokumen-terhapus':
+        return <HistoriDokumenTerhapusPage />;
       case 'rekonsiliasi-grni':
         return <ReconciliationDetailPage subPage="rekonsiliasi-grni" />;
       case 'rekonsiliasi-cf-bs':

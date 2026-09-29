@@ -9,7 +9,7 @@ import { StockOperationErrorDialog, useStockOperationError } from '@/components/
 import OrderDocumentForm from '@/components/erp/orders/order-document-form';
 import { canEditOrder, formatOrderMoney, summarizeOrderTotals } from '@/lib/order-documents';
 
-import { useState, useCallback, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,9 @@ import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
+import { useAuthStore } from '@/store/auth-store';
+import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
+import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { useERPStore } from '@/store/erp-store';
 import { PesananCetakTab, PengirimanCetakTab, InvoiceCetakTab, ReturCetakTab } from '@/components/erp/sales/cetak-tabs';
@@ -35,7 +38,8 @@ import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workfl
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { useInvoiceSaldos } from '@/lib/use-invoice-saldos';
-import type { SalesOrderResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate } from '@/types/api';
+import type { SalesOrderResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -139,6 +143,48 @@ function newDetailRow(): FormDetailRow {
 
 function newBiayaRow(): FormBiayaRow {
   return { id: crypto.randomUUID(), nama: '', jumlah: '' };
+}
+
+// ─── Draft Otomatis (localStorage) — bentuk data per form create ──────────
+
+interface PengirimanDraftData {
+  salesOrderId: string;
+  pelangganId: string;
+  gudangId: string;
+  tanggal: string;
+  ekspedisi: string;
+  alamatPengiriman: string;
+  keterangan: string;
+  detail: FormDetailRow[];
+}
+
+interface InvoicePenjualanDraftData {
+  pelangganId: string;
+  salesOrderId: string;
+  tanggal: string;
+  syaratBayarId: string;
+  fob: string;
+  ekspedisi: string;
+  tanggalPengiriman: string;
+  alamatPengiriman: string;
+  diskonGlobal: string;
+  ppn: string;
+  keterangan: string;
+  detail: FormDetailRow[];
+  biayaTambahan: FormBiayaRow[];
+}
+
+interface ReturPenjualanDraftData {
+  invoiceId: string;
+  pengirimanId: string;
+  gudangId: string;
+  tanggal: string;
+  alamatPengembalian: string;
+  noPengembalian: string;
+  diskonGlobal: string;
+  ppn: string;
+  keterangan: string;
+  quantities: ReturnQuantities;
 }
 
 // ─── Detail Table With Price (for SO / Invoice / Retur forms) ──────────────
@@ -514,6 +560,63 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [soLoading, setSoLoading] = useState(false);
 
+  // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<PengirimanDraftData>(draftKey(userId, 'sales', 'pengiriman', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFSalesOrderId(d.salesOrderId || '');
+    setFPelangganId(d.pelangganId || '');
+    setFGudangId(d.gudangId || '');
+    setFTanggal(d.tanggal || todayStr());
+    setFEkspedisi(d.ekspedisi || '');
+    setFAlamatPengiriman(d.alamatPengiriman || '');
+    setFKeterangan(d.keterangan || '');
+    setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Pengiriman Barang dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    draft.saveDraft({
+      salesOrderId: fSalesOrderId,
+      pelangganId: fPelangganId,
+      gudangId: fGudangId,
+      tanggal: fTanggal,
+      ekspedisi: fEkspedisi,
+      alamatPengiriman: fAlamatPengiriman,
+      keterangan: fKeterangan,
+      detail: fDetail
+    });
+  }, [fSalesOrderId, fPelangganId, fGudangId, fTanggal, fEkspedisi, fAlamatPengiriman, fKeterangan, fDetail]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFSalesOrderId('');
+    setFPelangganId('');
+    setFGudangId('');
+    setFTanggal(todayStr());
+    setFEkspedisi('');
+    setFAlamatPengiriman('');
+    setFKeterangan('');
+    setFDetail([newDetailRow()]);
+    setFormErrors({});
+  }, []);
+
   // === Fix persist salesOrderDetailId: saat SO dipilih, ambil detail SO dan
   // prefill baris barang (qty + satuan + link line SO) serta pelanggan.
   // Baris ter-link otomatis mengirim salesOrderDetailId sehingga validasi
@@ -584,6 +687,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
       };
       await api.post('/penjualan/pengiriman', body);
       toast.success('Pengiriman barang berhasil dibuat');
+      draft.clearDraft();
       refreshListTab('sales', subPage);
       if (activeTabId) closeTab(activeTabId);
     } catch (e) {
@@ -665,7 +769,10 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            <div className="mr-auto">
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Pengiriman Barang" />
+            </div>
             <Button variant="outline" size="sm" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>
@@ -913,6 +1020,78 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
 
+  // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<InvoicePenjualanDraftData>(draftKey(userId, 'sales', 'sales-invoice', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFPelangganId(d.pelangganId || '');
+    setFSalesOrderId(d.salesOrderId || '');
+    setFTanggal(d.tanggal || todayStr());
+    setFSyaratBayarId(d.syaratBayarId || '');
+    setFFob(d.fob || '');
+    setFEkspedisi(d.ekspedisi || '');
+    setFTanggalPengiriman(d.tanggalPengiriman || '');
+    setFAlamatPengiriman(d.alamatPengiriman || '');
+    setFDiskonGlobal(d.diskonGlobal ?? '0');
+    setFPpn(d.ppn ?? '11');
+    setFKeterangan(d.keterangan || '');
+    setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
+    setFBiayaTambahan(Array.isArray(d.biayaTambahan) ? d.biayaTambahan : []);
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Invoice Penjualan dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    draft.saveDraft({
+      pelangganId: fPelangganId,
+      salesOrderId: fSalesOrderId,
+      tanggal: fTanggal,
+      syaratBayarId: fSyaratBayarId,
+      fob: fFob,
+      ekspedisi: fEkspedisi,
+      tanggalPengiriman: fTanggalPengiriman,
+      alamatPengiriman: fAlamatPengiriman,
+      diskonGlobal: fDiskonGlobal,
+      ppn: fPpn,
+      keterangan: fKeterangan,
+      detail: fDetail,
+      biayaTambahan: fBiayaTambahan
+    });
+  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fFob, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fKeterangan, fDetail, fBiayaTambahan]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFPelangganId('');
+    setFSalesOrderId('');
+    setFTanggal(todayStr());
+    setFSyaratBayarId('');
+    setFFob('');
+    setFEkspedisi('');
+    setFTanggalPengiriman('');
+    setFAlamatPengiriman('');
+    setFDiskonGlobal('0');
+    setFPpn('11');
+    setFKeterangan('');
+    setFDetail([newDetailRow()]);
+    setFBiayaTambahan([]);
+    setFormErrors({});
+  }, []);
+
   const formSubtotal = useMemo(
     () =>
       fDetail.reduce((s, r) => {
@@ -969,6 +1148,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       };
       await api.post('/penjualan/sales-invoice', body);
       toast.success('Invoice penjualan berhasil dibuat');
+      draft.clearDraft();
       refreshListTab('sales', subPage);
       if (activeTabId) closeTab(activeTabId);
     } catch (e) {
@@ -1067,7 +1247,10 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            <div className="mr-auto">
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Invoice Penjualan" />
+            </div>
             <Button variant="outline" size="sm" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>
@@ -1317,6 +1500,71 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fPpn, setFPpn] = useState('11');
   const [fKeterangan, setFKeterangan] = useState('');
 
+  // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<ReturPenjualanDraftData>(draftKey(userId, 'sales', 'sales-retur', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFInvoiceId(d.invoiceId || '');
+    setFPengirimanId(d.pengirimanId || '');
+    setFGudangId(d.gudangId || '');
+    setFTanggal(d.tanggal || todayStr());
+    setFAlamatPengembalian(d.alamatPengembalian || '');
+    setFNoPengembalian(d.noPengembalian || '');
+    setFDiskonGlobal(d.diskonGlobal ?? '0');
+    setFPpn(d.ppn ?? '11');
+    setFKeterangan(d.keterangan || '');
+    setQuantities(d.quantities || {});
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Retur Penjualan dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    if (!createdReturn) {
+      draft.saveDraft({
+        invoiceId: fInvoiceId,
+        pengirimanId: fPengirimanId,
+        gudangId: fGudangId,
+        tanggal: fTanggal,
+        alamatPengembalian: fAlamatPengembalian,
+        noPengembalian: fNoPengembalian,
+        diskonGlobal: fDiskonGlobal,
+        ppn: fPpn,
+        keterangan: fKeterangan,
+        quantities
+      });
+    }
+  }, [fInvoiceId, fPengirimanId, fGudangId, fTanggal, fAlamatPengembalian, fNoPengembalian, fDiskonGlobal, fPpn, fKeterangan, quantities]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFInvoiceId('');
+    setQuantities({});
+    setFPengirimanId('');
+    setFGudangId('');
+    setFTanggal(todayStr());
+    setFAlamatPengembalian('');
+    setFNoPengembalian('');
+    setFDiskonGlobal('0');
+    setFPpn('11');
+    setFKeterangan('');
+    setFormErrors({});
+  }, []);
+
   const filteredPengirimanOptions = useMemo(() => (fPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === fPelangganId) : pengirimanOptions), [pengirimanOptions, fPelangganId]);
 
   const handleSubmit = useCallback(async () => {
@@ -1355,6 +1603,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
         setCreatedReturn(saved);
         refreshListTab('sales', subPage);
       });
+      draft.clearDraft();
       if (result.mismatches.length) {
         setSaveWarning('Retur ' + result.saved.noRetur + ' sudah dibuat, tetapi respons backend belum mengonfirmasi referensi detail invoice / harga / qty. Tinjau dokumen dari daftar sebelum posting; jangan membuat ulang.');
         return;
@@ -1471,7 +1720,10 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Alasan retur / catatan tambahan..." />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            <div className="mr-auto">
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Retur Penjualan" />
+            </div>
             <Button variant="outline" size="sm" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>
@@ -1727,17 +1979,28 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
     setSkip(0);
   }, []);
 
+  // ── Cancel = Hard Delete (hapus permanen + histori) ──
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
   const handleCancel = useCallback(
-    async (id: string) => {
+    async (reason?: string) => {
+      if (!cancelTarget) return;
+      setCancelSubmitting(true);
       try {
-        await api.post(`/penjualan/sales-order/${id}/cancel`);
-        toast.success('Pesanan berhasil dibatalkan');
+        const res = await api.post<HardDeleteResponse>(`/penjualan/sales-order/${cancelTarget}/cancel`, {
+          reason: reason || undefined
+        });
+        toast.success(res.message || 'Pesanan dihapus permanen');
+        setCancelTarget(null);
         fetchData();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Gagal membatalkan');
+        toast.error(e instanceof Error ? e.message : 'Gagal menghapus pesanan');
+      } finally {
+        setCancelSubmitting(false);
       }
     },
-    [fetchData]
+    [cancelTarget, fetchData]
   );
 
   const wfStates = useWorkflowStates(
@@ -1966,7 +2229,7 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                               </Button>
                             }
                             {d.status !== 'DIBATALKAN' && (
-                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => handleCancel(d.id)}>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
                                 Batal
                               </Button>
                             )}
@@ -1983,6 +2246,18 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
           {!error && <Pagination skip={skip} total={total} onPrev={() => setSkip((p) => Math.max(0, p - PAGE_SIZE))} onNext={() => setSkip((p) => p + PAGE_SIZE)} />}
         </CardContent>
       </Card>
+
+      {/* Cancel = Hard Delete */}
+      <HardDeleteCancelDialog
+        open={!!cancelTarget}
+        onOpenChange={(o) => {
+          if (!o) setCancelTarget(null);
+        }}
+        title="Batalkan Pesanan Penjualan?"
+        formLabel="pesanan penjualan"
+        submitting={cancelSubmitting}
+        onConfirm={(r) => handleCancel(r)}
+      />
     </div>
   );
 }
@@ -2039,17 +2314,28 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
     setSkip(0);
   }, []);
 
+  // ── Cancel = Hard Delete (hapus permanen + histori) ──
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
   const handleCancel = useCallback(
-    async (id: string) => {
+    async (reason?: string) => {
+      if (!cancelTarget) return;
+      setCancelSubmitting(true);
       try {
-        await api.post(`/penjualan/pengiriman/${id}/cancel`);
-        toast.success('Pengiriman berhasil dibatalkan');
+        const res = await api.post<HardDeleteResponse>(`/penjualan/pengiriman/${cancelTarget}/cancel`, {
+          reason: reason || undefined
+        });
+        toast.success(res.message || 'Pengiriman dihapus permanen');
+        setCancelTarget(null);
         fetchData();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Gagal membatalkan');
+        toast.error(e instanceof Error ? e.message : 'Gagal menghapus pengiriman');
+      } finally {
+        setCancelSubmitting(false);
       }
     },
-    [fetchData]
+    [cancelTarget, fetchData]
   );
 
   // Phase 4 — reverse finished (SELESAI) pengiriman: kembalikan stok + reverse HPP journal
@@ -2289,7 +2575,7 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
                               </Button>
                             )}
                             {(d.status === 'DRAFT' || d.status === 'DIPROSES') && (
-                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => handleCancel(d.id)}>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
                                 Batal
                               </Button>
                             )}
@@ -2348,6 +2634,18 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Cancel = Hard Delete */}
+      <HardDeleteCancelDialog
+        open={!!cancelTarget}
+        onOpenChange={(o) => {
+          if (!o) setCancelTarget(null);
+        }}
+        title="Batalkan Pengiriman?"
+        formLabel="pengiriman"
+        submitting={cancelSubmitting}
+        onConfirm={(r) => handleCancel(r)}
+      />
     </div>
   );
 }
@@ -2404,17 +2702,28 @@ function InvoiceTab({ pelangganOptions, syaratBayarOptions, barangOptions, sales
     setSkip(0);
   }, []);
 
+  // ── Cancel = Hard Delete (hapus permanen + histori) ──
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
   const handleCancel = useCallback(
-    async (id: string) => {
+    async (reason?: string) => {
+      if (!cancelTarget) return;
+      setCancelSubmitting(true);
       try {
-        await api.post(`/penjualan/sales-invoice/${id}/cancel`);
-        toast.success('Invoice berhasil dibatalkan');
+        const res = await api.post<HardDeleteResponse>(`/penjualan/sales-invoice/${cancelTarget}/cancel`, {
+          reason: reason || undefined
+        });
+        toast.success(res.message || 'Invoice dihapus permanen');
+        setCancelTarget(null);
         fetchData();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Gagal membatalkan');
+        toast.error(e instanceof Error ? e.message : 'Gagal menghapus invoice');
+      } finally {
+        setCancelSubmitting(false);
       }
     },
-    [fetchData]
+    [cancelTarget, fetchData]
   );
 
   const wfStates = useWorkflowStates(
@@ -2609,7 +2918,7 @@ function InvoiceTab({ pelangganOptions, syaratBayarOptions, barangOptions, sales
                               </Button>
                             )}
                             {d.status !== 'DIBATALKAN' && (
-                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => handleCancel(d.id)}>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
                                 Batal
                               </Button>
                             )}
@@ -2626,6 +2935,18 @@ function InvoiceTab({ pelangganOptions, syaratBayarOptions, barangOptions, sales
           {!error && <Pagination skip={skip} total={total} onPrev={() => setSkip((p) => Math.max(0, p - PAGE_SIZE))} onNext={() => setSkip((p) => p + PAGE_SIZE)} />}
         </CardContent>
       </Card>
+
+      {/* Cancel = Hard Delete */}
+      <HardDeleteCancelDialog
+        open={!!cancelTarget}
+        onOpenChange={(o) => {
+          if (!o) setCancelTarget(null);
+        }}
+        title="Batalkan Invoice Penjualan?"
+        formLabel="invoice penjualan"
+        submitting={cancelSubmitting}
+        onConfirm={(r) => handleCancel(r)}
+      />
     </div>
   );
 }
@@ -2682,17 +3003,28 @@ function ReturTab({ pelangganOptions, barangOptions, invoiceOptions, refreshKey 
     setSkip(0);
   }, []);
 
+  // ── Cancel = Hard Delete (hapus permanen + histori) ──
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
   const handleCancel = useCallback(
-    async (id: string) => {
+    async (reason?: string) => {
+      if (!cancelTarget) return;
+      setCancelSubmitting(true);
       try {
-        await api.post(`/penjualan/sales-retur/${id}/cancel`);
-        toast.success('Retur berhasil dibatalkan');
+        const res = await api.post<HardDeleteResponse>(`/penjualan/sales-retur/${cancelTarget}/cancel`, {
+          reason: reason || undefined
+        });
+        toast.success(res.message || 'Retur dihapus permanen');
+        setCancelTarget(null);
         fetchData();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Gagal membatalkan');
+        toast.error(e instanceof Error ? e.message : 'Gagal menghapus retur');
+      } finally {
+        setCancelSubmitting(false);
       }
     },
-    [fetchData]
+    [cancelTarget, fetchData]
   );
 
   const wfStates = useWorkflowStates(
@@ -2878,7 +3210,7 @@ function ReturTab({ pelangganOptions, barangOptions, invoiceOptions, refreshKey 
                               </Button>
                             )}
                             {d.status !== 'DIBATALKAN' && (
-                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => handleCancel(d.id)}>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
                                 Batal
                               </Button>
                             )}
@@ -2895,6 +3227,18 @@ function ReturTab({ pelangganOptions, barangOptions, invoiceOptions, refreshKey 
           {!error && <Pagination skip={skip} total={total} onPrev={() => setSkip((p) => Math.max(0, p - PAGE_SIZE))} onNext={() => setSkip((p) => p + PAGE_SIZE)} />}
         </CardContent>
       </Card>
+
+      {/* Cancel = Hard Delete */}
+      <HardDeleteCancelDialog
+        open={!!cancelTarget}
+        onOpenChange={(o) => {
+          if (!o) setCancelTarget(null);
+        }}
+        title="Batalkan Retur Penjualan?"
+        formLabel="retur penjualan"
+        submitting={cancelSubmitting}
+        onConfirm={(r) => handleCancel(r)}
+      />
     </div>
   );
 }

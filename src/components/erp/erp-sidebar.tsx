@@ -1,106 +1,19 @@
 'use client';
 
 import * as React from 'react';
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity } from 'lucide-react';
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail } from '@/components/ui/sidebar';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
 import { useERPStore, type ModuleId } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useAccessStore } from '@/store/access-store';
 
 // ── Data definitions ──────────────────────────────────────────────────────────
-
-// ── RBAC v2 (Task 21-g): mapping statis MenuId/subPageId → permission code ────
-// Menu frontend memang statis, jadi tabel ini dikelola sebagai konstanta.
-// Sumber kode permission: registry backend (GET /access/permissions).
-
-/** Permission VIEW untuk subPage (key: "moduleId/subPageId") */
-const SUB_PAGE_PERMISSIONS: Record<string, string> = {
-  // Kas & Bank
-  'cash-bank/pembayaran': 'finance.cash_payment.view',
-  'cash-bank/penerimaan': 'finance.cash_receipt.view',
-  'cash-bank/transfer-bank': 'finance.bank_transfer.view',
-  'cash-bank/rekonsiliasi-bank': 'finance.bank_reconciliation.view',
-  // Penjualan
-  'sales/pesanan': 'sales.sales_order.view',
-  'sales/pengiriman': 'sales.delivery.view',
-  'sales/invoice': 'sales.sales_invoice.view',
-  'sales/retur': 'sales.sales_return.view',
-  'sales/pelunasan-piutang': 'sales.ar_settlement.view',
-  // Pembelian
-  'purchasing/pesanan': 'purchase.purchase_order.view',
-  'purchasing/penerimaan': 'purchase.goods_receipt.view',
-  'purchasing/invoice': 'purchase.purchase_invoice.view',
-  'purchasing/retur': 'purchase.purchase_return.view',
-  'purchasing/pelunasan-hutang': 'purchase.ap_settlement.view',
-  // Aset Tetap
-  'fixed-assets/kategori-aset': 'master.kategori_aset.view',
-  'fixed-assets/daftar-aset': 'asset.register.view',
-  'fixed-assets/penyusutan': 'asset.transaction.view',
-  'fixed-assets/transaksi-aset': 'asset.transaction.view',
-  // Persediaan
-  'inventory/permintaan-barang': 'inventory.stock_request.view',
-  'inventory/pemindahan-barang': 'inventory.transfer.view',
-  'inventory/penyesuaian': 'inventory.adjustment.view',
-  'inventory/barang-jasa': 'master.barang.view',
-  'inventory/gudang': 'master.gudang.view',
-  'inventory/stok-kartu': 'inventory.stock.view',
-  // Buku Besar
-  'general-ledger/jurnal-umum': 'accounting.journal.view',
-  // Antrean Persetujuan
-  'workflow-queue/queue': 'workflow.queue.view',
-  // Laporan — Laporan Keuangan
-  'reports/laba-rugi': 'reports.financial.view',
-  'reports/neraca': 'reports.financial.view',
-  'reports/arus-kas': 'reports.financial.view',
-  'reports/neraca-saldo': 'reports.financial.view',
-  'reports/perubahan-modal': 'reports.financial.view',
-  // Laporan — Buku Besar
-  'reports/rincian-buku-besar': 'reports.ledger.view',
-  // Laporan — Piutang & Hutang
-  'reports/umur-piutang': 'reports.ar_aging.view',
-  'reports/umur-hutang': 'reports.ap_aging.view',
-  // Laporan — Kas & Bank
-  'reports/mutasi-kas': 'reports.cashbank.view',
-  'reports/mutasi-bank': 'reports.cashbank.view',
-  'reports/rekap-kas-bank': 'reports.cashbank.view',
-  // Laporan — Lainnya
-  'reports/penutupan-periode': 'accounting.period.view',
-  'reports/rekonsiliasi-persediaan': 'reports.inventory_report.view',
-  'reports/audit-persediaan': 'reports.inventory_report.view',
-  'reports/rekonsiliasi-aset': 'asset.reconciliation.view',
-  'reports/rekonsiliasi-grni': 'reports.reconciliation_report.view',
-  'reports/rekonsiliasi-cf-bs': 'reports.reconciliation_report.view',
-  'reports/rekonsiliasi-eq-bs': 'reports.reconciliation_report.view',
-  'reports/accounting-health': 'reports.reconciliation_report.view',
-  'reports/laporan-lainnya': 'reports.reconciliation_report.view',
-  // Pengaturan
-  'settings/coa': 'accounting.coa.view',
-  'settings/setting-akun': 'master.setting_akun.view',
-  'settings/pelanggan': 'master.pelanggan.view',
-  'settings/supplier': 'master.supplier.view',
-  'settings/gudang': 'master.gudang.view',
-  'settings/kategori-barang': 'master.kategori_barang.view',
-  'settings/satuan': 'master.satuan.view',
-  'settings/syarat-bayar': 'master.syarat_bayar.view',
-  'settings/pengguna': 'system.users.view',
-  'settings/karyawan': 'master.karyawan.view'
-};
-
-/** Permission VIEW untuk modul single (tanpa subPage) */
-const MODULE_PERMISSIONS: Record<string, string> = {
-  organisasi: 'system.organisation.view'
-};
-
-/** Ambil permission code sebuah subPage (undefined = tidak digating) */
-function subPagePermission(moduleId: string, subPageId: string): string | undefined {
-  return SUB_PAGE_PERMISSIONS[`${moduleId}/${subPageId}`];
-}
 
 interface SubPage {
   id: string;
@@ -245,6 +158,7 @@ const modules: NavModule[] = [
           { id: 'rekonsiliasi-cf-bs', label: 'Cash Flow vs Neraca', icon: Scale },
           { id: 'rekonsiliasi-eq-bs', label: 'Ekuitas vs Neraca', icon: Scale },
           { id: 'accounting-health', label: 'Accounting Health', icon: Activity },
+          { id: 'histori-dokumen-terhapus', label: 'Histori Dokumen Terhapus', icon: Trash2 },
           { id: 'laporan-lainnya', label: 'Laporan Lainnya', icon: FileQuestion }
         ]
       }
@@ -276,6 +190,75 @@ const modules: NavModule[] = [
   }
 ];
 
+// ── RBAC v2: pemetaan menu → kode permission view ────────────────────────────
+
+/** Kode permission untuk modul single-button (dicek langsung kodenya). */
+const SINGLE_MODULE_PERMISSIONS: Record<string, string> = {
+  'workflow-queue': 'workflow.queue.view',
+  organisasi: 'organisation.unit.view'
+};
+
+/** Kode permission subPage per modul (module-id → subPage-id → code). */
+const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
+  'cash-bank': {
+    pembayaran: 'cash_bank.pembayaran_kas.view',
+    penerimaan: 'cash_bank.penerimaan_kas.view',
+    'transfer-bank': 'cash_bank.transfer_bank.view',
+    'rekonsiliasi-bank': 'cash_bank.rekonsiliasi_bank.view'
+  },
+  sales: {
+    pesanan: 'sales.sales_order.view',
+    pengiriman: 'sales.pengiriman.view',
+    invoice: 'sales.sales_invoice.view',
+    retur: 'sales.sales_retur.view',
+    'pelunasan-piutang': 'settlement.pelunasan_piutang.view'
+  },
+  purchasing: {
+    pesanan: 'purchase.purchase_order.view',
+    penerimaan: 'purchase.penerimaan.view',
+    invoice: 'purchase.purchase_invoice.view',
+    retur: 'purchase.purchase_retur.view',
+    'pelunasan-hutang': 'settlement.pelunasan_hutang.view'
+  },
+  'fixed-assets': {
+    'kategori-aset': 'master.kategori_aset.view',
+    'daftar-aset': 'asset.aset.view',
+    penyusutan: 'asset.aset_transaksi.view',
+    'transaksi-aset': 'asset.aset_transaksi.view'
+  },
+  inventory: {
+    'permintaan-barang': 'inventory.permintaan.view',
+    'pemindahan-barang': 'inventory.pemindahan.view',
+    penyesuaian: 'inventory.penyesuaian.view',
+    'barang-jasa': 'master.barang.view',
+    gudang: 'master.gudang.view',
+    'stok-kartu': 'inventory.stok_kartu.view'
+  },
+  'general-ledger': {
+    'jurnal-umum': 'accounting.jurnal_umum.view'
+  },
+  // Modul Laporan: seluruh subPageGroups digating satu kode (dicek sekali per modul).
+  reports: {},
+  settings: {
+    coa: 'coa.akun.view',
+    'setting-akun': 'coa.setting_akun.view',
+    pelanggan: 'master.pelanggan.view',
+    supplier: 'master.supplier.view',
+    gudang: 'master.gudang.view',
+    'kategori-barang': 'master.kategori.view',
+    satuan: 'master.satuan.view',
+    'syarat-bayar': 'master.syarat_bayar.view',
+    pengguna: 'system.users.view',
+    karyawan: 'master.karyawan.view'
+  }
+};
+
+/** Kode permission tombol Dashboard. */
+const DASHBOARD_PERMISSION = 'dashboard.operational.view';
+
+/** Kode permission modul Laporan (dicek sekali — bila tak punya, seluruh modul disembunyikan). */
+const REPORTS_PERMISSION = 'reports.laporan.view';
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function ERPSidebar() {
@@ -290,57 +273,45 @@ export function ERPSidebar() {
   const openNavTab = useTabStore((s) => s.openNavTab);
   const { user, logout } = useAuthStore();
 
-  // ── RBAC v2: effective permissions untuk gating menu ────────────────────
-  const accessLoaded = useAccessStore((s) => s.loaded);
-  const accessLoading = useAccessStore((s) => s.loading);
+  // ── RBAC v2: permission efektif untuk gating menu ─────────────────────────
+  const permissions = useAccessStore((s) => s.permissions);
+  const isSuperAdmin = useAccessStore((s) => s.isSuperAdmin);
+  const loaded = useAccessStore((s) => s.loaded);
   const accessError = useAccessStore((s) => s.error);
-  const accessPermissions = useAccessStore((s) => s.permissions);
-  const accessIsSuperAdmin = useAccessStore((s) => s.isSuperAdmin);
-  const can = useAccessStore((s) => s.can);
   const fetchPermissions = useAccessStore((s) => s.fetchPermissions);
 
-  // Muat permissions saat mount (restore sesi / refresh halaman)
+  // Restore sesi / refresh halaman: fetch permission saat sidebar mount.
   React.useEffect(() => {
-    const s = useAccessStore.getState();
-    if (!s.loaded && !s.loading) void s.fetchPermissions();
-  }, []);
+    void fetchPermissions();
+  }, [fetchPermissions]);
 
-  // Filter modul & subPage berdasarkan permission VIEW (fail-closed)
+  const can = React.useCallback((code: string) => isSuperAdmin || permissions.includes(code), [isSuperAdmin, permissions]);
+
+  // Filter modul & subPage berdasarkan permission view (fail-closed).
   const visibleModules = React.useMemo(() => {
     return modules
-      .map((mod) => {
+      .map((mod): NavModule | null => {
+        if (mod.id === 'reports') {
+          return can(REPORTS_PERMISSION) ? mod : null;
+        }
         if (mod.single) {
-          const code = mod.subPages?.[0] ? subPagePermission(mod.id, mod.subPages[0].id) : MODULE_PERMISSIONS[mod.id];
-          return code && !can(code) ? null : mod;
+          const code = SINGLE_MODULE_PERMISSIONS[mod.id];
+          return code && can(code) ? mod : null;
         }
-        if (mod.subPages) {
-          const subPages = mod.subPages.filter((sp) => {
-            const code = subPagePermission(mod.id, sp.id);
-            return !code || can(code);
-          });
-          if (subPages.length === 0) return null;
-          return { ...mod, subPages };
-        }
-        if (mod.subPageGroups) {
-          const groups = mod.subPageGroups
-            .map((g) => ({
-              ...g,
-              items: g.items.filter((sp) => {
-                const code = subPagePermission(mod.id, sp.id);
-                return !code || can(code);
-              })
-            }))
-            .filter((g) => g.items.length > 0);
-          if (groups.length === 0) return null;
-          return { ...mod, subPageGroups: groups };
-        }
-        return mod;
+        const permMap = SUBPAGE_PERMISSIONS[mod.id] ?? {};
+        const subPages = (mod.subPages ?? []).filter((sp) => {
+          const code = permMap[sp.id];
+          return !!code && can(code);
+        });
+        // Modul disembunyikan bila SEMUA subPage-nya tersembunyi.
+        if (subPages.length === 0) return null;
+        return { ...mod, subPages };
       })
       .filter((m): m is NavModule => m !== null);
-    // permissions & isSuperAdmin sebagai deps reaktif (can membaca state via get())
-  }, [can, accessPermissions, accessIsSuperAdmin]);
+  }, [can]);
 
-  const hasAnyMenu = can('dashboard.operational.view') || visibleModules.length > 0;
+  const dashboardVisible = can(DASHBOARD_PERMISSION);
+  const hasAnyMenu = dashboardVisible || visibleModules.length > 0;
 
   // Track which module groups are expanded.
   // A group auto-opens when it becomes the active module.
@@ -368,51 +339,6 @@ export function ERPSidebar() {
     setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  // ── RBAC v2: jangan bocorkan menu sebelum permissions termuat ──────────
-  if (!accessLoaded) {
-    return (
-      <Sidebar collapsible="icon">
-        <SidebarHeader className="border-b border-sidebar-border">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton size="lg" className="pointer-events-none">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                  <Building2 className="size-4" />
-                </div>
-                <div className="flex flex-col gap-0.5 leading-none">
-                  <span className="font-semibold text-sm">ASAHI Books</span>
-                  <span className="text-[11px] text-sidebar-foreground/60">System Accounting ASAHI</span>
-                </div>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <div className="flex items-center gap-2 px-2 py-2">
-                {accessLoading ? (
-                  <>
-                    <span className="text-xs text-sidebar-foreground/60">Memuat menu…</span>
-                    <span className="inline-block size-3 animate-pulse rounded-full bg-sidebar-accent-foreground/30" />
-                  </>
-                ) : (
-                  <span className="text-xs text-sidebar-foreground/60">Menyiapkan menu…</span>
-                )}
-              </div>
-              <div className="space-y-2 px-2">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-7 w-full bg-sidebar-accent opacity-60" />
-                ))}
-              </div>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarRail />
-      </Sidebar>
-    );
-  }
-
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
@@ -432,125 +358,143 @@ export function ERPSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* ── RBAC v2: gagal memuat permissions (fail-closed + retry) ── */}
+        {/* ── Banner fail-closed: izin gagal dimuat ───────────────────── */}
         {accessError && (
           <SidebarGroup>
             <SidebarGroupContent>
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2.5 mx-2">
-                <p className="text-xs font-medium text-destructive">{accessError}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Menu disembunyikan demi keamanan.</p>
-                <Button variant="outline" size="sm" className="mt-2 h-7 gap-1.5" onClick={() => void fetchPermissions()} disabled={accessLoading}>
-                  {accessLoading ? <span className="inline-block size-3 animate-pulse rounded-full bg-muted-foreground/40" /> : null}
-                  Coba Lagi
+              <div className="m-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 dark:border-amber-700/60 dark:bg-amber-950/40" role="alert">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="size-3.5 shrink-0" />
+                  Izin akses gagal dimuat — menu disembunyikan.
+                </p>
+                <Button variant="outline" size="sm" className="mt-2 h-8 gap-1.5" onClick={() => void fetchPermissions()}>
+                  <RefreshCw className="size-3.5" /> Coba Lagi
                 </Button>
               </div>
             </SidebarGroupContent>
           </SidebarGroup>
         )}
 
-        {/* ── Dashboard (gated: dashboard.operational.view) ──────────── */}
-        {can('dashboard.operational.view') && (
+        {/* ── Belum termuat: skeleton (hindari flash menu) ─────────────── */}
+        {!loaded ? (
           <SidebarGroup>
             <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton tooltip="Dashboard" isActive={activeModule === 'dashboard'} onClick={() => openNavTab('dashboard', '', 'Dashboard')}>
-                    <LayoutDashboard />
-                    <span>Dashboard</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
+              <div className="space-y-4 px-2 py-2" aria-label="Memuat menu">
+                <p className="text-xs text-sidebar-foreground/60">Memuat menu…</p>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="ml-4 h-7 w-full max-w-44" />
+                    <Skeleton className="ml-4 h-7 w-full max-w-36" />
+                  </div>
+                ))}
+              </div>
             </SidebarGroupContent>
           </SidebarGroup>
-        )}
-
-        {/* ── Info bila tidak ada menu sama sekali untuk akun ini ────── */}
-        {!accessError && !hasAnyMenu && (
+        ) : !hasAnyMenu ? (
           <SidebarGroup>
             <SidebarGroupContent>
-              <p className="px-2 py-2 text-xs text-sidebar-foreground/60">Tidak ada menu yang tersedia untuk akun ini.</p>
+              <p className="px-2 py-4 text-xs text-sidebar-foreground/60">Tidak ada menu yang tersedia untuk akun ini.</p>
             </SidebarGroupContent>
           </SidebarGroup>
-        )}
-
-        {/* ── All other modules (filtered by permission) ─────────────── */}
-        {visibleModules.map((mod) => {
-          if (mod.single) {
-            // Flat menu button (no collapsible)
-            const sp = mod.subPages?.[0];
-            const SingleIcon = mod.icon;
-            return (
-              <SidebarGroup key={mod.id}>
+        ) : (
+          <>
+            {/* ── Dashboard (gated dashboard.operational.view) ───────────── */}
+            {dashboardVisible && (
+              <SidebarGroup>
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
-                      <SidebarMenuButton tooltip={mod.label} isActive={activeModule === mod.id} onClick={() => openNavTab(mod.id, sp?.id || '', mod.label)}>
-                        <SingleIcon className="size-4" />
-                        <span>{mod.label}</span>
+                      <SidebarMenuButton tooltip="Dashboard" isActive={activeModule === 'dashboard'} onClick={() => openNavTab('dashboard', '', 'Dashboard')}>
+                        <LayoutDashboard />
+                        <span>Dashboard</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
-            );
-          }
-          return (
-            <Collapsible key={mod.id} open={openGroups[mod.id] ?? false} onOpenChange={() => toggleGroup(mod.id)}>
-              <SidebarGroup>
-                <SidebarGroupLabel asChild>
-                  <CollapsibleTrigger className="flex w-full items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <mod.icon className="size-4" />
-                      {mod.label}
-                    </span>
-                    <ChevronRight className="size-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                  </CollapsibleTrigger>
-                </SidebarGroupLabel>
+            )}
 
-                <CollapsibleContent>
-                  <SidebarGroupContent>
-                    {/* ── Sub-pages (flat) ────────────────────────────── */}
-                    {mod.subPages && mod.subPages.length > 0 && (
+            {/* ── All other modules (permission-gated) ───────────────────── */}
+            {visibleModules.map((mod) => {
+              if (mod.single) {
+                // Flat menu button (no collapsible)
+                const sp = mod.subPages?.[0];
+                const SingleIcon = mod.icon;
+                return (
+                  <SidebarGroup key={mod.id}>
+                    <SidebarGroupContent>
                       <SidebarMenu>
-                        {mod.subPages.map((sp) => {
-                          const SubIcon = sp.icon;
-                          return (
-                            <SidebarMenuItem key={sp.id}>
-                              <SidebarMenuButton isActive={activeModule === mod.id && activeSubPage === sp.id} onClick={() => openNavTab(mod.id, sp.id, sp.label)}>
-                                {SubIcon && <SubIcon className="size-4" />}
-                                <span>{sp.label}</span>
-                              </SidebarMenuButton>
-                            </SidebarMenuItem>
-                          );
-                        })}
+                        <SidebarMenuItem>
+                          <SidebarMenuButton tooltip={mod.label} isActive={activeModule === mod.id} onClick={() => openNavTab(mod.id, sp?.id || '', mod.label)}>
+                            <SingleIcon className="size-4" />
+                            <span>{mod.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
                       </SidebarMenu>
-                    )}
+                    </SidebarGroupContent>
+                  </SidebarGroup>
+                );
+              }
+              return (
+                <Collapsible key={mod.id} open={openGroups[mod.id] ?? false} onOpenChange={() => toggleGroup(mod.id)}>
+                  <SidebarGroup>
+                    <SidebarGroupLabel asChild>
+                      <CollapsibleTrigger className="flex w-full items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <mod.icon className="size-4" />
+                          {mod.label}
+                        </span>
+                        <ChevronRight className="size-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                      </CollapsibleTrigger>
+                    </SidebarGroupLabel>
 
-                    {/* ── Grouped sub-pages (e.g. Laporan) ─────────────── */}
-                    {mod.subPageGroups?.map((group) => (
-                      <React.Fragment key={group.label}>
-                        <SidebarMenu className="mt-3 first:mt-0">
-                          <li className="text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/50 px-2 pb-1">{group.label}</li>
-                          {group.items.map((sp) => {
-                            const SubIcon = sp.icon;
-                            return (
-                              <SidebarMenuItem key={sp.id}>
-                                <SidebarMenuButton isActive={activeModule === mod.id && activeSubPage === sp.id} onClick={() => openNavTab(mod.id, sp.id, sp.label)}>
-                                  {SubIcon && <SubIcon className="size-4" />}
-                                  <span>{sp.label}</span>
-                                </SidebarMenuButton>
-                              </SidebarMenuItem>
-                            );
-                          })}
-                        </SidebarMenu>
-                      </React.Fragment>
-                    ))}
-                  </SidebarGroupContent>
-                </CollapsibleContent>
-              </SidebarGroup>
-            </Collapsible>
-          );
-        })}
+                    <CollapsibleContent>
+                      <SidebarGroupContent>
+                        {/* ── Sub-pages (flat) ────────────────────────────── */}
+                        {mod.subPages && mod.subPages.length > 0 && (
+                          <SidebarMenu>
+                            {mod.subPages.map((sp) => {
+                              const SubIcon = sp.icon;
+                              return (
+                                <SidebarMenuItem key={sp.id}>
+                                  <SidebarMenuButton isActive={activeModule === mod.id && activeSubPage === sp.id} onClick={() => openNavTab(mod.id, sp.id, sp.label)}>
+                                    {SubIcon && <SubIcon className="size-4" />}
+                                    <span>{sp.label}</span>
+                                  </SidebarMenuButton>
+                                </SidebarMenuItem>
+                              );
+                            })}
+                          </SidebarMenu>
+                        )}
+
+                        {/* ── Grouped sub-pages (e.g. Laporan) ─────────────── */}
+                        {mod.subPageGroups?.map((group) => (
+                          <React.Fragment key={group.label}>
+                            <SidebarMenu className="mt-3 first:mt-0">
+                              <li className="text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/50 px-2 pb-1">{group.label}</li>
+                              {group.items.map((sp) => {
+                                const SubIcon = sp.icon;
+                                return (
+                                  <SidebarMenuItem key={sp.id}>
+                                    <SidebarMenuButton isActive={activeModule === mod.id && activeSubPage === sp.id} onClick={() => openNavTab(mod.id, sp.id, sp.label)}>
+                                      {SubIcon && <SubIcon className="size-4" />}
+                                      <span>{sp.label}</span>
+                                    </SidebarMenuButton>
+                                  </SidebarMenuItem>
+                                );
+                              })}
+                            </SidebarMenu>
+                          </React.Fragment>
+                        ))}
+                      </SidebarGroupContent>
+                    </CollapsibleContent>
+                  </SidebarGroup>
+                </Collapsible>
+              );
+            })}
+          </>
+        )}
       </SidebarContent>
 
       {/* ── Footer ────────────────────────────────────────────────────── */}

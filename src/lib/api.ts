@@ -80,11 +80,13 @@ const ERROR_MESSAGES: Record<number, string> = {
 
 function getErrorMessage(status: number, detail?: unknown): string {
   if (Array.isArray(detail)) {
-    const messages = detail.map(item => {
-      if (typeof item === 'string') return item;
-      if (item && typeof item.msg === 'string') return [Array.isArray(item.loc) ? item.loc.filter((part: unknown) => part !== 'body').join('.') : '', item.msg].filter(Boolean).join(': ');
-      return '';
-    }).filter(Boolean);
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item.msg === 'string') return [Array.isArray(item.loc) ? item.loc.filter((part: unknown) => part !== 'body').join('.') : '', item.msg].filter(Boolean).join(': ');
+        return '';
+      })
+      .filter(Boolean);
     if (messages.length) return messages.join('; ');
   }
   // Prioritas:
