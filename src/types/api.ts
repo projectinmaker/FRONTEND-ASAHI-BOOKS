@@ -3142,9 +3142,13 @@ export interface UserAccessSummary {
 }
 
 /** Payload PUT /access/users/{id}/access.
- *  templateCode null = jangan ubah role; overrides null = jangan ubah. */
+ *  templateCode null = jangan ubah role; overrides null = jangan ubah.
+ *  roleIds = kontrak backend ASLI (role-link REPLACE-SET) — dikirim bersamaan
+ *  agar payload kompatibel dengan kedua keluarga backend; sisi yang tidak
+ *  mengenal field tsb. mengabaikannya (extra field di-ignore Pydantic). */
 export interface UserAccessUpdatePayload {
   templateCode?: string | null;
+  roleIds?: string[];
   overrides?: AccessOverrideInput[] | null;
   reason: string;
 }
@@ -3153,12 +3157,17 @@ export interface UserAccessUpdatePayload {
 export interface AuditLogEntry {
   id: string;
   actorId: string | null;
+  /** Backend asli menyertakan nama aktor/target langsung (best-effort). */
+  actorNama?: string | null;
+  targetNama?: string | null;
   targetUserId: string | null;
   action: string;
   reason: string | null;
   /** Ringkasan slim: templateCode, roles (kode), overrides, effectiveCount. */
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
+  /** Backend asli memakai `createdAt` — dinormalisasi ke `at` saat load. */
+  createdAt?: string | null;
   at: string | null;
 }
 

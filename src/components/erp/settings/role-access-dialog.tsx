@@ -19,7 +19,19 @@ import { AlertTriangle, ChevronDown, Loader2, RotateCcw, ShieldCheck } from 'luc
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { useAuthStore } from '@/store/auth-store';
 import { useAccessStore } from '@/store/access-store';
-import type { AuditLogEntry, AuditLogListResponse, PenggunaResponse, RegistryActionItem, RegistryModuleItem, RegistryTreeResponse, RoleDetail, RoleListResponse, RoleSummary, UserAccessSummary, UserAccessUpdatePayload } from '@/types/api';
+import type {
+  AuditLogEntry,
+  AuditLogListResponse,
+  PenggunaResponse,
+  RegistryActionItem,
+  RegistryModuleItem,
+  RegistryTreeResponse,
+  RoleDetail,
+  RoleListResponse,
+  RoleSummary,
+  UserAccessSummary,
+  UserAccessUpdatePayload
+} from '@/types/api';
 
 // ── Konstanta ────────────────────────────────────────────────────────────────
 
@@ -27,6 +39,20 @@ import type { AuditLogEntry, AuditLogListResponse, PenggunaResponse, RegistryAct
 const NO_TEMPLATE_VALUE = '__no_template__';
 
 const AUDIT_LIMIT = 50;
+
+/** Marker versi file — untuk verifikasi file ini benar-benar ter-apply.
+ *  Cek console browser setelah membuka dialog: "[RoleAccessDialog] vR4 loaded".
+ *  Jika log TIDAK muncul → file lama masih dipakai (update belum tertimpa).
+ *  R4: dialog UNIVERSAL — kompatibel dengan 2 keluarga backend:
+ *  (A) rekonstruksi sandbox: registry {"modules":[...]}, summary nested `user`, PUT templateCode;
+ *  (B) backend asli (repo GitHub): registry array polos, summary flat userId,
+ *      PUT roleIds (REPLACE-SET) — tanpa ini role user bisa terhapus saat simpan. */
+const DIALOG_VERSION = 'R4';
+
+if (typeof console !== 'undefined') {
+  // sengaja pakai console.info — alat diagnostik versi file
+  console.info(`[RoleAccessDialog] v${DIALOG_VERSION} loaded`);
+}
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 
@@ -58,62 +84,173 @@ function auditListOverrides(side: Record<string, unknown> | null): Array<{ permi
 }
 
 /**
- * Normalisasi respons GET /access/permissions.
- * Menerima bentuk current ({ modules: [...] }) maupun bentuk lama (array polos
- * atau { data: [...] }) — bila frontend & backend tidak se-versi, dialog tetap
- * aman: data dikenali bila bisa, atau ditampilkan sebagai error terbaca
- * (bukan white-screen "Cannot read properties of undefined").
+ * Normalisasi respons GET /access/permissions — universal untuk 2 keluarga backend:
+ *  (A) {"modules": [...]} dengan label/description + action.code lengkap;
+ *  (B) backend asli: ARRAY POLOS dengan moduleName/resourceName/actionName dan
+ *      action TANPA `code` (dirakit dari `module.resource.action`).
+ * Bentuk tak dikenali → null (ditampilkan sebagai error terbaca, bukan crash).
  */
-function normalizeRegistry(raw: unknown): RegistryTreeResponse | null {
+export function normalizeRegistry(raw: unknown): RegistryTreeResponse | null {
   let modules: unknown = null;
   if (Array.isArray(raw)) {
-    modules = raw; // bentuk lama: backend mengembalikan array polos
+    modules = raw; // backend asli: array polos
   } else if (raw && typeof raw === 'object') {
     const obj = raw as { modules?: unknown; data?: unknown };
     if (Array.isArray(obj.modules)) modules = obj.modules;
-    else if (Array.isArray(obj.data)) modules = obj.data; // bentuk lama: { data: [...] }
+    else if (Array.isArray(obj.data)) modules = obj.data; // bentuk { data: [...] }
   }
   if (!Array.isArray(modules)) return null;
   const normalizedModules = modules
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
-    .map((m) => ({
-      module: typeof m.module === 'string' ? m.module : '',
-      label: typeof m.label === 'string' ? m.label : typeof m.module === 'string' ? m.module : '',
-      resources: (Array.isArray(m.resources) ? m.resources : [])
-        .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
-        .map((r) => ({
-          resource: typeof r.resource === 'string' ? r.resource : '',
-          label: typeof r.label === 'string' ? r.label : typeof r.resource === 'string' ? r.resource : '',
-          actions: (Array.isArray(r.actions) ? r.actions : [])
-            .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
-            .map((a) => ({
-              code: typeof a.code === 'string' ? a.code : '',
-              action: typeof a.action === 'string' ? a.action : '',
-              description: typeof a.description === 'string' ? a.description : '',
-              isSensitive: a.isSensitive === true
-            }))
-        }))
-    }));
+    .map((m) => {
+      const moduleCode = typeof m.module === 'string' ? m.module : '';
+      return {
+        module: moduleCode,
+        label:
+          typeof m.label === 'string' ? m.label
+          : typeof m.moduleName === 'string' ? m.moduleName
+          : moduleCode,
+        resources: (Array.isArray(m.resources) ? m.resources : [])
+          .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+          .map((r) => {
+            const resourceCode = typeof r.resource === 'string' ? r.resource : '';
+            return {
+              resource: resourceCode,
+              label:
+                typeof r.label === 'string' ? r.label
+                : typeof r.resourceName === 'string' ? r.resourceName
+                : resourceCode,
+              actions: (Array.isArray(r.actions) ? r.actions : [])
+                .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
+                .map((a) => {
+                  // Backend asli tidak menyertakan `code` — dirakit dari path.
+                  const action =
+                    typeof a.action === 'string' ? a.action
+                    : typeof a.code === 'string' ? (a.code.split('.').pop() ?? '')
+                    : '';
+                  const code =
+                    typeof a.code === 'string' && a.code ? a.code
+                    : `${moduleCode}.${resourceCode}.${action}`;
+                  return {
+                    code,
+                    action,
+                    description:
+                      typeof a.description === 'string' ? a.description
+                      : typeof a.actionName === 'string' ? a.actionName
+                      : '',
+                    isSensitive: a.isSensitive === true
+                  };
+                })
+            };
+          })
+      };
+    });
   return { modules: normalizedModules };
+}
+
+/**
+ * Normalisasi respons GET/PUT /access/users/{id}/access — universal:
+ *  (A) nested `user` + templateCode + effectiveCount (backend rekonstruksi);
+ *  (B) FLAT: userId/username/namaLengkap/roles/legacyRole, TANPA objek user,
+ *      TANPA templateCode (disintesis dari roles[0]) dan tanpa effectiveCount
+ *      (fallback panjang effectivePermissions).
+ */
+export function normalizeSummary(raw: unknown, userId: string): UserAccessSummary | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const s = raw as Record<string, unknown>;
+
+  // Objek user — terima nested {user:{...}} maupun flat {userId/username/...}.
+  const rawUser =
+    s.user && typeof s.user === 'object' && !Array.isArray(s.user)
+      ? (s.user as Record<string, unknown>)
+      : null;
+  const user = {
+    id:
+      typeof rawUser?.id === 'string' ? rawUser.id
+      : typeof s.userId === 'string' ? s.userId
+      : typeof s.id === 'string' ? s.id
+      : userId,
+    nama:
+      typeof rawUser?.nama === 'string' ? rawUser.nama
+      : typeof rawUser?.namaLengkap === 'string' ? rawUser.namaLengkap
+      : typeof s.nama === 'string' ? s.nama
+      : typeof s.namaLengkap === 'string' ? s.namaLengkap
+      : '',
+    username:
+      typeof rawUser?.username === 'string' ? rawUser.username
+      : typeof s.username === 'string' ? s.username
+      : '',
+    roleEnum:
+      typeof rawUser?.roleEnum === 'string' ? rawUser.roleEnum
+      : typeof rawUser?.role === 'string' ? rawUser.role
+      : typeof s.roleEnum === 'string' ? s.roleEnum
+      : typeof s.legacyRole === 'string' ? s.legacyRole
+      : '',
+  };
+
+  const overrides = (Array.isArray(s.overrides) ? s.overrides : [])
+    .filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
+    .map((o) => ({
+      permissionCode: typeof o.permissionCode === 'string' ? o.permissionCode : '',
+      effect: o.effect === 'DENY' ? ('DENY' as const) : ('ALLOW' as const),
+      reason: typeof o.reason === 'string' ? o.reason : null,
+      grantedBy: typeof o.grantedBy === 'string' ? o.grantedBy : null,
+    }));
+
+  const roles = (Array.isArray(s.roles) ? s.roles : [])
+    .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+    .map((r) => ({
+      id: typeof r.id === 'string' ? r.id : '',
+      code: typeof r.code === 'string' ? r.code : '',
+      name: typeof r.name === 'string' ? r.name : '',
+    }));
+
+  const templatePermissions = (
+    Array.isArray(s.templatePermissions) ? s.templatePermissions : []
+  ).filter((c): c is string => typeof c === 'string');
+
+  const effectivePermissions = (
+    Array.isArray(s.effectivePermissions) ? s.effectivePermissions : []
+  ).filter((c): c is string => typeof c === 'string');
+
+  // Template — bentuk flat (backend asli) tidak punya templateCode/templateName:
+  // sintesis dari roles[0] (role-link = template pada backend tersebut).
+  const templateCode =
+    typeof s.templateCode === 'string' && s.templateCode ? s.templateCode
+    : roles.length > 0 && roles[0].code ? roles[0].code
+    : null;
+  const templateName =
+    typeof s.templateName === 'string' && s.templateName ? s.templateName
+    : roles.length > 0 && roles[0].name ? roles[0].name
+    : null;
+
+  return {
+    user,
+    isSuperAdmin: s.isSuperAdmin === true,
+    roles,
+    templateCode,
+    templateName,
+    templatePermissions,
+    overrides,
+    effectivePermissions,
+    effectiveCount:
+      typeof s.effectiveCount === 'number' ? s.effectiveCount : effectivePermissions.length,
+  };
 }
 
 // ── Panel Sebelum/Sesudah untuk baris audit expandable ───────────────────────
 
 function AuditSidePanel({ title, side }: { title: string; side: Record<string, unknown> | null }) {
-  const templateCode = side ? ((side.templateCode as string | null) ?? null) : null;
+  const templateCode = side ? (side.templateCode as string | null ?? null) : null;
   const roleCodes = side && Array.isArray(side.roles) ? (side.roles as string[]) : [];
-  const effectiveCount = side ? ((side.effectiveCount as number | null) ?? null) : null;
+  const effectiveCount = side ? (side.effectiveCount as number | null ?? null) : null;
   const overrides = auditListOverrides(side);
   return (
     <div className="rounded-md border bg-background p-2.5 text-xs">
       <p className="font-semibold text-foreground">{title}</p>
       <ul className="mt-1 space-y-0.5 text-muted-foreground">
-        <li>
-          Template: <span className="font-mono">{templateCode || '—'}</span>
-        </li>
-        <li>
-          Roles: <span className="font-mono">{roleCodes.length ? roleCodes.join(', ') : '—'}</span>
-        </li>
+        <li>Template: <span className="font-mono">{templateCode || '—'}</span></li>
+        <li>Roles: <span className="font-mono">{roleCodes.length ? roleCodes.join(', ') : '—'}</span></li>
         <li>Jumlah override: {overrides.length}</li>
         <li>Efektif: {effectiveCount ?? '—'} izin</li>
       </ul>
@@ -121,7 +258,10 @@ function AuditSidePanel({ title, side }: { title: string; side: Record<string, u
         <ul className="mt-1.5 space-y-0.5">
           {overrides.map((o) => (
             <li key={o.permissionCode} className="font-mono text-[11px]">
-              <span className={o.effect === 'ALLOW' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>{o.effect === 'ALLOW' ? '＋' : '－'}</span> {o.permissionCode}
+              <span className={o.effect === 'ALLOW' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+                {o.effect === 'ALLOW' ? '＋' : '－'}
+              </span>{' '}
+              {o.permissionCode}
             </li>
           ))}
         </ul>
@@ -177,10 +317,12 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
   const applySummary = useCallback((s: UserAccessSummary) => {
     setSummary(s);
     setLocalTemplateCode(s.templateCode);
-    setTemplatePerms(s.templateCode ? s.templatePermissions : []);
-    if (s.templateCode) rolePermsCache.current[s.templateCode] = s.templatePermissions;
+    setTemplatePerms(s.templateCode ? (s.templatePermissions ?? []) : []);
+    if (s.templateCode) rolePermsCache.current[s.templateCode] = s.templatePermissions ?? [];
     const map: Record<string, 'ALLOW' | 'DENY'> = {};
-    for (const o of s.overrides) map[o.permissionCode] = o.effect;
+    for (const o of Array.isArray(s.overrides) ? s.overrides : []) {
+      map[o.permissionCode] = o.effect;
+    }
     setOverrides(map);
     setReason('');
     setReasonTouched(false);
@@ -191,9 +333,21 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
     setAuditLoading(true);
     setAuditError(null);
     try {
-      const res = await api.get<AuditLogListResponse>(`/access/audit-logs?skip=0&limit=${AUDIT_LIMIT}&target_user_id=${userId}`);
-      setAuditLogs(res.data);
-      setAuditTotal(res.total);
+      // Param dikirim GANDA: backend rekonstruksi memakai target_user_id,
+      // backend asli hanya mengenali alias targetUserId — masing-masing
+      // mengabaikan param yang tidak dikenalnya.
+      const res = await api.get<AuditLogListResponse>(
+        `/access/audit-logs?skip=0&limit=${AUDIT_LIMIT}&target_user_id=${userId}&targetUserId=${userId}`
+      );
+      const rows = Array.isArray(res?.data) ? res.data : [];
+      // Backend asli memakai `createdAt` — normalisasi ke `at` agar kolom Waktu terisi.
+      setAuditLogs(
+        rows.map((row) => ({
+          ...row,
+          at: typeof row.at === 'string' && row.at ? row.at : (row.createdAt ?? null),
+        }))
+      );
+      setAuditTotal(typeof res?.total === 'number' ? res.total : 0);
     } catch (err) {
       setAuditError(err instanceof ApiError ? err.detail : 'Gagal memuat log perubahan');
     } finally {
@@ -207,23 +361,39 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
     setLoadError(null);
     rolePermsCache.current = {};
     try {
-      const [sum, reg, roleList] = await Promise.all([api.get<UserAccessSummary>(`/access/users/${userId}/access`), api.get<unknown>('/access/permissions'), api.get<RoleListResponse>('/access/roles')]);
+      const [sum, reg, roleList] = await Promise.all([
+        api.get<unknown>(`/access/users/${userId}/access`),
+        api.get<unknown>('/access/permissions'),
+        api.get<RoleListResponse>('/access/roles')
+      ]);
       // Bentuk respons registry bergantung versi backend — normalisasi agar
       // mismatch frontend/backend tidak memicu crash runtime.
       const normalizedRegistry = normalizeRegistry(reg);
       if (!normalizedRegistry) {
-        throw new ApiError(422, 'Format registry akses tidak dikenali. Pastikan file backend sudah versi terbaru (access.py + access_service.py) dan backend di-restart — endpoint /access/permissions harus mengembalikan {"modules": [...]}.');
+        throw new ApiError(
+          422,
+          'Format registry akses tidak dikenali. Pastikan backend berjalan dengan file access versi terbaru lalu buka ulang dialog — endpoint /access/permissions harus mengembalikan daftar modul (array atau {"modules": [...]}).'
+        );
+      }
+      // Ringkasan akses juga dinormalisasi — backend lama bisa mengembalikan
+      // bentuk tanpa objek `user` (mis. flat userId/username).
+      const normalizedSummary = normalizeSummary(sum, userId);
+      if (!normalizedSummary) {
+        throw new ApiError(
+          422,
+          'Format ringkasan akses tidak dikenali. Pastikan file backend versi terbaru sudah disalin PENUH (terutama app/services/access_service.py) dan backend di-restart.'
+        );
       }
       setRegistry(normalizedRegistry);
-      setRoles(roleList.data);
-      applySummary(sum);
+      setRoles(Array.isArray(roleList?.data) ? roleList.data : []);
+      applySummary(normalizedSummary);
       void loadAudit();
       // Peta id → username untuk kolom Aktor (best-effort; fallback short id).
       api
         .get<PaginatedResponse<PenggunaResponse>>('/pengguna?limit=100')
         .then((res) => {
           const m: Record<string, string> = {};
-          for (const u of res.data) m[u.id] = u.username;
+          for (const u of Array.isArray(res?.data) ? res.data : []) m[u.id] = u.username;
           if (actor) m[actor.id] = actor.username;
           setUserNameMap(m);
         })
@@ -265,7 +435,9 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
 
   const allActionCodes = useMemo(() => {
     if (!registry) return [] as string[];
-    return (registry.modules ?? []).flatMap((m) => (m.resources ?? []).flatMap((r) => (r.actions ?? []).map((a) => a.code)));
+    return (registry.modules ?? []).flatMap((m) =>
+      (m.resources ?? []).flatMap((r) => (r.actions ?? []).map((a) => a.code))
+    );
   }, [registry]);
 
   const registryModuleById = useMemo(() => {
@@ -382,9 +554,10 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
     setFetchingTemplate(true);
     try {
       const detail = await api.get<RoleDetail>(`/access/roles/${role.id}`);
-      rolePermsCache.current[value] = detail.permissions;
+      const perms = Array.isArray(detail?.permissions) ? detail.permissions : [];
+      rolePermsCache.current[value] = perms;
       if (templateReqSeq.current === seq) {
-        setTemplatePerms(detail.permissions);
+        setTemplatePerms(perms);
       }
     } catch (err) {
       if (templateReqSeq.current === seq) {
@@ -404,12 +577,30 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
       if (templateChanged && localTemplateCode) {
         payload.templateCode = localTemplateCode;
       }
+      // ── Kontrak backend ASLI: roleIds bersifat REPLACE-SET ──
+      // SELALU dikirim (bahkan saat template tidak berubah) supaya role user
+      // tidak terhapus saat backend hanya mengenali roleIds dan mengabaikan
+      // templateCode. Backend rekonstruksi mengabaikan field asing ini dengan aman.
+      if (localTemplateCode) {
+        const role = roles.find((r) => r.code === localTemplateCode);
+        if (!role || !role.id) {
+          throw new ApiError(422, `ID template "${localTemplateCode}" tidak ditemukan pada daftar role — tutup dan buka ulang dialog ini, lalu simpan lagi.`);
+        }
+        payload.roleIds = [role.id];
+      } else {
+        payload.roleIds = [];
+      }
       if (overridesChanged) {
         payload.overrides = Object.entries(overrides).map(([permissionCode, effect]) => ({ permissionCode, effect }));
       }
-      const res = await api.put<UserAccessSummary>(`/access/users/${userId}/access`, payload);
-      applySummary(res);
-      toast.success(`Akses @${res.user.username} diperbarui — ${res.effectiveCount} izin efektif`);
+      const res = await api.put<unknown>(`/access/users/${userId}/access`, payload);
+      // Respons PUT dinormalisasi juga — bentuk lama tidak boleh memicu crash.
+      const normalized = normalizeSummary(res, userId);
+      if (!normalized) {
+        throw new ApiError(422, 'Respons simpan akses tidak dikenali — kemungkinan backend masih versi lama. Periksa /access/users/{id}/access.');
+      }
+      applySummary(normalized);
+      toast.success(`Akses @${normalized.user.username || normalized.user.id.slice(0, 8)} diperbarui — ${normalized.effectiveCount} izin efektif`);
       void loadAudit();
       // Refresh permission pelaku (aksesnya bisa ikut berubah).
       void useAccessStore.getState().fetchPermissions();
@@ -452,7 +643,12 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
           </p>
           <p className="truncate font-mono text-[11px] text-muted-foreground/70">{action.code}</p>
         </div>
-        <Switch checked={on} onCheckedChange={() => handleToggle(action.code)} disabled={readonly || saving || fetchingTemplate} aria-label={`${action.action} — ${action.code}`} />
+        <Switch
+          checked={on}
+          onCheckedChange={() => handleToggle(action.code)}
+          disabled={readonly || saving || fetchingTemplate}
+          aria-label={`${action.action} — ${action.code}`}
+        />
       </div>
     );
   };
@@ -502,9 +698,7 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                 <ShieldCheck className="size-5 text-primary" />
                 <span>{summary.user.nama}</span>
                 <span className="text-sm font-normal text-muted-foreground">@{summary.user.username}</span>
-                <Badge variant="outline" className="font-mono text-[11px]">
-                  {summary.templateName || 'Tanpa template'}
-                </Badge>
+                <Badge variant="outline" className="font-mono text-[11px]">{summary.templateName || 'Tanpa template'}</Badge>
                 {summary.isSuperAdmin && (
                   <Badge variant="outline" className="border-purple-300 bg-purple-100 text-purple-800 dark:border-purple-800 dark:bg-purple-950/50 dark:text-purple-300">
                     Super Admin
@@ -531,15 +725,11 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
             {/* ── Tabs ── */}
             <Tabs defaultValue="matrix">
               <TabsList className="w-full sm:w-auto">
-                <TabsTrigger value="matrix" className="flex-1 sm:flex-none">
-                  Matriks Akses
-                </TabsTrigger>
+                <TabsTrigger value="matrix" className="flex-1 sm:flex-none">Matriks Akses</TabsTrigger>
                 <TabsTrigger value="log" className="flex-1 gap-1.5 sm:flex-none">
                   Log Perubahan
                   {auditTotal > 0 && (
-                    <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">
-                      {auditTotal}
-                    </Badge>
+                    <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">{auditTotal}</Badge>
                   )}
                 </TabsTrigger>
               </TabsList>
@@ -552,12 +742,18 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                     Template Role
                   </Label>
                   <div className="flex items-center gap-2">
-                    <Select value={localTemplateCode ?? NO_TEMPLATE_VALUE} onValueChange={(v) => void handleTemplateChange(v)} disabled={readonly || loading || saving}>
+                    <Select
+                      value={localTemplateCode ?? NO_TEMPLATE_VALUE}
+                      onValueChange={(v) => void handleTemplateChange(v)}
+                      disabled={readonly || loading || saving}
+                    >
                       <SelectTrigger id="ra-template" className="w-full sm:w-96" aria-label="Template role">
                         <SelectValue placeholder="Pilih template role" />
                       </SelectTrigger>
                       <SelectContent>
-                        {summary.templateCode == null && <SelectItem value={NO_TEMPLATE_VALUE}>Tanpa template (akses kustom)</SelectItem>}
+                        {summary.templateCode == null && (
+                          <SelectItem value={NO_TEMPLATE_VALUE}>Tanpa template (akses kustom)</SelectItem>
+                        )}
                         {roles.map((r) => (
                           <SelectItem key={r.code} value={r.code}>
                             {r.name} · {r.isSystem ? 'sistem' : 'kustom'} · {r.permissionCount} izin
@@ -572,12 +768,25 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                 {/* Kontrol: filter diff + reset override */}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <Switch id="ra-onlydiff" checked={onlyDiff} onCheckedChange={setOnlyDiff} disabled={readonly || isTargetSuperAdmin} aria-label="Hanya tampilkan yang berbeda dari template" />
+                    <Switch
+                      id="ra-onlydiff"
+                      checked={onlyDiff}
+                      onCheckedChange={setOnlyDiff}
+                      disabled={readonly || isTargetSuperAdmin}
+                      aria-label="Hanya tampilkan yang berbeda dari template"
+                    />
                     <Label htmlFor="ra-onlydiff" className="cursor-pointer text-sm font-normal">
                       Hanya tampilkan yang berbeda dari template
                     </Label>
                   </div>
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => setOverrides({})} disabled={readonly || overrideCount === 0}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setOverrides({})}
+                    disabled={readonly || overrideCount === 0}
+                  >
                     <RotateCcw className="size-3.5" /> Kembalikan semua ke template
                   </Button>
                 </div>
@@ -601,7 +810,9 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent align="start" className="w-96 p-0">
-                      <p className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">{isTargetSuperAdmin ? `Semua izin (${allActionCodes.length})` : `${effectiveCount} izin efektif`}</p>
+                      <p className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+                        {isTargetSuperAdmin ? `Semua izin (${allActionCodes.length})` : `${effectiveCount} izin efektif`}
+                      </p>
                       <ul className="max-h-60 overflow-y-auto p-2">
                         {(isTargetSuperAdmin ? allActionCodes : [...effectiveSet].sort()).map((code) => (
                           <li key={code} className="px-1 py-0.5 font-mono text-[11px] text-muted-foreground">
@@ -615,17 +826,23 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
 
                 {/* Legenda 4 state */}
                 <p className="text-[11px] text-muted-foreground">
-                  ON tanpa penanda = warisan template · ON + <span className="font-medium text-emerald-700 dark:text-emerald-400">Custom Allow</span> · OFF + <span className="font-medium text-red-700 dark:text-red-400">Custom Deny</span> · OFF tanpa penanda = warisan template
+                  ON tanpa penanda = warisan template · ON + <span className="font-medium text-emerald-700 dark:text-emerald-400">Custom Allow</span> · OFF +{' '}
+                  <span className="font-medium text-red-700 dark:text-red-400">Custom Deny</span> · OFF tanpa penanda = warisan template
                 </p>
 
                 {/* Matriks: accordion per modul */}
                 {visibleModules.length === 0 ? (
-                  <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">{onlyDiff ? 'Tidak ada perbedaan dari template.' : 'Tidak ada modul yang tersedia.'}</p>
+                  <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                    {onlyDiff ? 'Tidak ada perbedaan dari template.' : 'Tidak ada modul yang tersedia.'}
+                  </p>
                 ) : (
                   <Accordion type="multiple" defaultValue={[visibleModules[0].module]} className="rounded-md border px-3">
                     {visibleModules.map((mod) => {
                       const stats = moduleStats(registryModuleById[mod.module] ?? mod);
-                      const modOverrideCount = mod.resources.reduce((acc, res) => acc + res.actions.filter((a) => !!overrides[a.code]).length, 0);
+                      const modOverrideCount = mod.resources.reduce(
+                        (acc, res) => acc + res.actions.filter((a) => !!overrides[a.code]).length,
+                        0
+                      );
                       return (
                         <AccordionItem key={mod.module} value={mod.module}>
                           <AccordionTrigger className="py-3 hover:no-underline">
@@ -677,22 +894,34 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                     aria-invalid={hasChanges && reasonTouched && !reasonValid}
                     className={hasChanges && reasonTouched && !reasonValid ? 'border-destructive focus-visible:ring-destructive' : ''}
                   />
-                  {hasChanges && !readonly && reasonTouched && !reasonValid && <p className="text-xs text-destructive">Alasan wajib diisi (minimal 3 karakter) saat ada perubahan.</p>}
+                  {hasChanges && !readonly && reasonTouched && !reasonValid && (
+                    <p className="text-xs text-destructive">Alasan wajib diisi (minimal 3 karakter) saat ada perubahan.</p>
+                  )}
                 </div>
 
                 {/* Footer aksi */}
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-muted-foreground">
-                    {readonly ? 'Mode hanya-lihat' : hasChanges ? `${overrideCount} penyesuaian lokal · template ${templateChanged ? 'diganti' : 'tetap'}` : 'Tidak ada perubahan'}
+                    {readonly
+                      ? 'Mode hanya-lihat'
+                      : hasChanges
+                        ? `${overrideCount} penyesuaian lokal · template ${templateChanged ? 'diganti' : 'tetap'}`
+                        : 'Tidak ada perubahan'}
                     {!readonly && hasChanges && !reasonValid && ' — isi alasan (min. 3 karakter) untuk mengaktifkan Simpan'}
                   </p>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
                       Batal
                     </Button>
                     <Button type="button" onClick={() => void handleSave()} disabled={!canSave} className="gap-2">
                       {saving && <Loader2 className="size-4 animate-spin" />} Simpan Perubahan
                     </Button>
+                    <span
+                      className="ml-auto font-mono text-[10px] text-muted-foreground/50"
+                      title={`Versi file dialog (untuk verifikasi update) — v${DIALOG_VERSION}`}
+                    >
+                      v{DIALOG_VERSION}
+                    </span>
                   </div>
                 </div>
               </TabsContent>
@@ -713,7 +942,9 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                     </Button>
                   </div>
                 ) : auditLogs.length === 0 ? (
-                  <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">Belum ada perubahan akses untuk pengguna ini.</p>
+                  <p className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                    Belum ada perubahan akses untuk pengguna ini.
+                  </p>
                 ) : (
                   <>
                     <div className="max-h-80 overflow-y-auto rounded-md border">
@@ -732,16 +963,24 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                             const expanded = expandedAuditId === log.id;
                             return (
                               <React.Fragment key={log.id}>
-                                <TableRow className="cursor-pointer" onClick={() => setExpandedAuditId((prev) => (prev === log.id ? null : log.id))} aria-expanded={expanded}>
+                                <TableRow
+                                  className="cursor-pointer"
+                                  onClick={() => setExpandedAuditId((prev) => (prev === log.id ? null : log.id))}
+                                  aria-expanded={expanded}
+                                >
                                   <TableCell>
                                     <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
                                   </TableCell>
                                   <TableCell className="whitespace-nowrap text-xs">{formatTime(log.at)}</TableCell>
-                                  <TableCell className="whitespace-nowrap text-xs">{userNameMap[log.actorId ?? ''] ? `@${userNameMap[log.actorId ?? '']}` : shortId(log.actorId)}</TableCell>
+                                  <TableCell className="whitespace-nowrap text-xs">
+                                    {log.actorNama
+                                      ? log.actorNama
+                                      : userNameMap[log.actorId ?? '']
+                                        ? `@${userNameMap[log.actorId ?? '']}`
+                                        : shortId(log.actorId)}
+                                  </TableCell>
                                   <TableCell>
-                                    <Badge variant="outline" className="font-mono text-[11px]">
-                                      {log.action}
-                                    </Badge>
+                                    <Badge variant="outline" className="font-mono text-[11px]">{log.action}</Badge>
                                   </TableCell>
                                   <TableCell className="max-w-56 truncate text-xs text-muted-foreground" title={log.reason ?? ''}>
                                     {log.reason || '—'}
@@ -757,9 +996,12 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                                         </div>
                                         <details className="rounded-md border bg-background">
                                           <summary className="cursor-pointer px-2.5 py-1.5 text-xs text-muted-foreground">
-                                            JSON details (sebelum / sesudah · {auditCountOverrides(log.before ?? null)} → {auditCountOverrides(log.after ?? null)} override)
+                                            JSON details (sebelum / sesudah · {auditCountOverrides(log.before ?? null)} →{' '}
+                                            {auditCountOverrides(log.after ?? null)} override)
                                           </summary>
-                                          <pre className="max-h-48 overflow-auto border-t px-2.5 py-2 text-[10px] leading-relaxed">{JSON.stringify({ before: log.before, after: log.after }, null, 2)}</pre>
+                                          <pre className="max-h-48 overflow-auto border-t px-2.5 py-2 text-[10px] leading-relaxed">
+                                            {JSON.stringify({ before: log.before, after: log.after }, null, 2)}
+                                          </pre>
                                         </details>
                                       </div>
                                     </TableCell>
@@ -771,9 +1013,7 @@ export function RoleAccessDialog({ userId, open, onOpenChange }: RoleAccessDialo
                         </TableBody>
                       </Table>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Menampilkan {auditLogs.length} dari total {auditTotal} entri
-                    </p>
+                    <p className="text-xs text-muted-foreground">Menampilkan {auditLogs.length} dari total {auditTotal} entri</p>
                   </>
                 )}
               </TabsContent>
