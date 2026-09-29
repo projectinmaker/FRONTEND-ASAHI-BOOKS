@@ -75,13 +75,13 @@ export interface COAResponse extends COARules {
 }
 
 export interface COACreate extends COARules {
-  kode: string;
+  kode?: string; // mode typeCode: kosong = auto-generate dari parent
   nama: string;
-  header: HeaderCOA;
-  tingkat: TingkatAkun;
+  header?: HeaderCOA; // wajib hanya pada mode legacy (tanpa typeCode)
+  tingkat?: TingkatAkun;
   indukId?: string | null;
   indukKode?: string | null;
-  saldoNormal: SaldoNormal;
+  saldoNormal?: SaldoNormal;
   status?: string;
   jenisKasBank?: string | null;
   // Catatan COA v2: backend menerima `saldo` (Decimal, default 0) dan
@@ -91,6 +91,12 @@ export interface COACreate extends COARules {
   // field ini tetap di-type untuk keselarasan dengan backend schema.
   saldo?: number;
   tanggal?: string | null;
+  // === Mode baru (revisi form COA) — derivasi server-side ===
+  // Kirim typeCode dari GET /coa/account-types; server menurunkan
+  // header/tingkat/saldoNormal/klasifikasi dari template registry.
+  typeCode?: string;
+  isSub?: boolean;
+  structuralType?: 'GROUP' | 'DETAIL'; // untuk akun level root
 }
 
 export interface COAUpdate extends COARules {
@@ -100,6 +106,76 @@ export interface COAUpdate extends COARules {
   saldo?: number;
   status?: string;
   tanggal?: string | null;
+}
+
+// ── COA — Registry Tipe Akun (revisi form COA) ──────────────────────
+
+export interface AccountTypeTemplate {
+  typeCode: string;
+  displayName: string;
+  accountClass: string; // ASSET | LIABILITY | EQUITY | REVENUE | COGS | EXPENSE
+  financialStatement: string; // NERACA | LABA RUGI
+  reportGroup?: string | null;
+  accountSubclass?: string | null;
+  saldoNormal: SaldoNormal;
+  defaultPostingLevel: string;
+  defaultSystemPosting: boolean;
+  defaultManualPosting: boolean;
+  defaultControl: boolean;
+  defaultReconciliation: boolean;
+  subledgerType?: string | null;
+  isSystemReserved: boolean;
+  allowedParentSubclasses: string[];
+  supportsRoot: boolean;
+  requiresJenisKasBank: boolean;
+}
+
+export interface COAParentOption {
+  id: string;
+  kode: string;
+  nama: string;
+  tingkat: TingkatAkun;
+  accountClass?: string | null;
+  accountSubclass?: string | null;
+  recommended: boolean;
+}
+
+export interface COAPreviewRequest {
+  typeCode: string;
+  isSub?: boolean;
+  indukId?: string | null;
+  structuralType?: 'GROUP' | 'DETAIL' | null;
+  kode?: string | null;
+  nama?: string | null;
+  jenisKasBank?: string | null;
+}
+
+export interface COAPreviewResponse {
+  typeCode: string;
+  displayName: string;
+  kode?: string | null;
+  kodeGenerated: boolean;
+  nama?: string | null;
+  indukId?: string | null;
+  indukKode?: string | null;
+  indukNama?: string | null;
+  tingkat?: TingkatAkun | null;
+  header?: HeaderCOA | null;
+  saldoNormal?: SaldoNormal | null;
+  accountClass?: string | null;
+  accountSubclass?: string | null;
+  financialStatement?: string | null;
+  reportGroup?: string | null;
+  allowSystemPosting?: boolean | null;
+  allowManualPosting?: boolean | null;
+  isControlAccount?: boolean | null;
+  subledgerType?: string | null;
+  systemAccountType?: string | null;
+  reconciliationRequired?: boolean | null;
+  active?: boolean | null;
+  jenisKasBank?: string | null;
+  warnings: string[];
+  errors: string[];
 }
 
 // ── Simple / Nested objects ──────────────────────────────────────────
@@ -2188,14 +2264,55 @@ export interface NeracaLaporanResponse {
   totalEkuitas: number;
 }
 
+export interface ArusKasCounterAccount {
+  accountId?: string | null;
+  accountCode?: string | null;
+  accountName?: string | null;
+  jumlah: number;
+}
+
 export interface ArusKasItem {
+  // Legacy (tetap dikirim backend untuk backward compatibility)
   nama: string;
   jumlah: number;
+  journalId?: string | null;
+  noJurnal?: string | null;
+  // === Revisi: identitas COA & narasi (additive) ===
+  category?: 'OPERASIONAL' | 'INVESTASI' | 'PEMBIAYAAN' | 'BELUM_DIKLASIFIKASIKAN' | null;
+  direction?: 'INFLOW' | 'OUTFLOW' | null;
+  accountId?: string | null;
+  accountCode?: string | null;
+  accountName?: string | null;
+  cashAccountId?: string | null;
+  cashAccountCode?: string | null;
+  cashAccountName?: string | null;
+  transactionDescription?: string | null;
+  lineDescription?: string | null;
+  sourceModule?: string | null;
+  sourceId?: string | null;
+  sourceNo?: string | null;
+  tanggal?: string | null;
+  reversalOfId?: string | null;
+  reversalOfNoJurnal?: string | null;
+  allocationStatus?: 'EXACT' | 'MIXED_UNALLOCATED' | null;
+  counterAccounts?: ArusKasCounterAccount[];
+}
+
+export interface ArusKasAccountGroup {
+  accountId?: string | null;
+  accountCode?: string | null;
+  accountName?: string | null;
+  inflow: number;
+  outflow: number;
+  net: number;
+  transactionCount: number;
 }
 
 export interface ArusKasBagian {
   items: ArusKasItem[];
   total: number;
+  // Ringkasan per akun lawan (additive; diisi view=detail & summary)
+  accountGroups?: ArusKasAccountGroup[];
 }
 
 export interface ArusKasLaporanResponse {
@@ -2203,6 +2320,10 @@ export interface ArusKasLaporanResponse {
   operasional: ArusKasBagian;
   investasi: ArusKasBagian;
   pembiayaan: ArusKasBagian;
+  belumDiklasifikasikan?: ArusKasBagian;
+  jumlahJurnalBelumDiklasifikasi?: number;
+  klasifikasiLengkap?: boolean;
+  selisihRekonsiliasi?: number;
   netChange: number;
   saldoAwal: number;
   saldoAkhir: number;

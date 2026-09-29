@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,8 +12,8 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
 import { api, ApiError } from '@/lib/api';
-import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse } from '@/types/api';
-import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity } from 'lucide-react';
+import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse } from '@/types/api';
+import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
 import dynamic from 'next/dynamic';
@@ -32,7 +32,12 @@ const ReconciliationDetailPage = dynamic(() => import('@/components/erp/reports/
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const formatRp = (val: number) => 'Rp ' + val.toLocaleString('id-ID');
+const formatRp = (val: number | string) => {
+  // Backend (Pydantic) menserialisasi Decimal sebagai string (mis. "-1500000.00").
+  // Koersi ke number supaya toLocaleString memformat dengan benar.
+  const n = typeof val === 'number' ? val : Number(val);
+  return 'Rp ' + (Number.isFinite(n) ? n : 0).toLocaleString('id-ID');
+};
 const formatDate = (d: string | null | undefined) => {
   if (!d) return '—';
   try {
@@ -533,28 +538,177 @@ function NeracaReport() {
 // Sub-page: Arus Kas
 // ═════════════════════════════════════════════════════════════════════════════
 
-function ArusKasSection({ title, items, total }: { title: string; items: { nama: string; jumlah: number }[]; total: number }) {
+// ─── Arus Kas: grouping per akun lawan ─────────────────────────────────────
+
+interface ArusKasItemGroup {
+  key: string;
+  code: string | null;
+  name: string;
+  isMultiAccount: boolean;
+  items: ArusKasItem[];
+  net: number;
+}
+
+function arusKasItemLabel(item: ArusKasItem): string {
+  if (item.accountCode) return `${item.accountCode} — ${item.accountName ?? item.nama}`;
+  return item.accountName ?? item.nama;
+}
+
+function buildArusKasItemGroups(items: ArusKasItem[]): ArusKasItemGroup[] {
+  const groups: ArusKasItemGroup[] = [];
+  const byKey = new Map<string, ArusKasItemGroup>();
+  for (const item of items) {
+    const isMultiAccount = item.allocationStatus === 'MIXED_UNALLOCATED' || (!item.accountCode && !item.accountId);
+    const key = isMultiAccount ? '__multi_akun__' : (item.accountCode ?? item.accountId ?? item.accountName ?? item.nama);
+    let group = byKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        code: isMultiAccount ? null : (item.accountCode ?? null),
+        name: isMultiAccount ? 'Multi-akun' : (item.accountName ?? item.nama),
+        isMultiAccount,
+        items: [],
+        net: 0
+      };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    group.items.push(item);
+    // jumlah bisa string Decimal dari backend — koersi sebelum menjumlah.
+    group.net += typeof item.jumlah === 'number' ? item.jumlah : Number(item.jumlah) || 0;
+  }
+  return groups;
+}
+
+function ArusKasAmount({ value, bold = false }: { value: number | string; bold?: boolean }) {
+  // Nilai bisa string Decimal dari backend — koersi sekali di sini.
+  const n = typeof value === 'number' ? value : Number(value);
+  const safe = Number.isFinite(n) ? n : 0;
+  return (
+    <span className={`shrink-0 tabular-nums ${bold ? 'font-semibold' : 'font-medium'} ${safe >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+      {safe >= 0 ? '+' : ''}
+      {formatRp(safe)}
+    </span>
+  );
+}
+
+function ArusKasItemRow({ item }: { item: ArusKasItem }) {
+  const isMultiAccount = item.allocationStatus === 'MIXED_UNALLOCATED';
+  const isUnclassified = item.category === 'BELUM_DIKLASIFIKASIKAN';
+  const counterAccounts = item.counterAccounts ?? [];
+
+  const metaParts: string[] = [];
+  if (item.tanggal) metaParts.push(formatDate(item.tanggal));
+  if (item.sourceNo) metaParts.push(item.sourceNo);
+  if (item.transactionDescription) metaParts.push(item.transactionDescription);
+  const kasBankParts = [item.cashAccountCode, item.cashAccountName].filter((v): v is string => Boolean(v));
+  const hasMeta = metaParts.length > 0 || kasBankParts.length > 0 || Boolean(item.noJurnal) || Boolean(item.reversalOfNoJurnal);
+
+  return (
+    <div className="py-1">
+      {/* Baris utama: akun lawan + nilai (negatif = arus kas keluar) */}
+      <div className="flex items-start justify-between gap-3 pl-9 pr-2 text-sm">
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5">
+          <span className="min-w-0 break-words text-muted-foreground">{arusKasItemLabel(item)}</span>
+          {isMultiAccount && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="Transaksi multi-akun" />}
+          {isUnclassified && (
+            <Badge variant="outline" className="gap-1 border-amber-300 bg-amber-50 text-[10px] text-amber-700">
+              <AlertTriangle className="h-3 w-3" />
+              Belum diklasifikasi
+            </Badge>
+          )}
+        </span>
+        <ArusKasAmount value={item.jumlah} />
+      </div>
+
+      {/* Subbaris: tanggal · no sumber · deskripsi · kas/bank · jurnal · pembalik */}
+      {hasMeta && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-9 pr-2 pb-0.5 text-[11px] text-muted-foreground">
+          {metaParts.length > 0 && <span>{metaParts.join(' · ')}</span>}
+          {kasBankParts.length > 0 && <span>Kas/Bank: {kasBankParts.join(' ')}</span>}
+          {item.noJurnal && (
+            <span>
+              Jurnal: <span className="font-mono">{item.noJurnal}</span>
+            </span>
+          )}
+          {item.reversalOfNoJurnal && (
+            <Badge variant="secondary" className="py-0 text-[10px] font-normal">
+              Pembalik dari <span className="font-mono">{item.reversalOfNoJurnal}</span>
+            </Badge>
+          )}
+        </div>
+      )}
+
+      {/* Rincian akun lawan untuk jurnal multi-akun yang belum teralokasi */}
+      {isMultiAccount && counterAccounts.length > 0 && (
+        <div className="space-y-0.5 py-1 pl-12 pr-2">
+          {counterAccounts.map((ca, idx) => (
+            <div key={`${ca.accountId ?? ca.accountCode ?? 'counter'}-${idx}`} className="flex flex-wrap items-baseline justify-between gap-x-3 text-[11px] text-muted-foreground">
+              <span className="min-w-0">
+                <span className="font-mono">{ca.accountCode ?? '—'}</span>
+                <span> — {ca.accountName ?? 'Tanpa nama'}</span>
+              </span>
+              <span className={`shrink-0 tabular-nums ${ca.jumlah >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                {ca.jumlah >= 0 ? '+' : ''}
+                {formatRp(ca.jumlah)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ArusKasSection({ title, items, total, warning = false, note }: { title: string; items: ArusKasItem[]; total: number; warning?: boolean; note?: string }) {
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const groups = useMemo(() => buildArusKasItemGroups(items), [items]);
+
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between border-b pb-2 mb-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 mb-2">
+        <h3 className={`flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide ${warning ? 'text-amber-600' : 'text-muted-foreground'}`}>
+          {warning && <AlertTriangle className="h-4 w-4" />}
+          {title}
+        </h3>
+        {note && <span className={`text-xs ${warning ? 'text-amber-600' : 'text-muted-foreground'}`}>{note}</span>}
       </div>
-      {items.length === 0 && <p className="text-xs text-muted-foreground pl-4 py-1">Tidak ada data</p>}
-      {items.map((item, idx) => (
-        <div key={idx} className="flex items-center justify-between px-4 py-1.5 text-sm">
-          <span className="text-muted-foreground">{item.nama}</span>
-          <span className={item.jumlah >= 0 ? 'text-emerald-600' : 'text-red-500'}>
-            {item.jumlah >= 0 ? '+' : ''}
-            {formatRp(item.jumlah)}
-          </span>
-        </div>
-      ))}
+
+      {items.length === 0 && <p className="py-1 pl-4 text-xs text-muted-foreground">{note ?? 'Tidak ada data'}</p>}
+
+      {groups.map((group) => {
+        const isExpanded = Boolean(expandedGroups[group.key]);
+        return (
+          <div key={group.key} className="rounded-md bg-muted/30">
+            <button type="button" onClick={() => toggleGroup(group.key)} aria-expanded={isExpanded} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-muted/60">
+              {isExpanded ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                {group.code && <span className="shrink-0 font-mono text-xs">{group.code}</span>}
+                <span className="min-w-0 truncate text-sm">{group.name}</span>
+              </span>
+              <Badge variant="outline" className="shrink-0 text-[10px] tabular-nums">
+                {group.items.length} transaksi
+              </Badge>
+              <ArusKasAmount value={group.net} bold />
+            </button>
+            {isExpanded && (
+              <div className="border-t pb-1 pt-0.5">
+                {group.items.map((item, idx) => (
+                  <ArusKasItemRow key={`${item.journalId ?? 'jurnal'}-${item.accountId ?? item.accountCode ?? 'akun'}-${idx}`} item={item} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
       <div className="flex items-center justify-between px-4 py-1.5 text-sm font-semibold border-t">
         <span>Total {title}</span>
-        <span className={total >= 0 ? 'text-emerald-600' : 'text-red-500'}>
-          {total >= 0 ? '+' : ''}
-          {formatRp(total)}
-        </span>
+        <ArusKasAmount value={total} bold />
       </div>
     </div>
   );
@@ -586,6 +740,15 @@ function ArusKasReport() {
     fetchData();
   }, []);
 
+  const belumDiklasifikasi = data?.belumDiklasifikasikan;
+  const jumlahJurnalBelumDiklasifikasi = data?.jumlahJurnalBelumDiklasifikasi ?? 0;
+  const tampilkanBelumDiklasifikasi = (belumDiklasifikasi?.items.length ?? 0) > 0 || jumlahJurnalBelumDiklasifikasi > 0;
+  // Backend mengirim selisihRekonsiliasi sebagai string Decimal — koersi.
+  const selisihRaw = data?.selisihRekonsiliasi;
+  const selisihParsed = selisihRaw === undefined || selisihRaw === null ? null : Number(selisihRaw);
+  const selisihRekonsiliasi = selisihParsed !== null && Number.isFinite(selisihParsed) ? selisihParsed : null;
+  const rekonsiliasiSeimbang = selisihRekonsiliasi === 0;
+
   return (
     <div className="space-y-4">
       <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
@@ -606,6 +769,8 @@ function ArusKasReport() {
               <ArusKasSection title="Arus Kas dari Aktivitas Investasi" items={data.investasi.items} total={data.investasi.total} />
               <ArusKasSection title="Arus Kas dari Aktivitas Pembiayaan" items={data.pembiayaan.items} total={data.pembiayaan.total} />
 
+              {tampilkanBelumDiklasifikasi && <ArusKasSection title="Belum Diklasifikasi" warning note={jumlahJurnalBelumDiklasifikasi > 0 ? `${jumlahJurnalBelumDiklasifikasi} jurnal belum memiliki klasifikasi arus kas` : undefined} items={belumDiklasifikasi?.items ?? []} total={belumDiklasifikasi?.total ?? 0} />}
+
               <div className="border-t pt-4 space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Saldo Awal</span>
@@ -622,6 +787,21 @@ function ArusKasReport() {
                   <span>Saldo Akhir</span>
                   <span>{formatRp(data.saldoAkhir)}</span>
                 </div>
+                {selisihRekonsiliasi !== null && (
+                  <div className="flex items-center justify-between gap-2 text-sm border-t pt-2">
+                    <span className="text-muted-foreground">Selisih Rekonsiliasi</span>
+                    {rekonsiliasiSeimbang ? (
+                      <Badge className="gap-1 bg-emerald-600 text-white hover:bg-emerald-600">
+                        <CheckCircle2 className="h-3 w-3" />0 · Seimbang
+                      </Badge>
+                    ) : (
+                      <Badge className="gap-1 bg-amber-500 text-white hover:bg-amber-500">
+                        <AlertTriangle className="h-3 w-3" />
+                        {formatRp(selisihRekonsiliasi)} · Perlu diperiksa
+                      </Badge>
+                    )}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

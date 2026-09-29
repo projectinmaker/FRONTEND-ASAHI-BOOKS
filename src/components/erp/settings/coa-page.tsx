@@ -1,9 +1,6 @@
 'use client';
 
-import { useAuthStore } from '@/store/auth-store';
-import { COARulesForm, defaultRules } from './coa-rules';
-import { isActive } from '@/lib/coa';
-import type { COARules } from '@/types/api';
+import { isActive, loadAccountTypes, loadParents, previewCOA, matchAccountTypeTemplate, accountClassLabel, financialStatementLabel, tingkatLabel, yaTidak } from '@/lib/coa';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,10 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Sparkles, FolderTree, SearchX } from 'lucide-react';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, FolderTree, SearchX, RefreshCw, Check, ChevronsUpDown, AlertTriangle, Info, Lock } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 
@@ -22,7 +26,7 @@ import { api, ApiError } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import type { COAResponse, COACreate, COAUpdate, HeaderCOA, SaldoAwalItem, SaldoAwalResponse, TingkatAkun } from '@/types/api';
+import type { COAResponse, COACreate, COAUpdate, AccountTypeTemplate, COAParentOption, COAPreviewRequest, COAPreviewResponse, HeaderCOA, SaldoAwalItem, SaldoAwalResponse, TingkatAkun } from '@/types/api';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -34,12 +38,6 @@ const TINGKAT_LABEL: Record<TingkatAkun, string> = {
   HEADER: 'Akun Induk',
   GROUP: 'Sub Akun',
   DETAIL: 'DETAIL'
-};
-
-const TINGKAT_ORDER: Record<TingkatAkun, number> = {
-  HEADER: 0,
-  GROUP: 1,
-  DETAIL: 2
 };
 
 const PAGE_SIZE = 100;
@@ -86,27 +84,35 @@ const todayIso = () => {
 
 type FormMode = 'create' | 'edit';
 
-interface FormState {
-  kode: string;
-  nama: string;
-  header: HeaderCOA | '';
-  tingkat: TingkatAkun | '';
+type StructuralType = 'GROUP' | 'DETAIL';
+
+interface COAFormState {
+  typeCode: string;
+  isSub: boolean;
+  structuralType: StructuralType;
   indukId: string;
-  indukKode: string;
+  nama: string;
+  kode: string;
+  /** true bila user mengetik kode manual (bukan usulan otomatis). */
+  kodeManual: boolean;
+  status: 'AKTIF' | 'NONAKTIF';
   jenisKasBank: string;
+  // ── Saldo awal (jurnal berpasangan) ──
   saldoAwalDebit: string;
   saldoAwalKredit: string;
   tanggalSaldoAwal: string;
   akunLawanId: string;
 }
 
-const emptyForm: FormState = {
-  kode: '',
-  nama: '',
-  header: '',
-  tingkat: '',
+const emptyCreateForm: COAFormState = {
+  typeCode: '',
+  isSub: true,
+  structuralType: 'DETAIL',
   indukId: '',
-  indukKode: '',
+  nama: '',
+  kode: '',
+  kodeManual: false,
+  status: 'AKTIF',
   jenisKasBank: '',
   saldoAwalDebit: '',
   saldoAwalKredit: '',
@@ -122,47 +128,239 @@ interface COAPageProps {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Form Component (rendered in tab)
+// ParentPicker — searchable dropdown akun induk (GET /coa/parents).
+// Search di sisi server (query param `search`); parent recommended=true
+// ditampilkan paling atas dengan badge "Direkomendasikan".
 // ═══════════════════════════════════════════════════════════════════════════
 
-function COAForm({ mode, editId, initialData }: { mode: FormMode; editId?: string; initialData?: FormState }) {
-  const admin = useAuthStore((s) => s.user?.role === 'ADMINISTRATOR');
-  const [rules, setRules] = useState<COARules>({ ...defaultRules });
-  const [rulesLoaded, setRulesLoaded] = useState(mode === 'create');
+interface ParentPickerProps {
+  typeCode: string;
+  value: string;
+  selected: COAParentOption | null;
+  onChange: (opt: COAParentOption) => void;
+  excludeId?: string;
+  disabled?: boolean;
+  invalid?: boolean;
+}
+
+function ParentPicker({ typeCode, value, selected, onChange, excludeId, disabled, invalid }: ParentPickerProps) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [options, setOptions] = useState<COAParentOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const reqSeq = useRef(0);
+
+  // Debounce ketikan → refetch dengan query param search
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // CATATAN: reset internal saat tipe berganti ditangani lewat key={typeCode}
+  // di usage site (remount) — jadi tidak perlu effect reset di sini.
+
+  // Fetch parents saat popover terbuka / tipe / search berubah.
+  // setState dibungkus queueMicrotask supaya tidak synchronous di body effect
+  // (hindari cascading render).
+  useEffect(() => {
+    if (!open || !typeCode) return;
+    const seq = ++reqSeq.current;
+    queueMicrotask(() => {
+      if (seq !== reqSeq.current) return;
+      setLoading(true);
+      setFetchError(null);
+      loadParents(typeCode, { excludeId, search: debouncedSearch || undefined })
+        .then((res) => {
+          if (seq === reqSeq.current) setOptions(res);
+        })
+        .catch((e) => {
+          if (seq === reqSeq.current) setFetchError(e instanceof ApiError ? e.detail : 'Gagal memuat daftar akun induk');
+        })
+        .finally(() => {
+          if (seq === reqSeq.current) setLoading(false);
+        });
+    });
+  }, [open, typeCode, excludeId, debouncedSearch]);
+
+  const renderOption = (opt: COAParentOption) => (
+    <CommandItem
+      key={opt.id}
+      value={`${opt.kode} ${opt.nama}`}
+      onSelect={() => {
+        onChange(opt);
+        setOpen(false);
+      }}>
+      <Check className={cn('mr-2 h-4 w-4 shrink-0', value === opt.id ? 'opacity-100' : 'opacity-0')} />
+      <div className="flex flex-1 flex-col">
+        <span className="text-sm font-mono">
+          {opt.kode} <span className="font-sans">— {opt.nama}</span>
+        </span>
+        <span className="text-[11px] text-muted-foreground">
+          {tingkatLabel(opt.tingkat)}
+          {opt.accountSubclass ? ` · ${opt.accountSubclass}` : ''}
+        </span>
+      </div>
+      {opt.recommended && (
+        <Badge variant="outline" className="ml-2 shrink-0 border-emerald-200 bg-emerald-50 text-emerald-700">
+          Direkomendasikan
+        </Badge>
+      )}
+    </CommandItem>
+  );
+
+  const recommended = options.filter((o) => o.recommended);
+  const others = options.filter((o) => !o.recommended);
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) setSearch('');
+        setOpen(o);
+      }}>
+      <PopoverTrigger asChild>
+        <Button type="button" variant="outline" role="combobox" aria-expanded={open} disabled={disabled || loading} className={cn('w-full justify-between font-normal', !selected && 'text-muted-foreground', invalid && 'border-destructive focus-visible:ring-destructive')}>
+          <span className="truncate">{selected ? `${selected.kode} — ${selected.nama}` : 'Pilih akun induk…'}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput value={search} onValueChange={setSearch} placeholder="Cari kode / nama akun induk…" />
+          <CommandList>
+            {loading ? (
+              <div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Memuat akun induk…
+              </div>
+            ) : fetchError ? (
+              <div className="px-3 py-6 text-center text-sm text-destructive">{fetchError}</div>
+            ) : options.length === 0 ? (
+              <CommandEmpty>Tidak ada akun induk yang cocok untuk tipe akun ini.</CommandEmpty>
+            ) : (
+              <>
+                {recommended.length > 0 && <CommandGroup heading="Direkomendasikan">{recommended.map(renderOption)}</CommandGroup>}
+                {others.length > 0 && <CommandGroup heading={recommended.length > 0 ? 'Lainnya' : 'Akun Induk'}>{others.map(renderOption)}</CommandGroup>}
+              </>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DerivationRow — baris read-only di tab "Pengaturan Lanjutan".
+// Nilai diturunkan server (preview / nilai aktual akun) — bukan input bebas.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function DerivationRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border bg-background p-3 space-y-1">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <div className="text-sm font-medium break-words">{children}</div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Form Component (rendered in tab) — pola Accurate 2 tab:
+// 1. Informasi Umum      → input bisnis (tipe, induk, kode, nama, dsb.)
+// 2. Pengaturan Lanjutan → derivasi read-only dari registry server.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
+  const [form, setForm] = useState<COAFormState>(emptyCreateForm);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const activeTabId = useTabStore((s) => s.activeTabId);
+  const closeTab = useTabStore((s) => s.closeTab);
+  const refreshListTab = useTabStore((s) => s.refreshListTab);
+
+  // ── Registry tipe akun (GET /coa/account-types) ──
+  const [accountTypes, setAccountTypes] = useState<AccountTypeTemplate[]>([]);
+  const [typesLoading, setTypesLoading] = useState(true);
+  const [typesError, setTypesError] = useState<string | null>(null);
+  const [typesRetry, setTypesRetry] = useState(0);
+
+  // ── Akun induk terpilih (untuk display di picker) ──
+  const [indukSelected, setIndukSelected] = useState<COAParentOption | null>(null);
+
+  // ── Preview derivasi (POST /coa/preview) ──
+  const [preview, setPreview] = useState<COAPreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [regenKey, setRegenKey] = useState(0);
+
+  // ── Edit mode ──
+  const [editAccount, setEditAccount] = useState<COAResponse | null>(null);
+  const [editLoading, setEditLoading] = useState(mode === 'edit');
+  const [serverLockError, setServerLockError] = useState<string | null>(null);
+
+  // ── Saldo awal (jurnal berpasangan) ──
+  const [allCoa, setAllCoa] = useState<COAResponse[]>([]);
+  const [saldoAwal, setSaldoAwal] = useState<SaldoAwalResponse | null>(null);
+  const [loadingSaldoAwal, setLoadingSaldoAwal] = useState(true);
+
+  const title = mode === 'create' ? 'Tambah Akun Perkiraan' : 'Edit Akun Perkiraan';
+  const selectedTemplate = accountTypes.find((t) => t.typeCode === form.typeCode) || null;
+
+  // ── Fetch daftar tipe akun (dipakai create & edit — label tipe) ──
+  useEffect(() => {
+    let cancelled = false;
+    setTypesLoading(true);
+    loadAccountTypes()
+      .then((res) => {
+        if (cancelled) return;
+        setAccountTypes(res);
+        setTypesError(null);
+      })
+      .catch((e) => {
+        if (!cancelled) setTypesError(e instanceof ApiError ? e.detail : 'Gagal memuat daftar tipe akun');
+      })
+      .finally(() => {
+        if (!cancelled) setTypesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [typesRetry]);
+
+  // ── Edit: muat akun existing (GET /coa/{id}) ──
   useEffect(() => {
     if (mode !== 'edit' || !editId) return;
     let cancelled = false;
+    setEditLoading(true);
     api
       .get<COAResponse>('/coa/' + editId)
       .then((a) => {
         if (cancelled) return;
-        const next: COARules = {};
-        for (const key of Object.keys(defaultRules) as (keyof COARules)[]) Object.assign(next, { [key]: a[key] ?? defaultRules[key] });
-        next.active = isActive(a);
-        setRules(next);
-        setRulesLoaded(true);
+        setEditAccount(a);
+        setForm((prev) => ({
+          ...prev,
+          nama: a.nama,
+          kode: a.kode,
+          typeCode: '',
+          isSub: !!a.indukId || a.tingkat === 'DETAIL',
+          structuralType: a.tingkat === 'DETAIL' ? 'DETAIL' : 'GROUP',
+          status: isActive(a) ? 'AKTIF' : 'NONAKTIF',
+          jenisKasBank: a.jenisKasBank || ''
+        }));
       })
       .catch((e) => {
-        if (!cancelled) toast.error(e instanceof ApiError ? e.detail : 'Gagal memuat aturan akun. Buka ulang form.');
+        if (!cancelled) toast.error(e instanceof ApiError ? e.detail : 'Gagal memuat data akun. Buka ulang form.');
+      })
+      .finally(() => {
+        if (!cancelled) setEditLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, [mode, editId]);
-  const [form, setForm] = useState<FormState>(initialData || emptyForm);
-  const [submitting, setSubmitting] = useState(false);
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const activeTabId = useTabStore((s) => s.activeTabId);
-  const closeTab = useTabStore((s) => s.closeTab);
-  const refreshListTab = useTabStore((s) => s.refreshListTab);
 
-  // ── Induk (parent) options ──
-  const [indukOptions, setIndukOptions] = useState<COAResponse[]>([]);
-  const [loadingInduk, setLoadingInduk] = useState(false);
-  const [allCoa, setAllCoa] = useState<COAResponse[]>([]);
-  const [saldoAwal, setSaldoAwal] = useState<SaldoAwalResponse | null>(null);
-  const [loadingSaldoAwal, setLoadingSaldoAwal] = useState(true);
-
+  // ── Saldo awal + daftar COA (untuk akun lawan) ──
   useEffect(() => {
     let mounted = true;
     const loadSaldoAwal = async () => {
@@ -192,118 +390,126 @@ function COAForm({ mode, editId, initialData }: { mode: FormMode; editId?: strin
     };
   }, [editId, mode]);
 
-  // ── Fetch induk options (filtered by header and tingkat < current) ──
-  const fetchIndukOptions = useCallback(async (header: HeaderCOA, tingkat: TingkatAkun) => {
-    if (tingkat === 'HEADER') {
-      setIndukOptions([]);
+  // ── Preview derivasi (POST /coa/preview) — auto, debounce ringan ──
+  // Trigger: ganti tipe akun / akun induk / toggle sub akun / struktur /
+  // edit kode manual / jenis kas-bank / tombol Regenerate.
+  const previewKode = form.kodeManual ? form.kode.trim() : '';
+  const previewSeq = useRef(0);
+  useEffect(() => {
+    if (mode !== 'create') return;
+    if (!form.typeCode || (form.isSub && !form.indukId)) {
+      setPreview(null);
+      setPreviewError(null);
       return;
     }
-    setLoadingInduk(true);
-    try {
-      const validTingkat: TingkatAkun[] = tingkat === 'DETAIL' ? ['HEADER', 'GROUP'] : ['HEADER'];
-      const params = new URLSearchParams();
-      params.set('header', header);
-      params.set('limit', '500');
-      const res = await api.get<{ data: COAResponse[]; total: number; skip: number; limit: number }>(`/coa/?${params.toString()}`);
-      const filtered = res.data.filter((coa) => validTingkat.includes(coa.tingkat));
-      setIndukOptions(filtered);
-    } catch {
-      setIndukOptions([]);
-    } finally {
-      setLoadingInduk(false);
-    }
-  }, []);
+    const seq = ++previewSeq.current;
+    const timer = setTimeout(() => {
+      const request: COAPreviewRequest = {
+        typeCode: form.typeCode,
+        isSub: form.isSub,
+        indukId: form.isSub && form.indukId ? form.indukId : null,
+        structuralType: form.isSub ? null : form.structuralType,
+        kode: previewKode || null,
+        jenisKasBank: form.jenisKasBank || null
+      };
+      setPreviewLoading(true);
+      previewCOA(request)
+        .then((res) => {
+          if (seq !== previewSeq.current) return; // abaikan respons basi
+          setPreview(res);
+          setPreviewError(null);
+          // Auto-terisi kode usulan (selama user tidak sedang edit manual)
+          if (res.kodeGenerated && res.kode) {
+            const autoKode = res.kode;
+            setForm((prev) => (prev.kodeManual || prev.kode === autoKode ? prev : { ...prev, kode: autoKode }));
+          }
+        })
+        .catch((e) => {
+          if (seq !== previewSeq.current) return;
+          setPreview(null);
+          setPreviewError(e instanceof ApiError ? e.detail : 'Gagal memuat preview akun');
+        })
+        .finally(() => {
+          if (seq === previewSeq.current) setPreviewLoading(false);
+        });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [mode, form.typeCode, form.isSub, form.indukId, form.structuralType, previewKode, form.jenisKasBank, regenKey]);
 
-  useEffect(() => {
-    if (form.header && form.tingkat) {
-      fetchIndukOptions(form.header as HeaderCOA, form.tingkat as TingkatAkun);
-    } else {
-      setIndukOptions([]);
-    }
-  }, [form.header, form.tingkat, fetchIndukOptions]);
-
-  const title = mode === 'create' ? 'Tambah Akun Perkiraan' : 'Edit Akun Perkiraan';
-
-  // ── Form change handlers ──
-  const updateForm = (key: keyof FormState, value: string) => {
-    setForm((prev) => {
-      const next = { ...prev, [key]: value };
-      if (key === 'tingkat' && value === 'HEADER') {
-        next.indukId = '';
-        next.indukKode = '';
-      }
-      if (key === 'header') {
-        next.indukId = '';
-        next.indukKode = '';
-      }
-      return next;
-    });
+  // ── Handlers ──
+  const handleTypeChange = (v: string) => {
+    setForm((prev) => ({ ...prev, typeCode: v, indukId: '', kode: '', kodeManual: false, jenisKasBank: '' }));
+    setIndukSelected(null);
+    setPreview(null);
+    setPreviewError(null);
     setFormErrors((prev) => {
       const next = { ...prev };
-      delete next[key];
+      delete next.typeCode;
+      delete next.indukId;
+      delete next.kode;
       return next;
     });
   };
 
-  // ── Real-time field validation ──────────────────────────────────────────
-  const validateField = (field: keyof FormState, value: string): string => {
-    const trimmed = value.trim();
-    switch (field) {
-      case 'kode':
-        if (!trimmed) return 'Kode akun wajib diisi';
-        if (trimmed.length < 3) return 'Kode akun minimal 3 karakter';
-        return '';
-      case 'nama':
-        if (!trimmed) return 'Nama akun wajib diisi';
-        if (trimmed.length < 3) return 'Nama akun minimal 3 karakter';
-        return '';
-      default:
-        return '';
-    }
+  const handleSubToggle = (checked: boolean) => {
+    setForm((prev) => ({ ...prev, isSub: checked, ...(checked ? {} : { indukId: '' }) }));
+    if (!checked) setIndukSelected(null);
   };
 
-  const handleBlur = (field: keyof FormState) => {
-    const error = validateField(field, form[field]);
+  const handleIndukChange = (opt: COAParentOption) => {
+    setForm((prev) => ({ ...prev, indukId: opt.id }));
+    setIndukSelected(opt);
     setFormErrors((prev) => {
       const next = { ...prev };
-      if (error) {
-        next[field] = error;
-      } else {
-        delete next[field];
-      }
+      delete next.indukId;
       return next;
     });
+  };
+
+  const handleKodeChange = (v: string) => {
+    // Kosong = kembali ke mode otomatis (kode usulan dari server)
+    setForm((prev) => ({ ...prev, kode: v, kodeManual: v.trim() !== '' }));
+    setFormErrors((prev) => {
+      const next = { ...prev };
+      delete next.kode;
+      return next;
+    });
+  };
+
+  const handleRegenerate = () => {
+    // Buang override manual → kode usulan otomatis diambil ulang dari server
+    setForm((prev) => (prev.kodeManual ? { ...prev, kode: '', kodeManual: false } : prev));
+    setRegenKey((k) => k + 1);
   };
 
   const validateAll = (): boolean => {
     const errors: Record<string, string> = {};
-    (['kode', 'nama'] as const).forEach((field) => {
-      const e = validateField(field, form[field]);
-      if (e) errors[field] = e;
-    });
-    if (!form.header) errors.header = 'Header wajib dipilih';
-    if (!form.tingkat) errors.tingkat = 'Tingkat wajib dipilih';
-    if (form.tingkat && form.tingkat !== 'HEADER' && !form.indukId) {
-      errors.indukId = 'Sub akun wajib dipilih untuk tingkat Sub Akun / DETAIL';
+    const nama = form.nama.trim();
+    if (!nama) errors.nama = 'Nama akun wajib diisi';
+    else if (nama.length < 3) errors.nama = 'Nama akun minimal 3 karakter';
+    if (mode === 'create') {
+      if (!form.typeCode) errors.typeCode = 'Tipe akun wajib dipilih';
+      if (form.isSub && !form.indukId) errors.indukId = 'Akun induk wajib dipilih untuk sub akun';
+      if (!form.isSub && !form.kode.trim()) errors.kode = 'Kode akun wajib diisi manual untuk akun level root';
+      if (form.kode.trim() && form.kode.trim().length < 3) errors.kode = 'Kode akun minimal 3 karakter';
     }
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  const handleIndukChange = (value: string) => {
-    const selected = indukOptions.find((opt) => opt.id === value);
-    // Cek apakah parent yang dipilih adalah "Kas dan Setara Kas"
-    const parentName = selected?.nama?.toLowerCase() || '';
-    const isKasDanSetaraKas = parentName.includes('kas') && parentName.includes('setara');
-    setForm((prev) => ({
-      ...prev,
-      indukId: selected?.id || '',
-      indukKode: selected?.kode || '',
-      // Reset jenisKasBank jika parent bukan "Kas dan Setara Kas"
-      jenisKasBank: isKasDanSetaraKas ? prev.jenisKasBank : ''
-    }));
-  };
+  // ── Preview warnings/errors ──
+  const blockingErrors = [...(preview?.errors ?? []), ...(previewError ? [previewError] : [])];
+  const previewWarnings = preview?.warnings ?? [];
+  const kodeOtomatis = !!preview?.kodeGenerated && !form.kodeManual;
+  const formIncomplete = mode === 'create' && (!form.typeCode || (form.isSub && !form.indukId) || !form.nama.trim() || (!form.isSub && !form.kode.trim()));
+  const saveDisabled = submitting || editLoading || formIncomplete || (mode === 'create' && blockingErrors.length > 0);
 
+  // ── Edit helpers (tipe & induk read-only) ──
+  const editTypeLabel = editAccount ? (matchAccountTypeTemplate(editAccount, accountTypes)?.displayName ?? (editAccount.accountSubclass ? `Subkelas: ${editAccount.accountSubclass}` : 'Klasifikasi manual/legacy')) : 'Memuat…';
+  const editParentLabel = editAccount ? (editAccount.indukKode ? `${editAccount.indukKode} — induk saat ini` : 'Akun level root (tanpa induk)') : '—';
+  const showJenisKasBank = mode === 'create' ? !!selectedTemplate?.requiresJenisKasBank : !!editAccount && (editAccount.accountSubclass === 'CASH_BANK' || !!editAccount.jenisKasBank);
+
+  // ── Simpan saldo awal (jurnal berpasangan) ──
   const saveSaldoAwal = async (coa: COAResponse) => {
     const debit = Number(form.saldoAwalDebit || 0);
     const kredit = Number(form.saldoAwalKredit || 0);
@@ -364,9 +570,10 @@ function COAForm({ mode, editId, initialData }: { mode: FormMode; editId?: strin
     });
   };
 
+  // ── Submit ──
   const handleSubmit = async () => {
-    if (!rulesLoaded || (rules.isControlAccount && !rules.subledgerType)) {
-      toast.error('Lengkapi aturan akun dan jenis subledger.');
+    if (mode === 'create' && blockingErrors.length > 0) {
+      toast.error('Masih ada masalah yang harus diperbaiki sebelum menyimpan');
       return;
     }
     if (!validateAll()) {
@@ -375,21 +582,22 @@ function COAForm({ mode, editId, initialData }: { mode: FormMode; editId?: strin
     }
 
     setSubmitting(true);
+    setServerLockError(null);
     try {
-      const rulePayload = { ...rules, status: rules.active ? 'AKTIF' : 'NONAKTIF' };
-      if (!admin) delete rulePayload.systemAccountType;
       if (mode === 'create') {
+        // Mode baru (typeCode): klasifikasi header/tingkat/saldoNormal diderivasi
+        // server dari template registry — JANGAN kirim manual.
         const payload: COACreate = {
-          kode: form.kode.trim(),
+          typeCode: form.typeCode,
+          isSub: form.isSub,
           nama: form.nama.trim(),
-          header: form.header as HeaderCOA,
-          tingkat: form.tingkat as TingkatAkun,
-          saldoNormal: 'DEBIT',
-          indukId: form.indukId || null,
-          indukKode: form.indukKode || null,
-          ...rulePayload,
-          ...(form.jenisKasBank ? { jenisKasBank: form.jenisKasBank } : {})
+          status: form.status
         };
+        if (form.isSub) payload.indukId = form.indukId;
+        else payload.structuralType = form.structuralType;
+        if (form.kode.trim()) payload.kode = form.kode.trim();
+        if (form.jenisKasBank) payload.jenisKasBank = form.jenisKasBank;
+
         const created = await api.post<COAResponse>('/coa/', payload);
         if (Number(form.saldoAwalDebit || 0) > 0 || Number(form.saldoAwalKredit || 0) > 0) {
           await saveSaldoAwal(created);
@@ -397,11 +605,14 @@ function COAForm({ mode, editId, initialData }: { mode: FormMode; editId?: strin
         toast.success('Akun perkiraan berhasil ditambahkan');
       } else {
         if (!editId) return;
+        // Update hanya field non-structural: nama + status/active.
+        // (jenisKasBank tidak dapat diubah setelah create — schema COAUpdate.)
+        // Server menolak perubahan structural untuk akun yang sudah punya
+        // jurnal — pesan errornya ditampilkan sebagai lock reason di form.
         const payload: COAUpdate = {
-          ...rulePayload,
           nama: form.nama.trim(),
-          indukId: form.indukId || null,
-          indukKode: form.indukKode || null
+          status: form.status,
+          active: form.status === 'AKTIF'
         };
         const updated = await api.put<COAResponse>(`/coa/${editId}`, payload);
         await saveSaldoAwal(updated);
@@ -410,144 +621,393 @@ function COAForm({ mode, editId, initialData }: { mode: FormMode; editId?: strin
       refreshListTab('settings', 'coa');
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.detail : mode === 'create' ? 'Gagal menambahkan akun' : 'Gagal memperbarui akun');
+      const message = err instanceof ApiError ? err.detail : mode === 'create' ? 'Gagal menambahkan akun' : 'Gagal memperbarui akun';
+      if (mode === 'edit') setServerLockError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
   };
 
+  // ── Skeleton saat memuat akun untuk edit ──
+  if (mode === 'edit' && editLoading && !editAccount) {
+    return (
+      <FormTabShell title={title}>
+        <Card className="max-w-4xl">
+          <CardContent className="p-6 space-y-4">
+            <Skeleton className="h-4 w-64" />
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-2/3" />
+            <Skeleton className="h-40 w-full" />
+          </CardContent>
+        </Card>
+      </FormTabShell>
+    );
+  }
+
   return (
     <FormTabShell title={title}>
       <Card className="max-w-4xl">
         <CardContent className="p-6 space-y-4">
-          <p className="text-sm text-muted-foreground">{mode === 'create' ? 'Isi data di bawah untuk menambahkan akun baru ke chart of accounts.' : `Mengedit akun: ${form.kode} — ${form.nama}`}</p>
+          <p className="text-sm text-muted-foreground">{mode === 'create' ? 'Pilih tipe akun (istilah bisnis) — klasifikasi laporan, saldo normal, dan aturan posting diturunkan otomatis oleh sistem.' : `Mengedit akun: ${form.kode} — ${editAccount?.nama ?? form.nama}`}</p>
 
-          <COARulesForm value={rules} onChange={setRules} admin={admin} disabled={submitting || !rulesLoaded} />
-          {/* Kode */}
-          <div className="space-y-2">
-            <Label htmlFor="coa-kode">Kode Akun</Label>
-            <Input id="coa-kode" placeholder="Contoh: 1-1100" value={form.kode} onChange={(e) => updateForm('kode', e.target.value)} onBlur={() => handleBlur('kode')} aria-invalid={!!formErrors.kode} className={formErrors.kode ? 'border-destructive focus-visible:ring-destructive' : ''} disabled={mode === 'edit'} />
-            {formErrors.kode ? <p className="text-xs text-destructive mt-1">{formErrors.kode}</p> : mode === 'edit' ? <p className="text-[11px] text-muted-foreground">Kode akun tidak dapat diubah.</p> : null}
-          </div>
-
-          {/* Nama */}
-          <div className="space-y-2">
-            <Label htmlFor="coa-nama">Nama Akun</Label>
-            <Input id="coa-nama" placeholder="Nama akun" value={form.nama} onChange={(e) => updateForm('nama', e.target.value)} onBlur={() => handleBlur('nama')} aria-invalid={!!formErrors.nama} className={formErrors.nama ? 'border-destructive focus-visible:ring-destructive' : ''} />
-            {formErrors.nama && <p className="text-xs text-destructive mt-1">{formErrors.nama}</p>}
-          </div>
-
-          {/* Header & Tingkat */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Akun Induk</Label>
-              <Select value={form.header} onValueChange={(v) => updateForm('header', v)} disabled={mode === 'edit'}>
-                <SelectTrigger aria-invalid={!!formErrors.header} className={formErrors.header ? 'border-destructive focus-visible:ring-destructive' : ''}>
-                  <SelectValue placeholder="Pilih akun induk" />
-                </SelectTrigger>
-                <SelectContent>
-                  {HEADER_OPTIONS.map((h) => (
-                    <SelectItem key={h} value={h}>
-                      {h}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {formErrors.header && <p className="text-xs text-destructive mt-1">{formErrors.header}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label>Tingkat</Label>
-              <Select value={form.tingkat} onValueChange={(v) => updateForm('tingkat', v)} disabled={mode === 'edit'}>
-                <SelectTrigger aria-invalid={!!formErrors.tingkat} className={formErrors.tingkat ? 'border-destructive focus-visible:ring-destructive' : ''}>
-                  <SelectValue placeholder="Pilih tingkat" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TINGKAT_OPTIONS.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {TINGKAT_LABEL[t]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {formErrors.tingkat && <p className="text-xs text-destructive mt-1">{formErrors.tingkat}</p>}
-            </div>
-          </div>
-
-          {/* Induk (parent) — only for Sub Akun / DETAIL */}
-          {form.tingkat && form.tingkat !== 'HEADER' && (
-            <div className="space-y-2">
-              <Label>Sub Akun</Label>
-              <SearchableDropdown
-                value={form.indukId}
-                onValueChange={handleIndukChange}
-                options={indukOptions.map((opt) => ({
-                  id: opt.id,
-                  label: opt.kode + ' — ' + opt.nama,
-                  subtitle: opt.header
-                }))}
-                placeholder="Pilih sub akun"
-                loading={loadingInduk}
-              />
-              {formErrors.indukId && <p className="text-xs text-destructive mt-1">{formErrors.indukId}</p>}
-            </div>
+          {/* ── Lock reason dari server (edit: perubahan structural ditolak) ── */}
+          {mode === 'edit' && serverLockError && (
+            <Alert variant="destructive">
+              <Lock className="h-4 w-4" />
+              <AlertTitle>Perubahan ditolak server</AlertTitle>
+              <AlertDescription>{serverLockError}</AlertDescription>
+            </Alert>
           )}
 
-          {/* Jenis Kas/Bank — muncul ketika parent (sub akun) yang dipilih adalah "Kas dan Setara Kas" */}
-          {mode === 'create' &&
-            (() => {
-              const selectedInduk = indukOptions.find((opt) => opt.id === form.indukId);
-              const parentName = selectedInduk?.nama?.toLowerCase() || '';
-              const isKasDanSetaraKas = parentName.includes('kas') && parentName.includes('setara');
-              return isKasDanSetaraKas;
-            })() && (
-              <div className="space-y-2">
-                <Label>Jenis Kas/Bank</Label>
-                <Select value={form.jenisKasBank} onValueChange={(v) => updateForm('jenisKasBank', v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih jenis kas/bank" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="KAS">KAS</SelectItem>
-                    <SelectItem value="BANK">BANK</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">Pilih jenis kas atau bank untuk akun di bawah "Kas dan Setara Kas".</p>
-              </div>
-            )}
+          {/* ── Preview errors (create, blocking) ── */}
+          {mode === 'create' && blockingErrors.length > 0 && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Akun belum dapat disimpan</AlertTitle>
+              <AlertDescription>
+                <ul className="list-disc pl-4">
+                  {blockingErrors.map((e, i) => (
+                    <li key={i}>{e}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
 
-          <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
-            <div>
-              <Label className="text-sm font-medium">Saldo Awal</Label>
-              <p className="mt-1 text-xs text-muted-foreground">Saldo awal dicatat sebagai jurnal berpasangan. Isi salah satu sisi dan pilih akun lawannya agar tetap balance.</p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* ── Preview warnings (create, informatif) ── */}
+          {mode === 'create' && previewWarnings.length > 0 && (
+            <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Perhatian</AlertTitle>
+              <AlertDescription className="text-amber-900/90 dark:text-amber-200/90">
+                <ul className="list-disc pl-4">
+                  {previewWarnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <Tabs defaultValue="umum">
+            <TabsList className="w-full sm:w-auto">
+              <TabsTrigger value="umum">Informasi Umum</TabsTrigger>
+              <TabsTrigger value="lanjutan">Pengaturan Lanjutan</TabsTrigger>
+            </TabsList>
+
+            {/* ══════════════ TAB 1: INFORMASI UMUM ══════════════ */}
+            <TabsContent value="umum" className="space-y-4 pt-4">
+              {/* 1. Tipe Akun */}
               <div className="space-y-2">
-                <Label htmlFor="coa-saldo-debit">Debit</Label>
-                <Input id="coa-saldo-debit" type="number" min="0" step="0.01" placeholder="0" value={form.saldoAwalDebit} onChange={(e) => updateForm('saldoAwalDebit', e.target.value)} disabled={loadingSaldoAwal} />
+                <Label>
+                  Tipe Akun <span className="text-destructive">*</span>
+                </Label>
+                {mode === 'create' ? (
+                  typesLoading ? (
+                    <Skeleton className="h-9 w-full" />
+                  ) : typesError ? (
+                    <div className="flex items-center gap-2">
+                      <p className="flex-1 text-xs text-destructive">{typesError}</p>
+                      <Button variant="outline" size="sm" onClick={() => setTypesRetry((k) => k + 1)}>
+                        Coba Lagi
+                      </Button>
+                    </div>
+                  ) : (
+                    <Select value={form.typeCode} onValueChange={handleTypeChange} disabled={submitting}>
+                      <SelectTrigger aria-invalid={!!formErrors.typeCode} className={formErrors.typeCode ? 'border-destructive focus-visible:ring-destructive' : ''}>
+                        <SelectValue placeholder="Pilih tipe akun (mis. Kas & Bank)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accountTypes.map((t) => (
+                          <SelectItem key={t.typeCode} value={t.typeCode}>
+                            <span className="font-medium">{t.displayName}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {accountClassLabel(t.accountClass)} · {financialStatementLabel(t.financialStatement)}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )
+                ) : (
+                  <Select value="__existing__" disabled>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__existing__">{editTypeLabel}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                {formErrors.typeCode && <p className="text-xs text-destructive mt-1">{formErrors.typeCode}</p>}
+                {mode === 'edit' && <p className="text-[11px] text-muted-foreground">Tipe akun tidak dapat diubah setelah akun dibuat.</p>}
+                {mode === 'create' && selectedTemplate && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Klasifikasi <span className="font-medium">{accountClassLabel(selectedTemplate.accountClass)}</span> · {financialStatementLabel(selectedTemplate.financialStatement)} · saldo normal {selectedTemplate.saldoNormal} — diturunkan otomatis.
+                  </p>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="coa-saldo-kredit">Kredit</Label>
-                <Input id="coa-saldo-kredit" type="number" min="0" step="0.01" placeholder="0" value={form.saldoAwalKredit} onChange={(e) => updateForm('saldoAwalKredit', e.target.value)} disabled={loadingSaldoAwal} />
+
+              {/* 2. Sub Akun (toggle) + Akun Induk / Tipe Struktur */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                  <div>
+                    <Label htmlFor="coa-is-sub" className="text-sm">
+                      Sub Akun
+                    </Label>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{form.isSub ? 'Akun dibuat di bawah akun induk tertentu.' : 'Akun dibuat sebagai level teratas (root).'}</p>
+                  </div>
+                  <Switch id="coa-is-sub" checked={form.isSub} onCheckedChange={handleSubToggle} disabled={submitting || mode === 'edit'} />
+                </div>
+
+                {form.isSub ? (
+                  <div className="space-y-2">
+                    <Label>
+                      Akun Induk <span className="text-destructive">*</span>
+                    </Label>
+                    {mode === 'create' ? (
+                      <>
+                        <ParentPicker key={form.typeCode} typeCode={form.typeCode} value={form.indukId} selected={indukSelected} onChange={handleIndukChange} disabled={submitting || !form.typeCode} invalid={!!formErrors.indukId} />
+                        {!form.typeCode && <p className="text-[11px] text-muted-foreground">Pilih tipe akun dahulu untuk memuat daftar induk yang cocok.</p>}
+                        {formErrors.indukId && <p className="text-xs text-destructive mt-1">{formErrors.indukId}</p>}
+                      </>
+                    ) : (
+                      <>
+                        <Input value={editParentLabel} disabled readOnly />
+                        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <Lock className="h-3 w-3" /> Induk tidak dapat diubah dari form ini — akun yang sudah memiliki jurnal terposting dikunci server.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ) : mode === 'create' ? (
+                  <div className="space-y-2">
+                    <Label>Tipe Struktur</Label>
+                    <RadioGroup value={form.structuralType} onValueChange={(v) => setForm((prev) => ({ ...prev, structuralType: v as StructuralType }))} disabled={submitting} className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="flex items-start gap-3 rounded-lg border p-3">
+                        <RadioGroupItem value="GROUP" id="struct-group" className="mt-0.5" />
+                        <div className="space-y-0.5">
+                          <span className="text-sm font-medium">Grup Akun</span>
+                          <p className="text-xs text-muted-foreground">Wadah sub-akun (agregasi laporan), tidak untuk posting jurnal langsung.</p>
+                        </div>
+                      </label>
+                      <label className="flex items-start gap-3 rounded-lg border p-3">
+                        <RadioGroupItem value="DETAIL" id="struct-detail" className="mt-0.5" />
+                        <div className="space-y-0.5">
+                          <span className="text-sm font-medium">Akun Transaksi</span>
+                          <p className="text-xs text-muted-foreground">Akun detail yang dapat dipakai dalam jurnal.</p>
+                        </div>
+                      </label>
+                    </RadioGroup>
+                    {selectedTemplate && !selectedTemplate.supportsRoot && <p className="text-xs text-amber-700 dark:text-amber-400">Tipe {selectedTemplate.displayName} umumnya dibuat sebagai sub akun di bawah induk yang sesuai.</p>}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>Tipe Struktur</Label>
+                    <Input value={tingkatLabel(editAccount?.tingkat)} disabled readOnly />
+                    <p className="text-[11px] text-muted-foreground">Struktur akun tidak dapat diubah setelah akun dibuat.</p>
+                  </div>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="coa-tanggal-saldo-awal">Tanggal Saldo Awal</Label>
-                <Input id="coa-tanggal-saldo-awal" type="date" value={form.tanggalSaldoAwal} onChange={(e) => updateForm('tanggalSaldoAwal', e.target.value)} disabled={loadingSaldoAwal} />
+
+              {/* 3. Kode Akun + 4. Nama Akun */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="coa-kode">Kode Akun</Label>
+                    {mode === 'create' && kodeOtomatis && (
+                      <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-700">
+                        Otomatis
+                      </Badge>
+                    )}
+                    {mode === 'create' && form.kodeManual && <Badge variant="outline">Manual</Badge>}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input id="coa-kode" placeholder={form.isSub ? 'Otomatis dari sistem' : 'Isi manual (root)'} value={form.kode} onChange={(e) => handleKodeChange(e.target.value)} disabled={mode === 'edit'} className="font-mono" aria-invalid={!!formErrors.kode} aria-describedby={formErrors.kode ? 'coa-kode-error' : undefined} />
+                    {mode === 'create' && (
+                      <Button type="button" variant="outline" size="icon" onClick={handleRegenerate} disabled={submitting || !form.typeCode || (form.isSub && !form.indukId)} title="Ambil ulang usulan kode dari sistem" aria-label="Regenerate kode akun">
+                        <RefreshCw className={cn('h-4 w-4', previewLoading && 'animate-spin')} />
+                      </Button>
+                    )}
+                  </div>
+                  {formErrors.kode && (
+                    <p id="coa-kode-error" className="text-xs text-destructive mt-1">
+                      {formErrors.kode}
+                    </p>
+                  )}
+                  {mode === 'edit' && <p className="text-[11px] text-muted-foreground">Kode akun tidak dapat diubah.</p>}
+                  {mode === 'create' && !form.isSub && <p className="text-[11px] text-muted-foreground">Akun level root tidak punya kode otomatis — wajib diisi manual.</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="coa-nama">
+                    Nama Akun <span className="text-destructive">*</span>
+                  </Label>
+                  <Input id="coa-nama" placeholder="Nama akun" value={form.nama} onChange={(e) => setForm((prev) => ({ ...prev, nama: e.target.value }))} aria-invalid={!!formErrors.nama} className={formErrors.nama ? 'border-destructive focus-visible:ring-destructive' : ''} />
+                  {formErrors.nama && <p className="text-xs text-destructive mt-1">{formErrors.nama}</p>}
+                </div>
               </div>
-            </div>
-            {(Number(form.saldoAwalDebit || 0) > 0 || Number(form.saldoAwalKredit || 0) > 0 || saldoAwal?.items.some((item) => item.akunPerkiraanId === editId && (item.debit > 0 || item.kredit > 0))) && (
-              <div className="space-y-2">
-                <Label>Akun Lawan Saldo Awal</Label>
-                <SearchableDropdown value={form.akunLawanId} onValueChange={(value) => updateForm('akunLawanId', value)} options={allCoa.filter((item) => item.id !== editId && item.tingkat === 'DETAIL').map((item) => ({ id: item.id, label: `${item.kode} — ${item.nama}`, subtitle: item.header }))} placeholder="Pilih akun lawan" loading={loadingSaldoAwal} />
+
+              {/* 5. Mata Uang + 6. Status */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Mata Uang</Label>
+                  <Select value="IDR" disabled>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="IDR" disabled>
+                        IDR — Rupiah
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">Mata uang lain tersedia setelah ledger FX aktif.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={form.status} onValueChange={(v) => setForm((prev) => ({ ...prev, status: v as COAFormState['status'] }))} disabled={submitting}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AKTIF">Aktif</SelectItem>
+                      <SelectItem value="NONAKTIF">Nonaktif</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">Akun nonaktif disembunyikan dari transaksi baru.</p>
+                </div>
               </div>
-            )}
-          </div>
+
+              {/* 7. Jenis Kas/Bank — hanya untuk template KAS_BANK */}
+              {showJenisKasBank && (
+                <div className="space-y-2">
+                  <Label>Jenis Kas/Bank</Label>
+                  <Select value={form.jenisKasBank} onValueChange={(v) => setForm((prev) => ({ ...prev, jenisKasBank: v }))} disabled={submitting || mode === 'edit'}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih jenis kas/bank" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="KAS">KAS</SelectItem>
+                      <SelectItem value="BANK">BANK</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">{mode === 'create' ? 'Menghubungkan akun ini ke modul Kas & Bank (membuat KasBankAkun otomatis).' : 'Jenis kas/bank hanya dapat diatur saat pembuatan akun.'}</p>
+                </div>
+              )}
+
+              {/* Saldo awal (jurnal berpasangan) */}
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">Saldo Awal</Label>
+                  <p className="mt-1 text-xs text-muted-foreground">Saldo awal dicatat sebagai jurnal berpasangan. Isi salah satu sisi dan pilih akun lawannya agar tetap balance.</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="coa-saldo-debit">Debit</Label>
+                    <Input id="coa-saldo-debit" type="number" min="0" step="0.01" placeholder="0" value={form.saldoAwalDebit} onChange={(e) => setForm((prev) => ({ ...prev, saldoAwalDebit: e.target.value }))} disabled={loadingSaldoAwal} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="coa-saldo-kredit">Kredit</Label>
+                    <Input id="coa-saldo-kredit" type="number" min="0" step="0.01" placeholder="0" value={form.saldoAwalKredit} onChange={(e) => setForm((prev) => ({ ...prev, saldoAwalKredit: e.target.value }))} disabled={loadingSaldoAwal} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="coa-tanggal-saldo-awal">Tanggal Saldo Awal</Label>
+                    <Input id="coa-tanggal-saldo-awal" type="date" value={form.tanggalSaldoAwal} onChange={(e) => setForm((prev) => ({ ...prev, tanggalSaldoAwal: e.target.value }))} disabled={loadingSaldoAwal} />
+                  </div>
+                </div>
+                {(Number(form.saldoAwalDebit || 0) > 0 || Number(form.saldoAwalKredit || 0) > 0 || saldoAwal?.items.some((item) => item.akunPerkiraanId === editId && (item.debit > 0 || item.kredit > 0))) && (
+                  <div className="space-y-2">
+                    <Label>Akun Lawan Saldo Awal</Label>
+                    <SearchableDropdown value={form.akunLawanId} onValueChange={(value) => setForm((prev) => ({ ...prev, akunLawanId: value }))} options={allCoa.filter((item) => item.id !== editId && item.tingkat === 'DETAIL').map((item) => ({ id: item.id, label: `${item.kode} — ${item.nama}`, subtitle: item.header }))} placeholder="Pilih akun lawan" loading={loadingSaldoAwal} />
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            {/* ══════════════ TAB 2: PENGATURAN LANJUTAN (read-only) ══════════════ */}
+            <TabsContent value="lanjutan" className="space-y-4 pt-4">
+              <div className="flex items-start gap-2 rounded-lg border bg-muted/30 p-4">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">{mode === 'create' ? 'Nilai diturunkan otomatis dari template tipe akun + akun induk. Perubahan mapping hanya melalui Admin Finance.' : 'Menampilkan nilai aktual akun saat ini. Perubahan mapping hanya melalui Admin Finance — akun yang sudah memiliki jurnal terposting dikunci server.'}</p>
+              </div>
+
+              {mode === 'create' ? (
+                previewLoading && !preview ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full rounded-lg" />
+                    ))}
+                  </div>
+                ) : !preview ? (
+                  <p className="text-sm text-muted-foreground">Lengkapi Tipe Akun{form.isSub ? ' dan Akun Induk' : ''} di tab Informasi Umum untuk melihat derivasi otomatis di sini.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <DerivationRow label="Tingkat Akun">
+                      <Badge variant="secondary">{tingkatLabel(preview.tingkat)}</Badge>
+                    </DerivationRow>
+                    <DerivationRow label="Saldo Normal">
+                      <Badge variant="secondary">{preview.saldoNormal || '—'}</Badge>
+                    </DerivationRow>
+                    <DerivationRow label="Kelas Akun">{accountClassLabel(preview.accountClass)}</DerivationRow>
+                    <DerivationRow label="Laporan Keuangan">{financialStatementLabel(preview.financialStatement)}</DerivationRow>
+                    <DerivationRow label="Subkelas">{preview.accountSubclass || '—'}</DerivationRow>
+                    <DerivationRow label="Grup Laporan">{preview.reportGroup || '—'}</DerivationRow>
+                    <DerivationRow label="Jenis Subledger">{preview.subledgerType || '—'}</DerivationRow>
+                    <DerivationRow label="Tipe Akun Sistem">{preview.systemAccountType || '—'}</DerivationRow>
+                    <DerivationRow label="Posting Sistem">{yaTidak(preview.allowSystemPosting)}</DerivationRow>
+                    <DerivationRow label="Jurnal Manual">{yaTidak(preview.allowManualPosting)}</DerivationRow>
+                    <DerivationRow label="Control Account">
+                      {preview.isControlAccount === true ? (
+                        <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
+                          Control Account
+                        </Badge>
+                      ) : (
+                        'Tidak'
+                      )}
+                    </DerivationRow>
+                    <DerivationRow label="Wajib Rekonsiliasi">{yaTidak(preview.reconciliationRequired)}</DerivationRow>
+                  </div>
+                )
+              ) : !editAccount ? (
+                <p className="text-sm text-muted-foreground">Data akun belum termuat.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <DerivationRow label="Tingkat Akun">
+                    <Badge variant="secondary">{tingkatLabel(editAccount.tingkat)}</Badge>
+                  </DerivationRow>
+                  <DerivationRow label="Saldo Normal">
+                    <Badge variant="secondary">{editAccount.saldoNormal}</Badge>
+                  </DerivationRow>
+                  <DerivationRow label="Kelas Akun">{accountClassLabel(editAccount.accountClass)}</DerivationRow>
+                  <DerivationRow label="Laporan Keuangan">{financialStatementLabel(editAccount.financialStatement)}</DerivationRow>
+                  <DerivationRow label="Subkelas">{editAccount.accountSubclass || '—'}</DerivationRow>
+                  <DerivationRow label="Grup Laporan">{editAccount.reportGroup || '—'}</DerivationRow>
+                  <DerivationRow label="Jenis Subledger">{editAccount.subledgerType || '—'}</DerivationRow>
+                  <DerivationRow label="Tipe Akun Sistem">{editAccount.systemAccountType || '—'}</DerivationRow>
+                  <DerivationRow label="Posting Sistem">{yaTidak(editAccount.allowSystemPosting)}</DerivationRow>
+                  <DerivationRow label="Jurnal Manual">{yaTidak(editAccount.allowManualPosting)}</DerivationRow>
+                  <DerivationRow label="Control Account">
+                    {editAccount.isControlAccount === true ? (
+                      <Badge variant="outline" className="border-violet-200 bg-violet-50 text-violet-700">
+                        Control Account
+                      </Badge>
+                    ) : (
+                      'Tidak'
+                    )}
+                  </DerivationRow>
+                  <DerivationRow label="Wajib Rekonsiliasi">{yaTidak(editAccount.reconciliationRequired)}</DerivationRow>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
+            <Button onClick={handleSubmit} disabled={saveDisabled} className="gap-2">
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {mode === 'create' ? 'Simpan Akun' : 'Perbarui Akun'}
             </Button>
@@ -565,29 +1025,7 @@ function COAForm({ mode, editId, initialData }: { mode: FormMode; editId?: strin
 export default function COAPage({ refreshKey, formMode, formProps }: COAPageProps) {
   if (formMode) {
     const isEdit = formProps?.id as string | undefined;
-    return (
-      <COAForm
-        mode={isEdit ? 'edit' : 'create'}
-        editId={isEdit}
-        initialData={
-          isEdit
-            ? {
-                kode: (formProps?.kode as string) || '',
-                nama: (formProps?.nama as string) || '',
-                header: (formProps?.header as HeaderCOA) || '',
-                tingkat: (formProps?.tingkat as TingkatAkun) || '',
-                indukId: (formProps?.indukId as string) || '',
-                indukKode: (formProps?.indukKode as string) || '',
-                jenisKasBank: (formProps?.jenisKasBank as string) || '',
-                saldoAwalDebit: '',
-                saldoAwalKredit: '',
-                tanggalSaldoAwal: todayIso(),
-                akunLawanId: ''
-              }
-            : undefined
-        }
-      />
-    );
+    return <COAForm mode={isEdit ? 'edit' : 'create'} editId={isEdit} />;
   }
   return <COAListContent refreshKey={refreshKey} />;
 }
@@ -612,15 +1050,11 @@ function COAListContent({ refreshKey }: { refreshKey?: number }) {
   const [filterTingkat, setFilterTingkat] = useState<string>('');
   const [skip, setSkip] = useState(0);
 
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   useEffect(() => {
-    debounceTimer.current = setTimeout(() => {
+    const timer = setTimeout(() => {
       setDebouncedSearch(search);
     }, 300);
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
+    return () => clearTimeout(timer);
   }, [search]);
 
   // ── Fetch COA data ──
@@ -683,6 +1117,7 @@ function COAListContent({ refreshKey }: { refreshKey?: number }) {
   const goToNext = () => {
     if (hasNext) setSkip((s) => s + PAGE_SIZE);
   };
+
   const goToPrev = () => {
     if (hasPrev) setSkip((s) => s - PAGE_SIZE);
   };
