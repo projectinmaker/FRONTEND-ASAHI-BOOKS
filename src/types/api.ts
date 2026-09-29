@@ -3043,3 +3043,129 @@ export interface AuditTransaksiPersediaanResponse {
   summary: AuditPersediaanSummary;
   anomali: AuditTransaksiAnomali[];
 }
+
+// ── RBAC v2 (Role & Akses) ────────────────────────────────────────────
+// Kontrak API /auth/me/permissions + /access/* (backend RBAC v2, live).
+
+/** Role singkat tanpa detail izin (dipakai di me/permissions & summary akses user). */
+export interface RoleBrief {
+  id: string;
+  code: string;
+  name: string;
+}
+
+/** Respons GET /auth/me/permissions */
+export interface MePermissionsResponse {
+  isSuperAdmin: boolean;
+  permissions: string[];
+  roles: RoleBrief[];
+}
+
+/** Satu aksi permission dalam registry (GET /access/permissions). */
+export interface RegistryActionItem {
+  code: string;
+  action: string;
+  description: string;
+  isSensitive: boolean;
+}
+
+/** Satu resource (menu) dalam registry — berisi daftar aksi. */
+export interface RegistryResourceItem {
+  resource: string;
+  label: string;
+  actions: RegistryActionItem[];
+}
+
+/** Satu modul registry — berisi daftar resource. */
+export interface RegistryModuleItem {
+  module: string;
+  label: string;
+  resources: RegistryResourceItem[];
+}
+
+/** Respons GET /access/permissions (tree modul → resource → aksi). */
+export interface RegistryTreeResponse {
+  modules: RegistryModuleItem[];
+}
+
+/** Respons GET /access/roles → data: RoleSummary[] */
+export interface RoleListResponse {
+  data: RoleSummary[];
+  total: number;
+}
+
+/** Ringkasan template role dari GET /access/roles. */
+export interface RoleSummary {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  permissionCount: number;
+}
+
+/** Detail template role dari GET /access/roles/{id}. */
+export interface RoleDetail extends RoleSummary {
+  permissions: string[];
+}
+
+/** Override tersimpan pada user (respons summary). */
+export interface AccessOverride {
+  permissionCode: string;
+  effect: 'ALLOW' | 'DENY';
+  reason: string | null;
+  grantedBy: string | null;
+}
+
+/** Override yang dikirim saat PUT (payload). */
+export interface AccessOverrideInput {
+  permissionCode: string;
+  effect: 'ALLOW' | 'DENY';
+}
+
+/** Ringkasan akses user (GET/PUT /access/users/{id}/access). */
+export interface UserAccessSummary {
+  user: {
+    id: string;
+    nama: string;
+    username: string;
+    roleEnum: string;
+  };
+  isSuperAdmin: boolean;
+  roles: RoleBrief[];
+  templateCode: string | null;
+  templateName: string | null;
+  templatePermissions: string[];
+  overrides: AccessOverride[];
+  effectivePermissions: string[];
+  effectiveCount: number;
+}
+
+/** Payload PUT /access/users/{id}/access.
+ *  templateCode null = jangan ubah role; overrides null = jangan ubah. */
+export interface UserAccessUpdatePayload {
+  templateCode?: string | null;
+  overrides?: AccessOverrideInput[] | null;
+  reason: string;
+}
+
+/** Satu baris log audit perubahan akses (GET /access/audit-logs). */
+export interface AuditLogEntry {
+  id: string;
+  actorId: string | null;
+  targetUserId: string | null;
+  action: string;
+  reason: string | null;
+  /** Ringkasan slim: templateCode, roles (kode), overrides, effectiveCount. */
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  at: string | null;
+}
+
+/** Respons GET /access/audit-logs. */
+export interface AuditLogListResponse {
+  data: AuditLogEntry[];
+  total: number;
+  skip: number;
+  limit: number;
+}

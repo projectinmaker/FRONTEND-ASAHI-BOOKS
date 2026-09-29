@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api, setToken, ApiError } from '@/lib/api';
+import { useAccessStore } from '@/store/access-store';
+import { useTabStore } from '@/store/tab-store';
 import type { UserResponse, LoginResponse } from '@/types/api';
 
 interface AuthState {
@@ -24,6 +26,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       setToken(res.accessToken);
       setUserStorage(res.user);
       set({ user: res.user, isAuthenticated: true, isLoading: false });
+      // Muat permission efektif (RBAC v2) — fire-and-forget, jangan di-await.
+      void useAccessStore.getState().fetchPermissions();
     } catch (err) {
       set({ isLoading: false });
       throw err;
@@ -34,6 +38,17 @@ export const useAuthStore = create<AuthState>((set) => ({
     setToken(null);
     setUserStorage(null);
     set({ user: null, isAuthenticated: false });
+    // Reset permission RBAC (event `auth:logout` untuk listener lain sudah
+    // ditangani api.ts pada kasus 401; di sini cukup reset langsung agar
+    // tidak memicu loop listener auth-store sendiri).
+    useAccessStore.getState().reset();
+    // Tutup semua tab terbuka — tab lama bisa berisi halaman yang tidak lagi
+    // berhak dilihat pengguna berikutnya pada sesi browser yang sama.
+    useTabStore.setState({
+      tabs: [{ id: 'tab-dashboard', title: 'Dashboard', module: 'dashboard', tabType: 'list', closable: false }],
+      activeTabId: 'tab-dashboard',
+      refreshKeys: {}
+    });
   },
 
   initAdmin: async () => {

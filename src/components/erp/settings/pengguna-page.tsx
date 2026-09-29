@@ -9,14 +9,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, UserCog, SearchX } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, UserCog, SearchX, ShieldCheck } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
+import { RoleAccessDialog } from '@/components/erp/settings/role-access-dialog';
 
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/store/auth-store';
+import { useAccessStore } from '@/store/access-store';
 import type { PenggunaResponse, PenggunaCreate, PenggunaUpdate, RolePengguna } from '@/types/api';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -272,6 +274,14 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
   const openFormTab = useTabStore((s) => s.openFormTab);
   const currentUser = useAuthStore((s) => s.user);
 
+  // RBAC v2 — tombol Role & Akses hanya untuk Super Admin / pemegang system.access.view.
+  const isSuperAdmin = useAccessStore((s) => s.isSuperAdmin);
+  const hasAccessView = useAccessStore((s) => s.permissions.includes('system.access.view'));
+  const canManageAccess = isSuperAdmin || hasAccessView;
+
+  // Target user untuk dialog Role & Akses (null = tertutup).
+  const [accessTarget, setAccessTarget] = useState<PenggunaResponse | null>(null);
+
   const [data, setData] = useState<PenggunaResponse[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -459,6 +469,11 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
                         <TableCell className="whitespace-nowrap">{statusBadge(row.status)}</TableCell>
                         <TableCell className="whitespace-nowrap text-center">
                           <div className="inline-flex items-center gap-1">
+                            {canManageAccess && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setAccessTarget(row)} aria-label={`Role & Akses ${row.namaLengkap}`} title="Role & Akses">
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openFormTab({ title: `Edit ${row.namaLengkap}`, module: 'settings', subPage: 'pengguna', formKey: 'pengguna-edit', formProps: { id: row.id, username: row.username, namaLengkap: row.namaLengkap, email: row.email, role: row.role } })} aria-label={`Edit ${row.namaLengkap}`}>
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
@@ -513,6 +528,15 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Dialog Role & Akses (RBAC v2) ── */}
+      <RoleAccessDialog
+        userId={accessTarget?.id ?? null}
+        open={!!accessTarget}
+        onOpenChange={(open) => {
+          if (!open) setAccessTarget(null);
+        }}
+      />
     </div>
   );
 }
