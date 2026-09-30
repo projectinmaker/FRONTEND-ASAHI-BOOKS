@@ -20,7 +20,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 
 import { api, ApiError } from '@/lib/api';
 import { getSyaratBayarOptions, type SyaratBayarOption } from '@/lib/master-data';
-import type { PelangganResponse, PelangganCreate, PelangganUpdate, AkunPerkiraanSimple, PelangganCOAItem, PelangganFromCOACreate, COADropdownResponse, TaxStatus } from '@/types/api';
+import type { PelangganResponse, PelangganCreate, PelangganUpdate, AkunPerkiraanSimple, PelangganCOAItem, PelangganFromCOACreate, COADropdownResponse, SettingAkunResponse, TaxStatus } from '@/types/api';
 import { TAX_STATUS_OPTIONS } from '@/types/api';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -108,6 +108,7 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
 
   // Untuk mode "pilih akun induk" (create only)
   const [coaOptions, setCoaOptions] = useState<COADropdownResponse[]>([]);
+  const [recommendedCoaId, setRecommendedCoaId] = useState<string | null>(null);
   const [selectedCoaId, setSelectedCoaId] = useState(preselectedCoaId || '');
   const [loadingCoa, setLoadingCoa] = useState(false);
 
@@ -142,21 +143,42 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
     }
   }, [mode, editId]);
 
-  // Fetch akun induk (HEADER/GROUP) untuk dropdown — hanya yang AKTIVA
+  // Fetch akun induk untuk dropdown — akun root dari Setting Akun (PIUTANG_USAHA,
+  // mis. 112000 "Piutang Usaha") + akun struktural HEADER/GROUP AKTIVA.
+  // COA v2: root "Piutang Usaha" ber-level DETAIL — tetap boleh jadi induk
+  // (auto-create membuat sub-akun di bawahnya), jadi JANGAN difilter tingkat.
   useEffect(() => {
     if (mode === 'create' && !preselectedCoaId) {
       setLoadingCoa(true);
-      api
-        .get<COADropdownResponse[]>('/master/coa-dropdown?include_header_group=true')
-        .then((res) => {
+      const coaReq = api.get<COADropdownResponse[]>('/master/coa-dropdown?include_header_group=true');
+      const rootReq = api.get<SettingAkunResponse>('/master/setting-akun/PIUTANG_USAHA').catch(() => null);
+      Promise.all([coaReq, rootReq])
+        .then(([res, setting]) => {
           const all = Array.isArray(res) ? res : [];
-          // Filter: hanya akun induk (HEADER/GROUP) under AKTIVA
-          const indukOptions = all.filter((c) => (c.tingkat === 'HEADER' || c.tingkat === 'GROUP') && c.header === 'AKTIVA' && c.status === 'AKTIF');
-          setCoaOptions(indukOptions);
-          // Pre-select "Piutang Usaha" secara otomatis
-          const piutangUsaha = indukOptions.find((c) => c.nama.toLowerCase().includes('piutang') && c.nama.toLowerCase().includes('usaha'));
-          if (piutangUsaha) {
-            setSelectedCoaId(piutangUsaha.id);
+          // Akun struktural (HEADER/GROUP) under AKTIVA — relevan untuk COA lama
+          const structural = all.filter((c) => (c.tingkat === 'HEADER' || c.tingkat === 'GROUP') && c.header === 'AKTIVA' && c.status === 'AKTIF');
+          // Root dari Setting Akun — diprioritaskan paling atas + pre-selected
+          const root = setting?.akunPerkiraan ?? null;
+          if (root && root.id) {
+            const rootOpt: COADropdownResponse = {
+              id: root.id,
+              kode: root.kode,
+              nama: root.nama,
+              header: root.header || 'AKTIVA',
+              tingkat: root.tingkat || 'DETAIL',
+              status: root.status || 'AKTIF'
+            };
+            setCoaOptions([rootOpt, ...structural.filter((c) => c.id !== root.id)]);
+            setRecommendedCoaId(root.id);
+            setSelectedCoaId(root.id);
+          } else {
+            // Fallback: pre-select akun bernama Piutang Usaha dari daftar struktural (COA lama)
+            setCoaOptions(structural);
+            const piutangUsaha = structural.find((c) => c.nama.toLowerCase().includes('piutang') && c.nama.toLowerCase().includes('usaha'));
+            if (piutangUsaha) {
+              setRecommendedCoaId(piutangUsaha.id);
+              setSelectedCoaId(piutangUsaha.id);
+            }
           }
         })
         .catch(() => setCoaOptions([]))
@@ -279,6 +301,9 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
             email: form.email.trim() || undefined,
             kontakPerson: form.kontakPerson.trim() || undefined,
             npwp: form.npwp.trim() || undefined,
+            // Akun induk untuk auto-create COA subledger (dari dropdown "Pilih
+            // Akun Perkiraan"; default = root Setting Akun PIUTANG_USAHA)
+            akunPiutangParentId: selectedCoaId || undefined,
             // === Phase 2 — field baru ===
             nitku: form.nitku.trim() || undefined,
             syaratBayarId: form.syaratBayarId || undefined,
@@ -346,13 +371,13 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
                 options={coaOptions.map((c) => ({
                   id: c.id,
                   label: `${c.kode} — ${c.nama}`,
-                  subtitle: c.header
+                  subtitle: c.id === recommendedCoaId ? `${c.header} · Disarankan (Setting Akun)` : c.header
                 }))}
                 placeholder={loadingCoa ? 'Memuat...' : 'Pilih akun induk'}
                 loading={loadingCoa}
                 emptyText="Tidak ada akun induk ditemukan"
               />
-              <p className="text-[11px] text-muted-foreground leading-relaxed">Pilih akun induk (mis. "Piutang Usaha"). Saat simpan, sistem akan otomatis membuat akun detail "Piutang - [nama pelanggan]" di bawah akun induk yang dipilih.</p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">Akun induk default diambil dari Setting Akun (PIUTANG_USAHA). Saat simpan, sistem otomatis membuat sub-akun "Piutang - [nama pelanggan]" di bawah akun induk yang dipilih.</p>
             </div>
           )}
 
@@ -724,7 +749,7 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Pelanggan</h2>
-          <p className="text-sm text-muted-foreground">{loading ? 'Memuat data...' : `${linkedCount} pelanggan terhubung dari ${total} Akun Piutang`}</p>
+          <p className="text-sm text-muted-foreground">{loading ? 'Memuat data...' : `${linkedCount} pelanggan terhubung akun piutang${data.some((d) => d.isLinked && !d.coaId) ? ` · ${data.filter((d) => d.isLinked && !d.coaId).length} belum punya akun piutang` : ''}`}</p>
         </div>
         <Button
           size="sm"
@@ -815,8 +840,8 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
                   </TableRow>
                 ) : (
                   paginatedData.map((row) => (
-                    <TableRow key={row.coaId}>
-                      <TableCell className="whitespace-nowrap font-mono font-medium text-xs">{row.kode}</TableCell>
+                    <TableRow key={row.pelangganId || row.coaId}>
+                      <TableCell className="whitespace-nowrap font-mono font-medium text-xs">{row.kode || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap font-medium">{row.isLinked ? row.namaPelanggan || row.nama : <span className="text-muted-foreground italic">{row.nama}</span>}</TableCell>
                       <TableCell className="whitespace-nowrap font-mono text-xs">{row.kodePelanggan || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground text-xs">{row.telepon || '-'}</TableCell>

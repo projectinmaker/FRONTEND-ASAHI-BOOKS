@@ -303,6 +303,9 @@ export interface PelangganCreate {
   // === Legacy ===
   syaratBayarDefault?: string | null;
   akunPiutangId?: string | null;
+  // Induk untuk auto-create COA subledger piutang (dari dropdown "Pilih Akun
+  // Perkiraan"; default = root Setting Akun PIUTANG_USAHA)
+  akunPiutangParentId?: string | null;
 }
 
 export interface PelangganUpdate {
@@ -324,11 +327,12 @@ export interface PelangganUpdate {
 }
 
 // Response dari GET /master/pelanggan-coa — COA detail under "Piutang Usaha"
-// + LEFT JOIN pelanggan (kalau sudah di-link)
+// + LEFT JOIN pelanggan (kalau sudah di-link). coaId/kode/nama bisa null
+// untuk baris "pelanggan tanpa akun piutang" (belum ter-link ke COA mana pun).
 export interface PelangganCOAItem {
-  coaId: string;
-  kode: string;
-  nama: string;
+  coaId: string | null;
+  kode: string | null;
+  nama: string | null;
   pelangganId: string | null;
   kodePelanggan: string | null;
   namaPelanggan: string | null;
@@ -432,9 +436,11 @@ export interface SupplierUpdate extends SupplierFoundationFields {
 // Response dari GET /master/supplier-coa — COA detail under "Hutang Usaha"
 // + LEFT JOIN supplier (kalau sudah di-link)
 export interface SupplierCOAItem extends SupplierFoundationFields {
-  coaId: string;
-  kode: string;
-  nama: string;
+  // coaId/kode/nama bisa null untuk baris "supplier tanpa akun hutang"
+  // (belum ter-link ke COA mana pun).
+  coaId: string | null;
+  kode: string | null;
+  nama: string | null;
   supplierId: string | null;
   kodeSupplier: string | null;
   namaSupplier: string | null;

@@ -125,106 +125,248 @@ function SupplierForm({ mode, editId, initialData, preselectedCoaId, preselected
   const [syaratBayarOptions, setSyaratBayarOptions] = useState<SyaratBayarOption[]>([]);
   const [formStatus, setFormStatus] = useState('');
   const [suggestions, setSuggestions] = useState<SupplierCOAItem[]>([]);
-  const activeTabId = useTabStore(s => s.activeTabId);
-  const closeTab = useTabStore(s => s.closeTab);
-  const refreshListTab = useTabStore(s => s.refreshListTab);
-  const updateForm = (key: keyof FormState, value: string) => setForm(prev => ({ ...prev, [key]: value }));
+  const activeTabId = useTabStore((s) => s.activeTabId);
+  const closeTab = useTabStore((s) => s.closeTab);
+  const refreshListTab = useTabStore((s) => s.refreshListTab);
+  const updateForm = (key: keyof FormState, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
   useEffect(() => {
     let active = true;
-    getSyaratBayarOptions().then(value => { if (active) setSyaratBayarOptions(value); }).catch(() => { if (active) toast.error('Syarat bayar gagal dimuat'); });
-    loadSupplierRows().then(value => { if (active) setSuggestions(value); }).catch(() => { /* Free text remains available when suggestions cannot load. */ });
-    return () => { active = false; };
+    getSyaratBayarOptions()
+      .then((value) => {
+        if (active) setSyaratBayarOptions(value);
+      })
+      .catch(() => {
+        if (active) toast.error('Syarat bayar gagal dimuat');
+      });
+    loadSupplierRows()
+      .then((value) => {
+        if (active) setSuggestions(value);
+      })
+      .catch(() => {
+        /* Free text remains available when suggestions cannot load. */
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const loadDetail = useCallback(() => {
     if (!editId) return;
-    return api.get<SupplierResponse>('/master/supplier/' + editId).then(res => {
-      setDetail(res);
-      setFormStatus(res.status);
-      setForm({ ...emptyForm, ...Object.fromEntries(supplierFoundationKeys.map(key => [key, res[key] ?? ''])), kode: res.kode, nama: res.nama, alamat: res.alamat || '', telepon: res.telepon || '', email: res.email || '', kontakPerson: res.kontakPerson || '', npwp: res.npwp || '', nitku: res.nitku || '', syaratBayarId: res.syaratBayarId || '', creditLimit: res.creditLimit != null ? String(res.creditLimit) : '', taxStatus: res.taxStatus || '', syaratBayarDefault: res.syaratBayarDefault || '' });
-    }).catch(err => { setLoadError(err instanceof ApiError ? err.detail : 'Gagal memuat supplier'); })
+    return api
+      .get<SupplierResponse>('/master/supplier/' + editId)
+      .then((res) => {
+        setDetail(res);
+        setFormStatus(res.status);
+        setForm({ ...emptyForm, ...Object.fromEntries(supplierFoundationKeys.map((key) => [key, res[key] ?? ''])), kode: res.kode, nama: res.nama, alamat: res.alamat || '', telepon: res.telepon || '', email: res.email || '', kontakPerson: res.kontakPerson || '', npwp: res.npwp || '', nitku: res.nitku || '', syaratBayarId: res.syaratBayarId || '', creditLimit: res.creditLimit != null ? String(res.creditLimit) : '', taxStatus: res.taxStatus || '', syaratBayarDefault: res.syaratBayarDefault || '' });
+      })
+      .catch((err) => {
+        setLoadError(err instanceof ApiError ? err.detail : 'Gagal memuat supplier');
+      })
       .finally(() => setLoading(false));
   }, [editId]);
-  useEffect(() => { void loadDetail(); }, [loadDetail]);
+  useEffect(() => {
+    void loadDetail();
+  }, [loadDetail]);
 
   const handleSubmit = async () => {
-    if (!form.kode.trim() || !form.nama.trim()) { setSubmitError('Kode dan nama supplier wajib diisi'); return; }
+    if (!form.kode.trim() || !form.nama.trim()) {
+      setSubmitError('Kode dan nama supplier wajib diisi');
+      return;
+    }
     setSubmitting(true);
     try {
       const payload: SupplierCreate & SupplierUpdate = {
-        ...supplierFoundationPayload(form), kode: form.kode.trim(), nama: form.nama.trim(),
-        alamat: form.alamat.trim() || null, telepon: form.telepon.trim() || null, email: form.email.trim() || null,
-        kontakPerson: form.kontakPerson.trim() || null, npwp: form.npwp.trim() || null, nitku: form.nitku.trim() || null,
-        syaratBayarId: form.syaratBayarId || null, creditLimit: form.creditLimit.trim() ? Number(form.creditLimit) : null,
+        ...supplierFoundationPayload(form),
+        kode: form.kode.trim(),
+        nama: form.nama.trim(),
+        alamat: form.alamat.trim() || null,
+        telepon: form.telepon.trim() || null,
+        email: form.email.trim() || null,
+        kontakPerson: form.kontakPerson.trim() || null,
+        npwp: form.npwp.trim() || null,
+        nitku: form.nitku.trim() || null,
+        syaratBayarId: form.syaratBayarId || null,
+        creditLimit: form.creditLimit.trim() ? Number(form.creditLimit) : null,
         taxStatus: (form.taxStatus.trim() || null) as TaxStatus
       };
-      await saveSupplier({ ...payload, ...(formStatus ? { status: formStatus } : {}) }, {
-        id: editId || createdId,
-        coaId: preselectedCoaId,
-        onLinked: id => { setCreatedId(id); refreshListTab('settings', 'supplier'); }
-      });
+      await saveSupplier(
+        { ...payload, ...(formStatus ? { status: formStatus } : {}) },
+        {
+          id: editId || createdId,
+          coaId: preselectedCoaId,
+          onLinked: (id) => {
+            setCreatedId(id);
+            refreshListTab('settings', 'supplier');
+          }
+        }
+      );
       toast.success('Supplier berhasil disimpan');
       refreshListTab('settings', 'supplier');
       if (activeTabId) closeTab(activeTabId);
-    } catch (err) { setSubmitError(err instanceof ApiError ? err.detail : 'Gagal menyimpan supplier'); }
-    finally { setSubmitting(false); }
+    } catch (err) {
+      setSubmitError(err instanceof ApiError ? err.detail : 'Gagal menyimpan supplier');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const field = (key: keyof FormState, label: string, placeholder?: string) => (
     <div className="space-y-2" key={key}>
       <Label htmlFor={'sup-' + key}>{label}</Label>
-      <Input id={'sup-' + key} value={form[key]} placeholder={placeholder} disabled={submitting || (key === 'kode' && (!!editId || !!createdId))} onChange={e => updateForm(key, e.target.value)} />
+      <Input id={'sup-' + key} value={form[key]} placeholder={placeholder} disabled={submitting || (key === 'kode' && (!!editId || !!createdId))} onChange={(e) => updateForm(key, e.target.value)} />
     </div>
   );
   const suggestedField = (key: 'supplierType' | 'currency' | 'taxStatus', label: string, placeholder: string) => {
-    const values = [...new Set([form[key], ...suggestions.map(row => key === 'taxStatus' ? '' : row[key] || '')].filter(Boolean))];
-    return <div className="space-y-2"><Label htmlFor={'sup-' + key}>{label}</Label><Input id={'sup-' + key} list={'sup-options-' + key} value={form[key]} onChange={e => updateForm(key, e.target.value)} placeholder={placeholder} disabled={submitting} /><datalist id={'sup-options-' + key}>{values.map(value => <option key={value} value={value} />)}</datalist></div>;
+    const values = [...new Set([form[key], ...suggestions.map((row) => (key === 'taxStatus' ? '' : row[key] || ''))].filter(Boolean))];
+    return (
+      <div className="space-y-2">
+        <Label htmlFor={'sup-' + key}>{label}</Label>
+        <Input id={'sup-' + key} list={'sup-options-' + key} value={form[key]} onChange={(e) => updateForm(key, e.target.value)} placeholder={placeholder} disabled={submitting} />
+        <datalist id={'sup-options-' + key}>
+          {values.map((value) => (
+            <option key={value} value={value} />
+          ))}
+        </datalist>
+      </div>
+    );
   };
   return (
     <FormTabShell title={mode === 'edit' ? 'Edit Supplier' : 'Tambah Supplier'}>
-      <Card className="max-w-5xl"><CardContent className="p-6 space-y-4">
-        {loading ? <p role="status">Memuat supplier...</p> : loadError ? <div role="alert"><p>{loadError}</p><Button onClick={() => { setLoading(true); setLoadError(''); void loadDetail(); }}>Coba Lagi</Button></div> : <>
-          {createdId && <p role="status" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm">Supplier sudah dibuat dan terhubung. Simpan kembali untuk melengkapi data lainnya.</p>}
-          <Tabs defaultValue="general">
-            <TabsList className="flex h-auto flex-wrap justify-start gap-1">
-              {[['general', 'General'], ['address', 'Address & Contact'], ['tax', 'Tax'], ['commercial', 'Commercial'], ['bank', 'Bank'], ['accounting', 'Accounting'], ['audit', 'Audit']].map(([key, label]) => <TabsTrigger key={key} value={key}>{label}</TabsTrigger>)}
-            </TabsList>
-            <TabsContent value="general" className="space-y-4">
-              {field('kode', 'Kode Supplier *')}{field('nama', 'Nama Supplier *')}
-              {suggestedField('supplierType', 'Tipe Supplier', 'COMPANY / INDIVIDUAL (opsional)')}
-              <div className="space-y-2"><Label>Status</Label>{detail ? <SearchableDropdown value={formStatus} onValueChange={setFormStatus} options={[...new Set([detail.status, ...suggestions.map(row => row.status)].filter(Boolean))].map(value => ({ id: value, label: value }))} placeholder="Status supplier" /> : <Input readOnly value="Ditentukan saat disimpan" />}</div>
-            </TabsContent>
-            <TabsContent value="address" className="space-y-4">
-              <div className="space-y-2"><Label htmlFor="sup-alamat">Alamat</Label><Textarea id="sup-alamat" value={form.alamat} onChange={e => updateForm('alamat', e.target.value)} disabled={submitting} /></div>
-              <div className="grid gap-4 sm:grid-cols-2">{field('city', 'Kota')}{field('province', 'Provinsi')}{field('country', 'Negara')}{field('postalCode', 'Kode Pos')}{field('kontakPerson', 'Kontak Person')}{field('telepon', 'Telepon')}{field('email', 'Email')}</div>
-            </TabsContent>
-            <TabsContent value="tax" className="space-y-4">
-              {field('npwp', 'NPWP')}{field('nitku', 'NITKU')}{suggestedField('taxStatus', 'Status Pajak', 'PKP / NON_PKP (opsional)')}
-            </TabsContent>
-            <TabsContent value="commercial" className="space-y-4">
-              <div className="space-y-2"><Label>Syarat Bayar</Label><SearchableDropdown value={form.syaratBayarId} onValueChange={v => updateForm('syaratBayarId', v)} options={syaratBayarOptions.map(o => ({ id: o.value, label: o.label }))} allOption={{ id: '', label: 'Tidak dipilih' }} placeholder="Pilih syarat bayar" /></div>
-              {suggestedField('currency', 'Currency', 'Kode mata uang (opsional)')}
-              <div className="space-y-2"><Label htmlFor="sup-creditLimit">Credit Limit</Label><Input id="sup-creditLimit" type="number" step="any" value={form.creditLimit} onChange={e => updateForm('creditLimit', e.target.value)} disabled={submitting} /></div>
-            </TabsContent>
-            <TabsContent value="bank" className="space-y-4">
-              <p role="note" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Data bank sensitif. Periksa rekening sebelum menyimpan. Persetujuan khusus perubahan rekening belum tersedia.</p>
-              {field('bankName', 'Nama Bank')}{field('bankAccountNo', 'No. Rekening')}{field('bankAccountName', 'Nama Rekening')}
-            </TabsContent>
-            <TabsContent value="accounting" className="space-y-4">
-              <Label>Akun Hutang</Label><p>{detail?.akunHutang ? detail.akunHutang.kode + ' — ' + detail.akunHutang.nama : preselectedCoaId ? preselectedCoaKode + ' — ' + preselectedCoaNama : 'Akun hutang dibuat otomatis saat supplier disimpan.'}</p>
-              <p className="text-sm text-muted-foreground">Saldo hutang berasal dari transaksi dan tidak dapat diubah melalui master supplier.</p>
-            </TabsContent>
-            <TabsContent value="audit" className="space-y-4">
-              <div><Label>Created By</Label><Input readOnly value="Tidak tersedia" /></div>
-              <div><Label>Created At</Label><Input readOnly value={detail?.createdAt || '-'} /></div>
-              <div><Label>Updated At</Label><Input readOnly value={detail?.updatedAt || '-'} /></div>
-            </TabsContent>
-          </Tabs>
-          <div className="flex justify-end gap-2"><Button variant="outline" disabled={submitting} onClick={() => activeTabId && closeTab(activeTabId)}>Batal</Button><Button onClick={handleSubmit} disabled={submitting}>{submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Supplier</Button></div>
-        </>}
-      </CardContent></Card>
-      <AlertDialog open={!!submitError} onOpenChange={open => { if (!open) setSubmitError(''); }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Supplier belum tersimpan lengkap</AlertDialogTitle><AlertDialogDescription>{submitError}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogAction onClick={() => setSubmitError('')}>Kembali ke form</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <Card className="max-w-5xl">
+        <CardContent className="p-6 space-y-4">
+          {loading ? (
+            <p role="status">Memuat supplier...</p>
+          ) : loadError ? (
+            <div role="alert">
+              <p>{loadError}</p>
+              <Button
+                onClick={() => {
+                  setLoading(true);
+                  setLoadError('');
+                  void loadDetail();
+                }}>
+                Coba Lagi
+              </Button>
+            </div>
+          ) : (
+            <>
+              {createdId && (
+                <p role="status" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm">
+                  Supplier sudah dibuat dan terhubung. Simpan kembali untuk melengkapi data lainnya.
+                </p>
+              )}
+              <Tabs defaultValue="general">
+                <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+                  {[
+                    ['general', 'General'],
+                    ['address', 'Address & Contact'],
+                    ['tax', 'Tax'],
+                    ['commercial', 'Commercial'],
+                    ['bank', 'Bank'],
+                    ['accounting', 'Accounting'],
+                    ['audit', 'Audit']
+                  ].map(([key, label]) => (
+                    <TabsTrigger key={key} value={key}>
+                      {label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <TabsContent value="general" className="space-y-4">
+                  {field('kode', 'Kode Supplier *')}
+                  {field('nama', 'Nama Supplier *')}
+                  {suggestedField('supplierType', 'Tipe Supplier', 'COMPANY / INDIVIDUAL (opsional)')}
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    {detail ? <SearchableDropdown value={formStatus} onValueChange={setFormStatus} options={[...new Set([detail.status, ...suggestions.map((row) => row.status)].filter(Boolean))].map((value) => ({ id: value, label: value }))} placeholder="Status supplier" /> : <Input readOnly value="Ditentukan saat disimpan" />}
+                  </div>
+                </TabsContent>
+                <TabsContent value="address" className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="sup-alamat">Alamat</Label>
+                    <Textarea id="sup-alamat" value={form.alamat} onChange={(e) => updateForm('alamat', e.target.value)} disabled={submitting} />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {field('city', 'Kota')}
+                    {field('province', 'Provinsi')}
+                    {field('country', 'Negara')}
+                    {field('postalCode', 'Kode Pos')}
+                    {field('kontakPerson', 'Kontak Person')}
+                    {field('telepon', 'Telepon')}
+                    {field('email', 'Email')}
+                  </div>
+                </TabsContent>
+                <TabsContent value="tax" className="space-y-4">
+                  {field('npwp', 'NPWP')}
+                  {field('nitku', 'NITKU')}
+                  {suggestedField('taxStatus', 'Status Pajak', 'PKP / NON_PKP (opsional)')}
+                </TabsContent>
+                <TabsContent value="commercial" className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Syarat Bayar</Label>
+                    <SearchableDropdown value={form.syaratBayarId} onValueChange={(v) => updateForm('syaratBayarId', v)} options={syaratBayarOptions.map((o) => ({ id: o.value, label: o.label }))} allOption={{ id: '', label: 'Tidak dipilih' }} placeholder="Pilih syarat bayar" />
+                  </div>
+                  {suggestedField('currency', 'Currency', 'Kode mata uang (opsional)')}
+                  <div className="space-y-2">
+                    <Label htmlFor="sup-creditLimit">Credit Limit</Label>
+                    <Input id="sup-creditLimit" type="number" step="any" value={form.creditLimit} onChange={(e) => updateForm('creditLimit', e.target.value)} disabled={submitting} />
+                  </div>
+                </TabsContent>
+                <TabsContent value="bank" className="space-y-4">
+                  <p role="note" className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    Data bank sensitif. Periksa rekening sebelum menyimpan. Persetujuan khusus perubahan rekening belum tersedia.
+                  </p>
+                  {field('bankName', 'Nama Bank')}
+                  {field('bankAccountNo', 'No. Rekening')}
+                  {field('bankAccountName', 'Nama Rekening')}
+                </TabsContent>
+                <TabsContent value="accounting" className="space-y-4">
+                  <Label>Akun Hutang</Label>
+                  <p>{detail?.akunHutang ? detail.akunHutang.kode + ' — ' + detail.akunHutang.nama : preselectedCoaId ? preselectedCoaKode + ' — ' + preselectedCoaNama : 'Akun hutang dibuat otomatis saat supplier disimpan.'}</p>
+                  <p className="text-sm text-muted-foreground">Saldo hutang berasal dari transaksi dan tidak dapat diubah melalui master supplier.</p>
+                </TabsContent>
+                <TabsContent value="audit" className="space-y-4">
+                  <div>
+                    <Label>Created By</Label>
+                    <Input readOnly value="Tidak tersedia" />
+                  </div>
+                  <div>
+                    <Label>Created At</Label>
+                    <Input readOnly value={detail?.createdAt || '-'} />
+                  </div>
+                  <div>
+                    <Label>Updated At</Label>
+                    <Input readOnly value={detail?.updatedAt || '-'} />
+                  </div>
+                </TabsContent>
+              </Tabs>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" disabled={submitting} onClick={() => activeTabId && closeTab(activeTabId)}>
+                  Batal
+                </Button>
+                <Button onClick={handleSubmit} disabled={submitting}>
+                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Supplier
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+      <AlertDialog
+        open={!!submitError}
+        onOpenChange={(open) => {
+          if (!open) setSubmitError('');
+        }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supplier belum tersimpan lengkap</AlertDialogTitle>
+            <AlertDialogDescription>{submitError}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setSubmitError('')}>Kembali ke form</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </FormTabShell>
   );
 }
@@ -269,7 +411,19 @@ export default function SupplierPage({ refreshKey, formMode, formProps }: Suppli
   return <SupplierListContent refreshKey={refreshKey} />;
 }
 
-const SkeletonRows = () => <>{Array.from({ length: 8 }, (_, row) => <TableRow key={row}>{Array.from({ length: 12 }, (_, col) => <TableCell key={col}><Skeleton className="h-4 w-20" /></TableCell>)}</TableRow>)}</>;
+const SkeletonRows = () => (
+  <>
+    {Array.from({ length: 8 }, (_, row) => (
+      <TableRow key={row}>
+        {Array.from({ length: 12 }, (_, col) => (
+          <TableCell key={col}>
+            <Skeleton className="h-4 w-20" />
+          </TableCell>
+        ))}
+      </TableRow>
+    ))}
+  </>
+);
 
 function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
   const openFormTab = useTabStore((s) => s.openFormTab);
@@ -346,11 +500,11 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
     let result = data;
     if (debouncedSearch) {
       const q = debouncedSearch.toLowerCase();
-      result = result.filter((d) => [d.kodeSupplier, d.namaSupplier, d.nama, d.npwp, d.telepon].some(value => value?.toLowerCase().includes(q)));
+      result = result.filter((d) => [d.kodeSupplier, d.namaSupplier, d.nama, d.npwp, d.telepon].some((value) => value?.toLowerCase().includes(q)));
     }
-    if (statusFilter) result = result.filter(d => d.status === statusFilter);
-    if (typeFilter) result = result.filter(d => d.supplierType === typeFilter);
-    if (countryFilter) result = result.filter(d => d.country?.toLowerCase().includes(countryFilter.toLowerCase()));
+    if (statusFilter) result = result.filter((d) => d.status === statusFilter);
+    if (typeFilter) result = result.filter((d) => d.supplierType === typeFilter);
+    if (countryFilter) result = result.filter((d) => d.country?.toLowerCase().includes(countryFilter.toLowerCase()));
     return result;
   }, [data, debouncedSearch, statusFilter, typeFilter, countryFilter]);
 
@@ -407,14 +561,13 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
 
   // ── Skeleton rows ──
 
-
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Supplier</h2>
-          <p className="text-sm text-muted-foreground">{loading ? 'Memuat data...' : `${linkedCount} supplier terhubung dari ${total} Akun Hutang`}</p>
+          <p className="text-sm text-muted-foreground">{loading ? 'Memuat data...' : `${linkedCount} supplier terhubung akun hutang${data.some((d) => d.isLinked && !d.coaId) ? ` · ${data.filter((d) => d.isLinked && !d.coaId).length} belum punya akun hutang` : ''}`}</p>
         </div>
         <Button
           size="sm"
@@ -443,9 +596,18 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
                 <Input placeholder="Cari kode / nama / NPWP / telepon" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
               </div>
             </div>
-            <div className="min-w-[160px]"><Label>Status</Label><SearchableDropdown value={statusFilter} onValueChange={setStatusFilter} options={[...new Set(data.map(row => row.status).filter(Boolean))].map(value => ({ id: value, label: value }))} allOption={{ id: '', label: 'Semua status' }} placeholder="Semua status" /></div>
-            <div className="min-w-[160px]"><Label>Tipe Supplier</Label><SearchableDropdown value={typeFilter} onValueChange={setTypeFilter} options={[...new Set(data.map(row => row.supplierType).filter((value): value is string => !!value))].map(value => ({ id: value, label: value }))} allOption={{ id: '', label: 'Semua tipe' }} placeholder="Semua tipe" /></div>
-            <div><Label htmlFor="supplier-country-filter">Negara</Label><Input id="supplier-country-filter" value={countryFilter} onChange={e => setCountryFilter(e.target.value)} placeholder="Semua negara" /></div>
+            <div className="min-w-[160px]">
+              <Label>Status</Label>
+              <SearchableDropdown value={statusFilter} onValueChange={setStatusFilter} options={[...new Set(data.map((row) => row.status).filter(Boolean))].map((value) => ({ id: value, label: value }))} allOption={{ id: '', label: 'Semua status' }} placeholder="Semua status" />
+            </div>
+            <div className="min-w-[160px]">
+              <Label>Tipe Supplier</Label>
+              <SearchableDropdown value={typeFilter} onValueChange={setTypeFilter} options={[...new Set(data.map((row) => row.supplierType).filter((value): value is string => !!value))].map((value) => ({ id: value, label: value }))} allOption={{ id: '', label: 'Semua tipe' }} placeholder="Semua tipe" />
+            </div>
+            <div>
+              <Label htmlFor="supplier-country-filter">Negara</Label>
+              <Input id="supplier-country-filter" value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)} placeholder="Semua negara" />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -513,7 +675,7 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
                 ) : (
                   paginatedData.map((row) => (
                     <TableRow key={row.supplierId || row.coaId}>
-                      <TableCell className="whitespace-nowrap font-mono font-medium text-xs">{row.kode}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono font-medium text-xs">{row.kode || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap font-medium">{row.isLinked ? row.namaSupplier || row.nama : <span className="text-muted-foreground italic">{row.nama}</span>}</TableCell>
                       <TableCell className="whitespace-nowrap font-mono text-xs">{row.kodeSupplier || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground text-xs">{row.telepon || '-'}</TableCell>
@@ -528,7 +690,9 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
                         <div className="inline-flex items-center gap-1">
                           {row.isLinked && row.supplierId ? (
                             <>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDetailTarget(row)} aria-label={'Detail ' + (row.namaSupplier || row.nama)} title="Detail Supplier"><FileText className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDetailTarget(row)} aria-label={'Detail ' + (row.namaSupplier || row.nama)} title="Detail Supplier">
+                                <FileText className="h-4 w-4" />
+                              </Button>
                               {/* Edit existing supplier */}
                               <Button
                                 variant="ghost"
@@ -621,10 +785,43 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
         </div>
       )}
 
-      <Dialog open={!!detailTarget} onOpenChange={open => { if (!open) setDetailTarget(null); }}><DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{detailTarget?.namaSupplier || 'Detail Supplier'}</DialogTitle><DialogDescription>{detailTarget?.kodeSupplier} — {detailTarget?.status}</DialogDescription></DialogHeader>
-        <dl className="grid grid-cols-2 gap-3 text-sm">{([['Tipe', detailTarget?.supplierType], ['Kota', detailTarget?.city], ['Provinsi', detailTarget?.province], ['Negara', detailTarget?.country], ['Kode Pos', detailTarget?.postalCode], ['Currency', detailTarget?.currency], ['NPWP', detailTarget?.npwp], ['Telepon', detailTarget?.telepon], ['Nama Bank', detailTarget?.bankName], ['No. Rekening', detailTarget?.bankAccountNo], ['Nama Rekening', detailTarget?.bankAccountName]] as const).map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="break-words">{value || '-'}</dd></div>)}</dl>
-        {(detailTarget?.bankName || detailTarget?.bankAccountNo || detailTarget?.bankAccountName) && <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm">Data bank sensitif. Verifikasi perubahan rekening supplier; persetujuan khusus perubahan rekening belum tersedia.</p>}
-      </DialogContent></Dialog>
+      <Dialog
+        open={!!detailTarget}
+        onOpenChange={(open) => {
+          if (!open) setDetailTarget(null);
+        }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{detailTarget?.namaSupplier || 'Detail Supplier'}</DialogTitle>
+            <DialogDescription>
+              {detailTarget?.kodeSupplier} — {detailTarget?.status}
+            </DialogDescription>
+          </DialogHeader>
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            {(
+              [
+                ['Tipe', detailTarget?.supplierType],
+                ['Kota', detailTarget?.city],
+                ['Provinsi', detailTarget?.province],
+                ['Negara', detailTarget?.country],
+                ['Kode Pos', detailTarget?.postalCode],
+                ['Currency', detailTarget?.currency],
+                ['NPWP', detailTarget?.npwp],
+                ['Telepon', detailTarget?.telepon],
+                ['Nama Bank', detailTarget?.bankName],
+                ['No. Rekening', detailTarget?.bankAccountNo],
+                ['Nama Rekening', detailTarget?.bankAccountName]
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-muted-foreground">{label}</dt>
+                <dd className="break-words">{value || '-'}</dd>
+              </div>
+            ))}
+          </dl>
+          {(detailTarget?.bankName || detailTarget?.bankAccountNo || detailTarget?.bankAccountName) && <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm">Data bank sensitif. Verifikasi perubahan rekening supplier; persetujuan khusus perubahan rekening belum tersedia.</p>}
+        </DialogContent>
+      </Dialog>
       {/* ══════ Delete Confirmation Dialog ══════ */}
       <AlertDialog
         open={!!deleteTarget}
