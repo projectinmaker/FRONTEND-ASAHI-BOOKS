@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -659,7 +660,7 @@ function JurnalManualForm() {
                           )}
                         </TableCell>
                         <TableCell className="align-top text-right">
-                          <Input type="number" min="0" step="any" placeholder="0" value={row.debit} onChange={(e) => updateRow(idx, 'debit', e.target.value)} disabled={submitting} className="h-8 text-right" />
+                          <CurrencyInput allowDecimal placeholder="0" value={row.debit} onValueChange={(v) => updateRow(idx, 'debit', v)} disabled={submitting} className="h-8 text-right" />
                           {debitCents > 0 && (
                             <span className="inline-flex items-center gap-1 mt-1 text-xs text-emerald-600 font-medium">
                               <ArrowUpRight className="h-3 w-3" />
@@ -674,7 +675,7 @@ function JurnalManualForm() {
                           )}
                         </TableCell>
                         <TableCell className="align-top text-right">
-                          <Input type="number" min="0" step="any" placeholder="0" value={row.kredit} onChange={(e) => updateRow(idx, 'kredit', e.target.value)} disabled={submitting} className="h-8 text-right" />
+                          <CurrencyInput allowDecimal placeholder="0" value={row.kredit} onValueChange={(v) => updateRow(idx, 'kredit', v)} disabled={submitting} className="h-8 text-right" />
                           {kreditCents > 0 && (
                             <span className="inline-flex items-center gap-1 mt-1 text-xs text-rose-600 font-medium">
                               <ArrowDownRight className="h-3 w-3" />
@@ -1021,7 +1022,7 @@ function JurnalManualEditForm({ jurnalId }: { jurnalId: string }) {
                           )}
                         </TableCell>
                         <TableCell className="align-top text-right">
-                          <Input type="number" min="0" step="any" placeholder="0" value={row.debit} onChange={(e) => updateRow(idx, 'debit', e.target.value)} disabled={submitting} className="h-8 text-right" />
+                          <CurrencyInput allowDecimal placeholder="0" value={row.debit} onValueChange={(v) => updateRow(idx, 'debit', v)} disabled={submitting} className="h-8 text-right" />
                           {debitCents > 0 && (
                             <span className="inline-flex items-center gap-1 mt-1 text-xs text-emerald-600 font-medium">
                               <ArrowUpRight className="h-3 w-3" />
@@ -1036,7 +1037,7 @@ function JurnalManualEditForm({ jurnalId }: { jurnalId: string }) {
                           )}
                         </TableCell>
                         <TableCell className="align-top text-right">
-                          <Input type="number" min="0" step="any" placeholder="0" value={row.kredit} onChange={(e) => updateRow(idx, 'kredit', e.target.value)} disabled={submitting} className="h-8 text-right" />
+                          <CurrencyInput allowDecimal placeholder="0" value={row.kredit} onValueChange={(v) => updateRow(idx, 'kredit', v)} disabled={submitting} className="h-8 text-right" />
                           {kreditCents > 0 && (
                             <span className="inline-flex items-center gap-1 mt-1 text-xs text-rose-600 font-medium">
                               <ArrowDownRight className="h-3 w-3" />

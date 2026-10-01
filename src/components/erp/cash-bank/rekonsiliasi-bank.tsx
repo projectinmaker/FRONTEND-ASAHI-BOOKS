@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -671,12 +672,12 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
                 <Label className="text-xs font-medium">
                   Jumlah <span className="text-destructive">*</span>
                 </Label>
-                <Input
-                  type="number"
+                <CurrencyInput
+                  allowDecimal
                   placeholder="0"
                   value={dlJumlah}
-                  onChange={(e) => {
-                    setDlJumlah(e.target.value);
+                  onValueChange={(v) => {
+                    setDlJumlah(v);
                     setDlErrors((prev) => ({ ...prev, jumlah: undefined }));
                   }}
                   className={cn(dlErrors.jumlah && 'border-destructive')}

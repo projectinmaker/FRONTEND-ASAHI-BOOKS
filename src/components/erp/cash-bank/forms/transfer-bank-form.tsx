@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -400,12 +401,12 @@ export default function TransferBankForm({ mode, id }: Props) {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Req label="Nilai Transfer (Rp)" />
-                <Input type="text" inputMode="numeric" placeholder="0" value={nilaiTransfer} onChange={(e) => setNilaiTransfer(e.target.value)} className={errors.nilaiTransfer ? 'border-destructive' : ''} />
+                <CurrencyInput placeholder="0" value={nilaiTransfer} onValueChange={(v) => setNilaiTransfer(v)} className={errors.nilaiTransfer ? 'border-destructive' : ''} />
                 <FieldError msg={errors.nilaiTransfer} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">Biaya Transfer (Rp)</Label>
-                <Input type="text" inputMode="numeric" placeholder="0" value={biayaTransfer} onChange={(e) => setBiayaTransfer(e.target.value)} />
+                <CurrencyInput placeholder="0" value={biayaTransfer} onValueChange={(v) => setBiayaTransfer(v)} />
               </div>
             </div>
 

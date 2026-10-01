@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { RefreshCw, AlertCircle, CheckCircle2, XCircle, Package, ChevronRight, ChevronDown, Link2, Unlink, Wallet, Scale } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { formatRp as formatRpIDR, formatNumberIDR } from '@/lib/money';
 import { useTabStore } from '@/store/tab-store';
 import { toast } from 'sonner';
 import type { RekonsiliasiPersediaanResponse, RekonsiliasiPersediaanAkunRow } from '@/types/api';
@@ -24,15 +25,11 @@ function todayStr(): string {
 }
 
 function formatRp(value: number | string): string {
-  const n = typeof value === 'string' ? Number(value) : value;
-  if (!Number.isFinite(n)) return 'Rp 0';
-  return `Rp ${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
+  return formatRpIDR(value);
 }
 
 function formatNumber(value: number | string): string {
-  const n = typeof value === 'string' ? Number(value) : value;
-  if (!Number.isFinite(n)) return '0';
-  return n.toLocaleString('id-ID', { maximumFractionDigits: 2 });
+  return formatNumberIDR(value);
 }
 
 function absN(value: number | string): number {
@@ -316,7 +313,7 @@ function AkunRow({ row, expanded, onToggle }: { row: RekonsiliasiPersediaanAkunR
         <TableCell className="text-sm">{row.akun.nama}</TableCell>
         <TableCell className="text-right tabular-nums font-mono text-sm">{formatRp(row.saldoBukuBesar)}</TableCell>
         <TableCell className="text-right tabular-nums font-mono text-sm">{formatRp(row.totalNilaiStok)}</TableCell>
-        <TableCell className={`text-right tabular-nums font-mono text-sm ${isMismatch ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>{isMismatch ? formatRp(row.selisih) : 'Rp 0'}</TableCell>
+        <TableCell className={`text-right tabular-nums font-mono text-sm ${isMismatch ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>{isMismatch ? formatRp(row.selisih) : formatRp(0)}</TableCell>
         <TableCell className="text-center">
           {isMismatch ? (
             <Badge variant="outline" className="bg-red-50 text-red-700 border-red-300 hover:bg-red-50 text-xs gap-1">

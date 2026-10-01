@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -472,7 +473,7 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="pel-credit-limit">Credit Limit</Label>
-              <Input id="pel-credit-limit" type="number" min="0" step="0.01" placeholder="0 (tanpa limit)" value={form.creditLimit} onChange={(e) => updateForm('creditLimit', e.target.value)} />
+              <CurrencyInput id="pel-credit-limit" allowDecimal placeholder="0 (tanpa limit)" value={form.creditLimit} onValueChange={(v) => updateForm('creditLimit', v)} />
               <p className="text-[11px] text-muted-foreground">Batas kredit pelanggan (kosongkan untuk tanpa limit).</p>
             </div>
             <div className="space-y-2">

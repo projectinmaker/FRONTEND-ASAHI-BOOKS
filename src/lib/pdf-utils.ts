@@ -1,8 +1,11 @@
 // ─── Format Helpers ────────────────────────────────────────────────────────
+// Delegasi ke formatter sentral di @/lib/money (standard 20.000.000).
 
-export const formatRp = (val: number) => 'Rp ' + val.toLocaleString('id-ID');
+import { formatNumberIDR, formatRp as formatRpIDR } from '@/lib/money';
 
-export const formatNumber = (val: number) => val.toLocaleString('id-ID');
+export const formatRp = (val: string | number) => formatRpIDR(val);
+
+export const formatNumber = (val: string | number) => formatNumberIDR(val);
 
 export function formatDate(dateStr: string): string {
   if (!dateStr) return '';

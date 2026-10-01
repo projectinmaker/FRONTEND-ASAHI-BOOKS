@@ -13,6 +13,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -199,7 +200,10 @@ function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDeta
           if (r.id !== id) return r;
           if (field === 'barangId') {
             const found = barangOptions.find((b) => b.id === value);
-            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', harga: found ? String(found.hargaPokok) : r.harga };
+            // Harga jual default (bila diisi di master barang); fallback harga pokok.
+            // Normalisasi via Number() — backend mengirim Decimal sebagai string "20000000.00".
+            const hargaDefault = found ? (Number(found.hargaJual) > 0 ? String(Number(found.hargaJual)) : String(Number(found.hargaPokok))) : r.harga;
+            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', harga: hargaDefault };
           }
           return { ...r, [field]: value };
         })
@@ -243,7 +247,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDeta
                     <SearchableDropdown value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
                   </TableCell>
                   <TableCell>
-                    <Input type="number" className="h-8 text-right text-xs" value={row.harga} onChange={(e) => updateRow(row.id, 'harga', e.target.value)} />
+                    <CurrencyInput className="h-8 text-right text-xs" value={row.harga} onValueChange={(v) => updateRow(row.id, 'harga', v)} />
                   </TableCell>
                   <TableCell>
                     <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} />
@@ -448,7 +452,7 @@ function BiayaTambahanTable({ rows, setRows }: { rows: FormBiayaRow[]; setRows: 
                   <Input className="h-8 text-xs" placeholder="Nama biaya..." value={row.nama} onChange={(e) => updateRow(row.id, 'nama', e.target.value)} />
                 </TableCell>
                 <TableCell>
-                  <Input type="number" className="h-8 text-right text-xs" value={row.jumlah} onChange={(e) => updateRow(row.id, 'jumlah', e.target.value)} />
+                  <CurrencyInput className="h-8 text-right text-xs" value={row.jumlah} onValueChange={(v) => updateRow(row.id, 'jumlah', v)} />
                 </TableCell>
                 <TableCell>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>

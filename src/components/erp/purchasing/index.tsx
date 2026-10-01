@@ -13,6 +13,7 @@ import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -247,7 +248,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, satuanOptions }: {
                     </TableCell>
                   )}
                   <TableCell>
-                    <Input type="number" className="h-8 text-right text-xs" value={row.harga} onChange={(e) => updateRow(row.id, 'harga', e.target.value)} />
+                    <CurrencyInput className="h-8 text-right text-xs" value={row.harga} onValueChange={(v) => updateRow(row.id, 'harga', v)} />
                   </TableCell>
                   <TableCell>
                     <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} />
@@ -384,7 +385,7 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
                   <SearchableDropdown value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact />
                 </TableCell>
                 <TableCell>
-                  <Input type="number" className="h-8 text-right text-xs" placeholder="0" value={row.hargaPerolehan} onChange={(e) => updateRow(row.id, 'hargaPerolehan', e.target.value)} />
+                  <CurrencyInput className="h-8 text-right text-xs" placeholder="0" value={row.hargaPerolehan} onValueChange={(v) => updateRow(row.id, 'hargaPerolehan', v)} />
                 </TableCell>
                 <TableCell>
                   <Input type="date" className="h-8 text-xs" value={row.tanggalKedaluwarsa} onChange={(e) => updateRow(row.id, 'tanggalKedaluwarsa', e.target.value)} />
@@ -453,7 +454,7 @@ function BiayaTambahanTable({ rows, setRows }: { rows: FormBiayaRow[]; setRows: 
                   <Input className="h-8 text-xs" placeholder="Nama biaya..." value={row.nama} onChange={(e) => updateRow(row.id, 'nama', e.target.value)} />
                 </TableCell>
                 <TableCell>
-                  <Input type="number" className="h-8 text-right text-xs" value={row.jumlah} onChange={(e) => updateRow(row.id, 'jumlah', e.target.value)} />
+                  <CurrencyInput className="h-8 text-right text-xs" value={row.jumlah} onValueChange={(v) => updateRow(row.id, 'jumlah', v)} />
                 </TableCell>
                 <TableCell>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>

@@ -39,6 +39,7 @@ import { draftKey, useFormDraft } from '@/hooks/use-form-draft';
 
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
@@ -69,9 +70,9 @@ interface BarangTypePolicy {
 }
 
 const FALLBACK_TYPE_POLICIES: BarangTypePolicy[] = [
-  { uiType: 'PERSEDIAAN', label: 'Persediaan', available: true, stockTracked: true, valuationEnabled: true, supportsWarehouse: true, canPurchase: true, canSell: true, visibleTabs: ['umum', 'jual_beli', 'stok', 'akun', 'gambar', 'lainnya'], accountFields: ['akun_persediaan_id', 'akun_hpp_id', 'akun_penjualan_id'], stockFields: ['metode_valuasi', 'stok_minimum'], description: 'Barang fisik yang stok-nya dilacak (kartu stok, valuasi, gudang).' },
-  { uiType: 'NONPERSEDIAAN', label: 'Nonpersediaan', available: true, stockTracked: false, valuationEnabled: false, supportsWarehouse: false, canPurchase: true, canSell: true, visibleTabs: ['umum', 'jual_beli', 'akun', 'gambar', 'lainnya'], accountFields: ['akun_hpp_id', 'akun_penjualan_id'], stockFields: [], description: 'Barang/jasa terjual-terbeli tanpa pelacakan stok (tanpa kartu stok/valuasi).' },
-  { uiType: 'JASA', label: 'Jasa', available: true, stockTracked: false, valuationEnabled: false, supportsWarehouse: false, canPurchase: true, canSell: true, visibleTabs: ['umum', 'jual_beli', 'akun', 'gambar', 'lainnya'], accountFields: ['akun_penjualan_id'], stockFields: [], description: 'Item jasa — pendapatan/beban tanpa gerakan stok, gudang, atau valuasi.' },
+  { uiType: 'PERSEDIAAN', label: 'Persediaan', available: true, stockTracked: true, valuationEnabled: true, supportsWarehouse: true, canPurchase: true, canSell: true, visibleTabs: ['umum', 'jual_beli', 'stok', 'akun', 'gambar', 'lainnya'], accountFields: ['akun_persediaan_id', 'akun_hpp_id', 'akun_penjualan_id', 'akun_retur_penjualan_id', 'akun_diskon_penjualan_id'], stockFields: ['stok_minimum'], description: 'Barang fisik yang stok-nya dilacak (kartu stok, valuasi, gudang).' },
+  { uiType: 'NONPERSEDIAAN', label: 'Nonpersediaan', available: true, stockTracked: false, valuationEnabled: false, supportsWarehouse: false, canPurchase: true, canSell: true, visibleTabs: ['umum', 'jual_beli', 'akun', 'gambar', 'lainnya'], accountFields: ['akun_hpp_id', 'akun_penjualan_id', 'akun_retur_penjualan_id', 'akun_diskon_penjualan_id'], stockFields: [], description: 'Barang/jasa terjual-terbeli tanpa pelacakan stok (tanpa kartu stok/valuasi).' },
+  { uiType: 'JASA', label: 'Jasa', available: true, stockTracked: false, valuationEnabled: false, supportsWarehouse: false, canPurchase: true, canSell: true, visibleTabs: ['umum', 'jual_beli', 'akun', 'gambar', 'lainnya'], accountFields: ['akun_penjualan_id', 'akun_retur_penjualan_id', 'akun_diskon_penjualan_id'], stockFields: [], description: 'Item jasa — pendapatan/beban tanpa gerakan stok, gudang, atau valuasi.' },
   { uiType: 'GRUP', label: 'Grup', available: false, stockTracked: false, valuationEnabled: false, supportsWarehouse: false, canPurchase: false, canSell: false, visibleTabs: ['umum'], accountFields: [], stockFields: [], description: 'Non-stock sales bundle — engine bundle belum tersedia.', comingSoon: true }
 ];
 
@@ -85,11 +86,8 @@ const TYPE_ICONS: Record<UiBarangType, typeof Package> = {
 /** Rincian jenis hanya berlaku untuk item Persediaan (stock-tracked). */
 const RINCIAN_PERSEDIAAN_OPTIONS = ITEM_TYPE_OPTIONS.filter((o) => o.value !== 'JASA');
 
-const METODE_VALUASI_OPTIONS: { value: string; label: string }[] = [
-  { value: 'AVERAGE', label: 'AVERAGE — Rata-rata bergerak' },
-  { value: 'FIFO', label: 'FIFO — First In First Out' },
-  { value: 'FEFO', label: 'FEFO — First Expired First Out' }
-];
+// NOTE: Metode valuasi bukan lagi field per-barang — sekarang setting global
+// di halaman Pengaturan → Setting Akun (lihat setting-akun-page.tsx).
 
 /** Derivasi UI type saat EDIT (load data) — sesuai aturan Task 27-c. */
 function deriveUiType(itemType?: ItemTypeBarang | null, stockItem?: boolean | null): UiBarangType {
@@ -109,8 +107,6 @@ function uiTypeToModel(uiType: UiBarangType, rincian: string): { itemType: ItemT
   throw new Error('Jenis item Grup belum tersedia (coming soon)');
 }
 
-const formatRupiah = (value: number): string => `Rp ${new Intl.NumberFormat('id-ID').format(value)}`;
-
 // ─── Form state type ───────────────────────────────────────────────────────
 
 type FormMode = 'create' | 'edit';
@@ -125,14 +121,16 @@ interface FormState {
   rincianJenis: string;
   statusAktif: boolean;
   // Penjualan/Pembelian
-  hargaPokok: string; // harga beli referensi
+  hargaPokok: string; // harga beli referensi (canonical, format input 20.000.000)
+  hargaJual: string; // harga jual default (canonical, format input 20.000.000)
   // Stok (hanya Persediaan)
-  metodeValuasi: string;
   stokMinimum: string;
   // Akun
   akunPersediaanId: string;
   akunHppId: string;
   akunPenjualanId: string;
+  akunReturPenjualanId: string;
+  akunDiskonPenjualanId: string;
 }
 
 const emptyForm: FormState = {
@@ -144,11 +142,13 @@ const emptyForm: FormState = {
   rincianJenis: 'BARANG_DAGANG',
   statusAktif: true,
   hargaPokok: '',
-  metodeValuasi: 'AVERAGE',
+  hargaJual: '',
   stokMinimum: '',
   akunPersediaanId: '',
   akunHppId: '',
-  akunPenjualanId: ''
+  akunPenjualanId: '',
+  akunReturPenjualanId: '',
+  akunDiskonPenjualanId: ''
 };
 
 interface BarangFormProps {
@@ -177,6 +177,9 @@ function AkunPersediaanPicker({ value, onChange, currentAkun, disabled }: AkunPe
   const [loading, setLoading] = useState(false);
   const [skip, setSkip] = useState(0);
   const [total, setTotal] = useState(0);
+  // Snapshot pilihan terakhir — supaya label trigger tetap tampil setelah popover
+  // ditutup (options di-reset saat close, nilai form tetap tersimpan).
+  const [selectedFromList, setSelectedFromList] = useState<BarangAkunPersediaanItem | null>(null);
   const PAGE_SIZE = 50;
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -243,8 +246,10 @@ function AkunPersediaanPicker({ value, onChange, currentAkun, disabled }: AkunPe
     }
   }, [open]);
 
-  // Label saat ini: prioritas dari currentAkun (object), fallback ke options list
-  const selectedOption = currentAkun || options.find((o) => o.id === value);
+  // Label saat ini: prioritas dari currentAkun (object), fallback ke options list,
+  // lalu fallback ke snapshot pilihan terakhir (supaya label tidak hilang saat
+  // popover ditutup karena options di-reset).
+  const selectedOption = currentAkun || (value ? options.find((o) => o.id === value) || selectedFromList : null);
   const isNonaktif = selectedOption?.status === 'NONAKTIF';
   const hasMore = options.length < total;
 
@@ -304,6 +309,7 @@ function AkunPersediaanPicker({ value, onChange, currentAkun, disabled }: AkunPe
                     key={opt.id}
                     value={`${opt.kode} — ${opt.nama}`}
                     onSelect={() => {
+                      setSelectedFromList(opt);
                       onChange(opt.id);
                       setOpen(false);
                     }}
@@ -331,7 +337,15 @@ function AkunPersediaanPicker({ value, onChange, currentAkun, disabled }: AkunPe
 
       {/* Clear button — eksplisit mengirim null untuk mengosongkan mapping */}
       {value && !disabled && (
-        <Button type="button" variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground hover:text-destructive px-0" onClick={() => onChange('')}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 text-xs text-muted-foreground hover:text-destructive px-0"
+          onClick={() => {
+            setSelectedFromList(null);
+            onChange('');
+          }}>
           <X className="h-3 w-3 mr-1" /> Kosongkan mapping
         </Button>
       )}
@@ -497,11 +511,13 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
             rincianJenis: uiType === 'PERSEDIAAN' && detail.itemType && detail.itemType !== 'JASA' ? detail.itemType : 'BARANG_DAGANG',
             statusAktif: detail.status === 'AKTIF',
             hargaPokok: detail.hargaPokok != null ? String(detail.hargaPokok) : '',
+            hargaJual: detail.hargaJual != null ? String(detail.hargaJual) : '',
             stokMinimum: detail.stokMinimum != null ? String(detail.stokMinimum) : '',
-            metodeValuasi: detail.metodeValuasi || 'AVERAGE',
             akunPersediaanId: uiType === 'PERSEDIAAN' ? detail.akunPersediaanId || '' : '',
             akunHppId: uiType === 'JASA' ? '' : detail.akunHppId || '',
-            akunPenjualanId: detail.akunPenjualanId || ''
+            akunPenjualanId: detail.akunPenjualanId || '',
+            akunReturPenjualanId: detail.akunReturPenjualanId || '',
+            akunDiskonPenjualanId: detail.akunDiskonPenjualanId || ''
           }));
           setStokSaatIni(detail.stok ?? 0);
           setCurrentAkun(uiType === 'PERSEDIAAN' ? detail.akunPersediaan || null : null);
@@ -539,7 +555,6 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
     const fields: string[] = [];
     if (target !== 'PERSEDIAAN') {
       if (form.stokMinimum !== '' && Number(form.stokMinimum) !== 0) fields.push('Stok minimum');
-      if (form.metodeValuasi && form.metodeValuasi !== 'AVERAGE') fields.push('Metode valuasi');
       if (form.akunPersediaanId) fields.push('Akun persediaan');
     }
     if (target === 'JASA' && form.akunHppId) fields.push('Akun HPP');
@@ -550,7 +565,7 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
     setForm((prev) => ({
       ...prev,
       uiType: target,
-      ...(target !== 'PERSEDIAAN' ? { stokMinimum: '', metodeValuasi: 'AVERAGE', akunPersediaanId: '' } : {}),
+      ...(target !== 'PERSEDIAAN' ? { stokMinimum: '', akunPersediaanId: '' } : {}),
       ...(target === 'JASA' ? { akunHppId: '' } : {})
     }));
     if (target !== 'PERSEDIAAN') setCurrentAkun(null);
@@ -590,6 +605,13 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
           if (n < 0) return 'Harga beli tidak boleh negatif';
         }
         return '';
+      case 'hargaJual':
+        if (trimmed) {
+          const n = Number(trimmed);
+          if (!Number.isFinite(n)) return 'Harga jual harus berupa angka';
+          if (n < 0) return 'Harga jual tidak boleh negatif';
+        }
+        return '';
       case 'stokMinimum':
         if (trimmed) {
           const n = Number(trimmed);
@@ -617,7 +639,7 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
 
   const validateAll = (): boolean => {
     const errors: Record<string, string> = {};
-    (['kode', 'nama', 'hargaPokok'] as const).forEach((field) => {
+    (['kode', 'nama', 'hargaPokok', 'hargaJual'] as const).forEach((field) => {
       const e = validateField(field, form[field]);
       if (e) errors[field] = e;
     });
@@ -653,15 +675,17 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
           kategoriId: form.kategoriId,
           satuanId: form.satuanId,
           hargaPokok: form.hargaPokok !== '' ? Number(form.hargaPokok) : undefined,
+          hargaJual: form.hargaJual !== '' ? Number(form.hargaJual) : 0,
           // Nonpersediaan/Jasa: stok minimum dipaksa 0 di payload (backend juga memaksa).
           stokMinimum: isPersediaan && form.stokMinimum !== '' ? Number(form.stokMinimum) : 0,
-          ...(isPersediaan ? { metodeValuasi: form.metodeValuasi } : {}),
           itemType: model.itemType,
           stockItem: model.stockItem,
           // Field akun tersembunyi → di-null di payload.
           akunPersediaanId: isPersediaan ? form.akunPersediaanId || null : null,
           akunHppId: isJasa ? null : form.akunHppId || null,
           akunPenjualanId: form.akunPenjualanId || null,
+          akunReturPenjualanId: form.akunReturPenjualanId || null,
+          akunDiskonPenjualanId: form.akunDiskonPenjualanId || null,
           ...(!form.statusAktif ? { status: 'NONAKTIF' } : {})
         };
         await api.post<BarangResponse>('/master/barang', payload);
@@ -675,13 +699,15 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
           kategoriId: form.kategoriId || undefined,
           satuanId: form.satuanId || undefined,
           hargaPokok: form.hargaPokok !== '' ? Number(form.hargaPokok) : undefined,
+          hargaJual: form.hargaJual !== '' ? Number(form.hargaJual) : 0,
           stokMinimum: isPersediaan && form.stokMinimum !== '' ? Number(form.stokMinimum) : 0,
-          ...(isPersediaan ? { metodeValuasi: form.metodeValuasi } : {}),
           itemType: model.itemType,
           stockItem: model.stockItem,
           akunPersediaanId: isPersediaan ? form.akunPersediaanId || null : null,
           akunHppId: isJasa ? null : form.akunHppId || null,
           akunPenjualanId: form.akunPenjualanId || null,
+          akunReturPenjualanId: form.akunReturPenjualanId || null,
+          akunDiskonPenjualanId: form.akunDiskonPenjualanId || null,
           status: form.statusAktif ? 'AKTIF' : 'NONAKTIF'
         };
         await api.put<BarangResponse>(`/master/barang/${editId}`, payload);
@@ -1011,41 +1037,25 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
             <TabsContent value="jualbeli" className="space-y-4 pt-3">
               <div className="space-y-2">
                 <Label htmlFor="brg-harga">Harga Beli Referensi</Label>
-                <Input id="brg-harga" type="number" placeholder="0" min="0" value={form.hargaPokok} onChange={(e) => updateForm('hargaPokok', e.target.value)} onBlur={() => handleBlur('hargaPokok')} aria-invalid={!!formErrors.hargaPokok} className={formErrors.hargaPokok ? 'border-destructive focus-visible:ring-destructive' : ''} />
+                <CurrencyInput id="brg-harga" placeholder="0" value={form.hargaPokok} onValueChange={(v) => updateForm('hargaPokok', v)} onBlur={() => handleBlur('hargaPokok')} aria-invalid={!!formErrors.hargaPokok} className={formErrors.hargaPokok ? 'border-destructive focus-visible:ring-destructive' : ''} />
                 {formErrors.hargaPokok && <p className="text-xs text-destructive mt-1">{formErrors.hargaPokok}</p>}
                 <p className="text-[11px] text-muted-foreground leading-relaxed">Harga beli referensi hanya untuk acuan input dokumen pembelian{isPersediaan ? ' — bukan HPP aktual (HPP mengikuti valuasi stok).' : '.'}</p>
               </div>
 
-              {/* Placeholder P1 — harga jual per pelanggan / daftar harga */}
-              <div className="rounded-md border border-dashed p-3 space-y-1" data-testid="placeholder-harga-jual">
-                <p className="text-xs font-medium text-muted-foreground">Harga Jual</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Harga jual per pelanggan / daftar harga —{' '}
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                    coming soon (P1)
-                  </Badge>
-                </p>
+              {/* Harga Jual — default harga satuan saat input dokumen penjualan */}
+              <div className="space-y-2">
+                <Label htmlFor="brg-harga-jual">Harga Jual</Label>
+                <CurrencyInput id="brg-harga-jual" placeholder="0" value={form.hargaJual} onValueChange={(v) => updateForm('hargaJual', v)} onBlur={() => handleBlur('hargaJual')} aria-invalid={!!formErrors.hargaJual} className={formErrors.hargaJual ? 'border-destructive focus-visible:ring-destructive' : ''} data-testid="input-harga-jual" />
+                {formErrors.hargaJual && <p className="text-xs text-destructive mt-1">{formErrors.hargaJual}</p>}
+                <p className="text-[11px] text-muted-foreground leading-relaxed">Harga jual default — otomatis terisi sebagai harga satuan saat barang dipilih di dokumen penjualan (SO). Harga per pelanggan / daftar harga khusus menyusul.</p>
               </div>
             </TabsContent>
 
             {/* ─────────── TAB STOK (hanya Persediaan) ─────────── */}
             {isPersediaan && (
               <TabsContent value="stok" className="space-y-4 pt-3" data-testid="tab-stok">
-                <div className="space-y-2">
-                  <Label>Metode Valuasi</Label>
-                  <Select value={form.metodeValuasi} onValueChange={(v) => updateForm('metodeValuasi', v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pilih metode valuasi" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {METODE_VALUASI_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground">Metode valuasi menentukan perhitungan HPP (biaya persediaan keluar).</p>
+                <div className="rounded-md bg-muted/40 border p-3 text-[11px] text-muted-foreground leading-relaxed">
+                  <strong>Metode valuasi kini global.</strong> Metode valuasi (AVERAGE/FIFO/FEFO) tidak lagi diatur per barang — konfigurasinya ada di <strong>Pengaturan → Setting Akun → Valuasi Persediaan</strong>.
                 </div>
 
                 <div className="space-y-2">
@@ -1125,6 +1135,42 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
                   </SelectContent>
                 </Select>
                 {isJasa && <p className="text-[11px] text-muted-foreground">Item Jasa hanya memetakan akun pendapatan — tanpa akun persediaan/HPP stok.</p>}
+              </div>
+
+              {/* Akun Retur Penjualan — COA contra-revenue untuk retur barang ini */}
+              <div className="space-y-2">
+                <Label>Akun Retur Penjualan</Label>
+                <Select value={form.akunReturPenjualanId} onValueChange={(v) => updateForm('akunReturPenjualanId', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih akun retur penjualan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {coaPenjualanOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">Mapping COA retur penjualan (contra-revenue) untuk barang ini. Boleh kosong — retur tetap memakai setting global RETUR_PENJUALAN.</p>
+              </div>
+
+              {/* Akun Diskon Penjualan — COA contra-revenue untuk diskon barang ini */}
+              <div className="space-y-2">
+                <Label>Akun Diskon Penjualan</Label>
+                <Select value={form.akunDiskonPenjualanId} onValueChange={(v) => updateForm('akunDiskonPenjualanId', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih akun diskon penjualan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {coaPenjualanOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">Mapping COA diskon/potongan penjualan (contra-revenue) untuk barang ini. Boleh kosong.</p>
               </div>
 
               {!isPersediaan && <div className="rounded-md bg-muted/40 border p-3 text-[11px] text-muted-foreground leading-relaxed">{isJasa ? 'Jasa: pendapatan jasa tanpa gerakan stok, gudang, GRNI, atau HPP stok (spec §4).' : 'Nonpersediaan: pembelian masuk ke beban/aset (bukan akun stok); penjualan tetap ke akun pendapatan (spec §4).'}</div>}

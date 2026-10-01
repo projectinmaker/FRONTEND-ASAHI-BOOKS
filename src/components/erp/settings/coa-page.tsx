@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -23,6 +24,7 @@ import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 
 import { api, ApiError } from '@/lib/api';
+import { formatNumberIDR } from '@/lib/money';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -72,7 +74,7 @@ const statusBadge = (status: string) => {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>{status}</span>;
 };
 
-const formatSaldo = (value: number) => new Intl.NumberFormat('id-ID').format(value);
+const formatSaldo = (value: number) => formatNumberIDR(value);
 
 // Tanggal lokal (bukan UTC) — default "as of" harus hari ini menurut zona user (WIB)
 const todayIso = () => {
@@ -906,11 +908,11 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="coa-saldo-debit">Debit</Label>
-                    <Input id="coa-saldo-debit" type="number" min="0" step="0.01" placeholder="0" value={form.saldoAwalDebit} onChange={(e) => setForm((prev) => ({ ...prev, saldoAwalDebit: e.target.value }))} disabled={loadingSaldoAwal} />
+                    <CurrencyInput id="coa-saldo-debit" allowDecimal placeholder="0" value={form.saldoAwalDebit} onValueChange={(v) => setForm((prev) => ({ ...prev, saldoAwalDebit: v }))} disabled={loadingSaldoAwal} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="coa-saldo-kredit">Kredit</Label>
-                    <Input id="coa-saldo-kredit" type="number" min="0" step="0.01" placeholder="0" value={form.saldoAwalKredit} onChange={(e) => setForm((prev) => ({ ...prev, saldoAwalKredit: e.target.value }))} disabled={loadingSaldoAwal} />
+                    <CurrencyInput id="coa-saldo-kredit" allowDecimal placeholder="0" value={form.saldoAwalKredit} onValueChange={(v) => setForm((prev) => ({ ...prev, saldoAwalKredit: v }))} disabled={loadingSaldoAwal} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="coa-tanggal-saldo-awal">Tanggal Saldo Awal</Label>

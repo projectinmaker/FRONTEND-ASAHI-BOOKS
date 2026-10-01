@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -306,12 +307,12 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
               <Label className="text-xs font-medium">
                 Saldo Bank (dari statement) <span className="text-destructive">*</span>
               </Label>
-              <Input
-                type="number"
+              <CurrencyInput
+                allowDecimal
                 placeholder="0"
                 value={saldoBank}
-                onChange={(e) => {
-                  setSaldoBank(e.target.value);
+                onValueChange={(v) => {
+                  setSaldoBank(v);
                   setErrors((prev) => ({ ...prev, saldoBank: undefined }));
                 }}
                 className={cn(errors.saldoBank && 'border-destructive')}

@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -933,7 +934,7 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
                 </div>
                 <div className="space-y-2">
                   <Label>Biaya Satuan</Label>
-                  <Input disabled={formTipe === 'KURANG'} type="number" placeholder="0" value={formBiayaSatuan} onChange={(e) => setFormBiayaSatuan(e.target.value)} />
+                  <CurrencyInput allowDecimal disabled={formTipe === 'KURANG'} placeholder="0" value={formBiayaSatuan} onValueChange={(v) => setFormBiayaSatuan(v)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Total</Label>
@@ -1956,22 +1957,23 @@ function BarangJasaTab({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="whitespace-nowrap">Akun Persediaan</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Stok</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Harga Beli</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">Harga Jual</TableHead>
                   <TableHead className="whitespace-nowrap">Status Stok</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && <TableSkeletonRows cols={9} />}
+                {loading && <TableSkeletonRows cols={10} />}
                 {error && (
                   <TableRow>
-                    <TableCell colSpan={9}>
+                    <TableCell colSpan={10}>
                       <ErrorCard message={error} onRetry={fetchData} />
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading && !error && data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="p-0">
+                    <TableCell colSpan={10} className="p-0">
                       {search ? (
                         <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
                           <SearchX className="h-8 w-8" />
@@ -2000,6 +2002,7 @@ function BarangJasaTab({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="whitespace-nowrap">{renderAkunPersediaan(item)}</TableCell>
                       <TableCell className="whitespace-nowrap text-right">{Number(item.stok).toLocaleString('id-ID')}</TableCell>
                       <TableCell className="whitespace-nowrap text-right font-mono">{formatRp(Number(item.hargaPokok))}</TableCell>
+                      <TableCell className="whitespace-nowrap text-right font-mono">{formatRp(Number(item.hargaJual ?? 0))}</TableCell>
                       <TableCell className="whitespace-nowrap">
                         <StatusBadge status={getStockStatus(Number(item.stok), Number(item.stokMinimum))} />
                       </TableCell>

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
@@ -309,7 +310,7 @@ function SupplierForm({ mode, editId, initialData, preselectedCoaId, preselected
                   {suggestedField('currency', 'Currency', 'Kode mata uang (opsional)')}
                   <div className="space-y-2">
                     <Label htmlFor="sup-creditLimit">Credit Limit</Label>
-                    <Input id="sup-creditLimit" type="number" step="any" value={form.creditLimit} onChange={(e) => updateForm('creditLimit', e.target.value)} disabled={submitting} />
+                    <CurrencyInput id="sup-creditLimit" allowDecimal value={form.creditLimit} onValueChange={(v) => updateForm('creditLimit', v)} disabled={submitting} />
                   </div>
                 </TabsContent>
                 <TabsContent value="bank" className="space-y-4">

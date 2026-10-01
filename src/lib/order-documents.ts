@@ -1,14 +1,19 @@
 import { api } from '@/lib/api';
+import { formatNumberIDR } from '@/lib/money';
 import type { SalesOrderResponse, PurchaseOrderResponse } from '@/types/api';
 
 export type OrderKind = 'sales' | 'purchase';
 export type OrderResponse = SalesOrderResponse | PurchaseOrderResponse;
-export const ORDER_CURRENCY_OPTIONS = [{ id: 'IDR', label: 'IDR' }, { id: 'USD', label: 'USD' }];
-export const orderEndpoint = (kind: OrderKind) => kind === 'sales' ? '/penjualan/sales-order' : '/pembelian/purchase-order';
+export const ORDER_CURRENCY_OPTIONS = [
+  { id: 'IDR', label: 'IDR' },
+  { id: 'USD', label: 'USD' }
+];
+export const orderEndpoint = (kind: OrderKind) => (kind === 'sales' ? '/penjualan/sales-order' : '/pembelian/purchase-order');
 export const canEditOrder = (status?: string | null) => status === 'DRAFT';
 export function formatOrderMoney(value: number | string, currency?: string | null) {
-  const amount = Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
-  return currency ? `${currency} ${amount}` : amount;
+  const amount = formatNumberIDR(value);
+  // IDR adalah mata uang dasar — tanpa prefix, cukup angka terformat.
+  return currency && currency !== 'IDR' ? `${currency} ${amount}` : amount;
 }
 
 export interface OrderLine {
@@ -21,21 +26,21 @@ export interface OrderLine {
 }
 export const newOrderLine = (): OrderLine => ({ key: crypto.randomUUID(), barangId: '', satuanId: '', harga: '', qty: '1', diskon: '0' });
 export function orderLinesFromResponse(order: OrderResponse): OrderLine[] {
-  return order.details.map(line => ({ key: line.id, barangId: line.barangId, satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0) }));
+  return order.details.map((line) => ({ key: line.id, barangId: line.barangId, satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0) }));
 }
 export function serializeOrderLines(lines: OrderLine[]) {
-  return lines.filter(line => line.barangId).map(line => ({ barangId: line.barangId, satuanId: line.satuanId || null, harga: Number(line.harga), qty: Number(line.qty), diskon: Number(line.diskon) }));
+  return lines.filter((line) => line.barangId).map((line) => ({ barangId: line.barangId, satuanId: line.satuanId || null, harga: Number(line.harga), qty: Number(line.qty), diskon: Number(line.diskon) }));
 }
 
 const commonKeys = ['tanggal', 'syaratBayarId', 'currency', 'diskonGlobal', 'ppn', 'keterangan'] as const;
 const salesKeys = ['pelangganId', 'fob', 'ekspedisi', 'tanggalPengiriman', 'penjual', 'alamatPengiriman', 'customerPoNumber', 'customerPoDate'] as const;
 const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat'] as const;
-export type OrderHeaderKey = typeof commonKeys[number] | typeof salesKeys[number] | typeof purchaseKeys[number];
+export type OrderHeaderKey = (typeof commonKeys)[number] | (typeof salesKeys)[number] | (typeof purchaseKeys)[number];
 export type OrderHeader = Record<OrderHeaderKey, string>;
 export function newOrderHeader(): OrderHeader {
   const date = new Date();
   const tanggal = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map(key => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : ''])) as OrderHeader;
+  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : ''])) as OrderHeader;
 }
 export function orderHeaderFromResponse(order: OrderResponse): OrderHeader {
   const header = newOrderHeader();
@@ -60,7 +65,7 @@ export function serializeOrderHeader(kind: OrderKind, header: OrderHeader) {
 type DetailLike = { barangId: string; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null };
 function detailSignature(lines: DetailLike[]) {
   // There is no sequence field in the API; response ordering is not a detail edit.
-  return JSON.stringify(lines.map(line => JSON.stringify([line.barangId, line.satuanId || null, Number(line.harga), Number(line.qty), Number(line.diskon ?? 0)])).sort());
+  return JSON.stringify(lines.map((line) => JSON.stringify([line.barangId, line.satuanId || null, Number(line.harga), Number(line.qty), Number(line.diskon ?? 0)])).sort());
 }
 export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: OrderLine[], original: OrderResponse) {
   const previous = serializeOrderHeader(kind, orderHeaderFromResponse(original));
@@ -100,5 +105,5 @@ export function summarizeOrderTotals(orders: { grandTotal: number | string; curr
     const currency = order.currency || '';
     totals.set(currency, (totals.get(currency) || 0) + Number(order.grandTotal));
   }
-  return [...totals].map(([currency, amount]) => currency ? formatOrderMoney(amount, currency) : `${formatOrderMoney(amount)} (mata uang tidak tersedia)`).join(' / ') || '-';
+  return [...totals].map(([currency, amount]) => (currency ? formatOrderMoney(amount, currency) : `${formatOrderMoney(amount)} (mata uang tidak tersedia)`)).join(' / ') || '-';
 }

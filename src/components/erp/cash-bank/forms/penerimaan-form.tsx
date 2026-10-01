@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -214,7 +215,7 @@ function RincianSection({ label, rows, onAddRow, onRemoveRow, onUpdateNilai, err
                   <TableCell className="font-mono text-sm whitespace-nowrap">{row.akunKode}</TableCell>
                   <TableCell className="text-sm whitespace-nowrap">{row.akunNama}</TableCell>
                   <TableCell className="text-right">
-                    <Input type="text" inputMode="numeric" placeholder="0" value={row.nilai} onChange={(e) => onUpdateNilai(row.id, e.target.value)} className="text-right font-mono h-8 text-sm" />
+                    <CurrencyInput placeholder="0" value={row.nilai} onValueChange={(v) => onUpdateNilai(row.id, v)} className="text-right font-mono h-8 text-sm" />
                   </TableCell>
                   <TableCell className="p-1">
                     <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => onRemoveRow(row.id)}>

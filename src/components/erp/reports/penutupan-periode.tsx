@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Lock, Unlock, Loader2, RefreshCw, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
+import { formatRp as formatRpIDR } from '@/lib/money';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
@@ -22,7 +23,7 @@ import type { PenutupanPeriodeResponse, PeriodeStatusResponse, PreCloseReadiness
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-const formatRp = (val: number | null) => (val == null ? '-' : 'Rp ' + val.toLocaleString('id-ID'));
+const formatRp = (val: number | null) => (val == null ? '-' : formatRpIDR(val));
 
 const formatDateTime = (d: string | null) => {
   if (!d) return '-';

@@ -12,6 +12,7 @@ import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -129,7 +130,26 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   };
 
   const setField = (key: OrderHeaderKey, value: string) => setHeader((prev) => ({ ...prev, [key]: value }));
-  const updateLine = (key: string, field: keyof OrderLine, value: string) => setLines((prev) => prev.map((line) => (line.key === key ? { ...line, [field]: value, ...(field === 'barangId' ? { satuanId: '' } : {}) } : line)));
+  const updateLine = (key: string, field: keyof OrderLine, value: string) =>
+    setLines((prev) =>
+      prev.map((line) => {
+        if (line.key !== key) return line;
+        if (field === 'barangId') {
+          // Auto-fill harga saat barang dipilih:
+          // - SO (sales): harga jual default dari master barang, fallback harga pokok.
+          // - PO (purchase): harga beli referensi (harga pokok).
+          // Normalisasi via Number() — backend mengirim Decimal sebagai string "20000000.00".
+          const found = barang.find((b) => b.id === value);
+          let hargaDefault = '';
+          if (found) {
+            if (isSales && Number(found.hargaJual) > 0) hargaDefault = String(Number(found.hargaJual));
+            else if (Number(found.hargaPokok) > 0) hargaDefault = String(Number(found.hargaPokok));
+          }
+          return { ...line, barangId: value, satuanId: '', ...(hargaDefault ? { harga: hargaDefault } : {}) };
+        }
+        return { ...line, [field]: value };
+      })
+    );
 
   async function save() {
     if (disabled || submittingRef.current) return;
@@ -302,9 +322,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                             <SearchableDropdown value={line.satuanId} onValueChange={(value) => updateLine(line.key, 'satuanId', value)} options={unitOptions} allOption={{ id: '', label: 'Tidak dipilih' }} disabled={disabled} compact />
                           </TableCell>
                           {(['qty', 'harga', 'diskon'] as const).map((key) => (
-                            <TableCell key={key}>
-                              <Input aria-label={`${key} baris ${index + 1}`} type="number" step="any" value={line[key]} onChange={(event) => updateLine(line.key, key, event.target.value)} disabled={disabled} />
-                            </TableCell>
+                            <TableCell key={key}>{key === 'harga' ? <CurrencyInput aria-label={`harga baris ${index + 1}`} allowDecimal value={line.harga} onValueChange={(value) => updateLine(line.key, 'harga', value)} disabled={disabled} /> : <Input aria-label={`${key} baris ${index + 1}`} type="number" step="any" value={line[key]} onChange={(event) => updateLine(line.key, key, event.target.value)} disabled={disabled} />}</TableCell>
                           ))}
                           <TableCell>
                             <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setLines((prev) => prev.filter((item) => item.key !== line.key))} aria-label={`Hapus baris ${index + 1}`}>
@@ -344,7 +362,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                     {costs.map((cost, index) => (
                       <div className="flex gap-2" key={cost.key}>
                         <Input aria-label={`Nama biaya ${index + 1}`} placeholder="Nama biaya" value={cost.nama} disabled={disabled} onChange={(event) => setCosts((prev) => prev.map((item) => (item.key === cost.key ? { ...item, nama: event.target.value } : item)))} />
-                        <Input aria-label={`Jumlah biaya ${index + 1}`} type="number" step="any" value={cost.jumlah} disabled={disabled} onChange={(event) => setCosts((prev) => prev.map((item) => (item.key === cost.key ? { ...item, jumlah: event.target.value } : item)))} />
+                        <CurrencyInput aria-label={`Jumlah biaya ${index + 1}`} allowDecimal value={cost.jumlah} disabled={disabled} onValueChange={(value) => setCosts((prev) => prev.map((item) => (item.key === cost.key ? { ...item, jumlah: value } : item)))} />
                         <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setCosts((prev) => prev.filter((item) => item.key !== cost.key))} aria-label={`Hapus biaya ${index + 1}`}>
                           <Trash2 className="h-4 w-4" />
                         </Button>

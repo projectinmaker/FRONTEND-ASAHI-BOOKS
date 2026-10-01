@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -8,17 +8,21 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Settings2, Save, Loader2, AlertCircle, CheckCircle2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Settings2, Save, Loader2, AlertCircle, CheckCircle2, RefreshCw, AlertTriangle, Boxes } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { loadCOA, EXPECTED_SYSTEM_TYPES } from '@/lib/coa';
 import type { COAResponse } from '@/types/api';
-import type { SettingAkunResponse, SettingAkunUpdate, COADropdownResponse } from '@/types/api';
+import type { SettingAkunResponse, SettingAkunUpdate, COADropdownResponse, AppSettingResponse } from '@/types/api';
 
 // ─── Group settings by category for better UX ──────────────────────────────
 
 const NEW_SETTINGS: Record<string, { label: string; code: string }> = {
- BANK_CLEARING: { label: 'Clearing / Ayat Silang', code: '111200' }, HPP_PRODUK_JADI: { label: 'HPP Produk Jadi', code: '531001' }, LABA_RUGI_TAHUN_BERJALAN: { label: 'Laba/Rugi Tahun Berjalan', code: '322000' }, LABA_DITAHAN: { label: 'Laba Ditahan', code: '321000' }
+  BANK_CLEARING: { label: 'Clearing / Ayat Silang', code: '111200' },
+  HPP_PRODUK_JADI: { label: 'HPP Produk Jadi', code: '531001' },
+  LABA_RUGI_TAHUN_BERJALAN: { label: 'Laba/Rugi Tahun Berjalan', code: '322000' },
+  LABA_DITAHAN: { label: 'Laba Ditahan', code: '321000' }
 };
 const SETTING_GROUPS: { title: string; description: string; keys: string[]; helper?: { key: string; text: string; warningIfEmpty?: boolean }; allowEmpty?: boolean }[] = [
   {
@@ -74,6 +78,12 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
   // Tahap 2/3 koreksi: GRNI bisa di-configure walau key belum ada di GET (backend auto-create via PUT)
   const [grniAkunId, setGrniAkunId] = useState('');
   const [grniSaving, setGrniSaving] = useState(false);
+  // ── Metode Valuasi global (dipindahkan dari form per-barang ke sini) ──
+  const [metodeValuasi, setMetodeValuasi] = useState('AVERAGE');
+  const [metodeValuasiTersimpan, setMetodeValuasiTersimpan] = useState('AVERAGE');
+  const [valuasiOptions, setValuasiOptions] = useState<{ value: string; label: string }[]>([]);
+  const [valuasiSaving, setValuasiSaving] = useState(false);
+  const [valuasiError, setValuasiError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -81,7 +91,12 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
     try {
       const [settingsRes, coaRes] = await Promise.all([api.get<SettingAkunResponse[]>('/master/setting-akun'), loadCOA({ activeOnly: true })]);
       const rows = Array.isArray(settingsRes) ? settingsRes : [];
-      setSettings([...rows, ...Object.entries(NEW_SETTINGS).filter(([key])=>!rows.some(s=>s.key===key)).map(([key,v])=>({ id: '', key, label:v.label, akunPerkiraanId:'', akunPerkiraan:null, createdAt:'', updatedAt:'' }))]);
+      setSettings([
+        ...rows,
+        ...Object.entries(NEW_SETTINGS)
+          .filter(([key]) => !rows.some((s) => s.key === key))
+          .map(([key, v]) => ({ id: '', key, label: v.label, akunPerkiraanId: '', akunPerkiraan: null, createdAt: '', updatedAt: '' }))
+      ]);
       setCoaOptions(Array.isArray(coaRes) ? coaRes : []);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : 'Gagal memuat data setting akun');
@@ -91,6 +106,47 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
       setLoading(false);
     }
   }, []);
+
+  // ── Fetch metode valuasi global + opsi-nya ──
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setValuasiError(null);
+      try {
+        const [settingRes, optionsRes] = await Promise.all([
+          api.get<AppSettingResponse>('/master/app-setting/METODE_VALUASI'),
+          api.get<{ value: string; label: string }[]>('/stok-kartu/valuasi-options').catch(() => [
+            { value: 'AVERAGE', label: 'Rata-rata Bergerak (Moving Average)' },
+            { value: 'FIFO', label: 'FIFO (First In First Out)' },
+            { value: 'FEFO', label: 'FEFO (First Expired First Out)' }
+          ])
+        ]);
+        if (cancelled) return;
+        setMetodeValuasi(settingRes.value || 'AVERAGE');
+        setMetodeValuasiTersimpan(settingRes.value || 'AVERAGE');
+        setValuasiOptions(Array.isArray(optionsRes) ? optionsRes : []);
+      } catch (err) {
+        if (!cancelled) setValuasiError(err instanceof ApiError ? err.detail : 'Gagal memuat metode valuasi');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey]);
+
+  const handleSaveMetodeValuasi = async () => {
+    setValuasiSaving(true);
+    try {
+      const res = await api.put<AppSettingResponse>('/master/app-setting/METODE_VALUASI', { value: metodeValuasi });
+      setMetodeValuasiTersimpan(res.value);
+      setMetodeValuasi(res.value);
+      toast.success(`Metode valuasi global disimpan: ${res.value}`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.detail : 'Gagal menyimpan metode valuasi');
+    } finally {
+      setValuasiSaving(false);
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -103,7 +159,10 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
   const handleSave = async (key: string) => {
     const newAkunId = pendingChanges[key];
     if (!newAkunId) return;
-    if (!settings.find(s=>s.key === key)?.id) { toast.error('Key setting belum tersedia. Administrator perlu menjalankan seed setting akun di backend.'); return; }
+    if (!settings.find((s) => s.key === key)?.id) {
+      toast.error('Key setting belum tersedia. Administrator perlu menjalankan seed setting akun di backend.');
+      return;
+    }
     setSavingKey(key);
     try {
       const payload: SettingAkunUpdate = { akunPerkiraanId: newAkunId };
@@ -242,131 +301,209 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
         // — user bisa konfigurasi via PUT auto-create backend.
         if (groupSettings.length === 0 && !group.allowEmpty) return null;
         return (
-          <Card key={group.title}>
-            <CardContent className="p-0">
-              {/* Group header */}
-              <div className="border-b bg-muted/30 px-4 py-3 flex items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-semibold">{group.title}</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">{group.description}</p>
-                  {group.helper && (
-                    <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-1.5">
-                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                      <span>{group.helper.text}</span>
-                    </div>
-                  )}
-                  {group.helper?.warningIfEmpty && groupSettings.find((s) => s.key === group.helper!.key && !s.akunPerkiraanId) && (
-                    <div className="mt-1.5 rounded-md border border-destructive bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive flex items-center gap-1.5">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                      <span>
-                        <strong>{group.helper.key}</strong> belum dikonfigurasi. Eksekusi penerimaan barang memerlukan akun GRNI; invoice tetap boleh kosong.
-                      </span>
-                    </div>
+          <Fragment key={group.title}>
+            <Card>
+              <CardContent className="p-0">
+                {/* Group header */}
+                <div className="border-b bg-muted/30 px-4 py-3 flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold">{group.title}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">{group.description}</p>
+                    {group.helper && (
+                      <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 flex items-start gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span>{group.helper.text}</span>
+                      </div>
+                    )}
+                    {group.helper?.warningIfEmpty && groupSettings.find((s) => s.key === group.helper!.key && !s.akunPerkiraanId) && (
+                      <div className="mt-1.5 rounded-md border border-destructive bg-destructive/10 px-3 py-1.5 text-[11px] text-destructive flex items-center gap-1.5">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          <strong>{group.helper.key}</strong> belum dikonfigurasi. Eksekusi penerimaan barang memerlukan akun GRNI; invoice tetap boleh kosong.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {/* Tombol Sync khusus grup Kas & Bank */}
+                  {group.title === 'Kas & Bank' && (
+                    <Button variant="outline" size="sm" className="gap-1.5 shrink-0 text-xs h-7" onClick={handleSyncKasBank} disabled={syncingKasBank} title="Auto-create KasBankAkun untuk COA yang belum terdaftar">
+                      {syncingKasBank ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      Sync Kas/Bank
+                    </Button>
                   )}
                 </div>
-                {/* Tombol Sync khusus grup Kas & Bank */}
-                {group.title === 'Kas & Bank' && (
-                  <Button variant="outline" size="sm" className="gap-1.5 shrink-0 text-xs h-7" onClick={handleSyncKasBank} disabled={syncingKasBank} title="Auto-create KasBankAkun untuk COA yang belum terdaftar">
-                    {syncingKasBank ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    Sync Kas/Bank
-                  </Button>
-                )}
-              </div>
-              {/* Settings table */}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs whitespace-nowrap">Label</TableHead>
-                    <TableHead className="text-xs whitespace-nowrap">Key</TableHead>
-                    <TableHead className="text-xs">Akun Perkiraan</TableHead>
-                    <TableHead className="text-xs whitespace-nowrap text-center">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {/* Tahap 2/3 koreksi: GRNI config UI walau key belum ada di GET */}
-                  {group.allowEmpty && groupSettings.length === 0 && (
-                    <TableRow className="bg-amber-50/40">
-                      <TableCell className="text-sm font-medium whitespace-nowrap">Penerimaan Dalam Proses (GRNI)</TableCell>
-                      <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">PENERIMAAN_DALAM_PROSES</TableCell>
-                      <TableCell>
-                        <SearchableDropdown
-                          value={grniAkunId}
-                          onValueChange={setGrniAkunId}
-                          options={coaOptions
-                            .filter((c) => c.header === 'KEWAJIBAN')
-                            .map((c) => ({
-                              id: c.id,
-                              label: `${c.kode} — ${c.nama}`,
-                              subtitle: c.header
-                            }))}
-                          placeholder="Pilih akun GRNI (KEWAJIBAN DETAIL KREDIT)..."
-                          emptyText="Tidak ada akun KEWAJIBAN ditemukan"
-                        />
-                        <p className="text-[11px] text-muted-foreground mt-1">Backend validate: KEWAJIBAN + DETAIL + AKTIF + saldo normal KREDIT + bukan subledger/utang supplier/kontrol HUTANG_USAHA. Akan auto-create key via PUT.</p>
-                      </TableCell>
-                      <TableCell className="text-center whitespace-nowrap">
-                        <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={handleSaveGrni} disabled={grniSaving || !grniAkunId}>
-                          {grniSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                          Konfigurasi GRNI
-                        </Button>
-                      </TableCell>
+                {/* Settings table */}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs whitespace-nowrap">Label</TableHead>
+                      <TableHead className="text-xs whitespace-nowrap">Key</TableHead>
+                      <TableHead className="text-xs">Akun Perkiraan</TableHead>
+                      <TableHead className="text-xs whitespace-nowrap text-center">Aksi</TableHead>
                     </TableRow>
-                  )}
-                  {groupSettings.map((s) => {
-                    const currentValue = pendingChanges[s.key] || s.akunPerkiraanId;
-                    const expected = EXPECTED_SYSTEM_TYPES[s.key];
-                    const selected = coaOptions.find(a=>a.id === currentValue);
-                    const mismatch = selected && expected && selected.systemAccountType !== expected;
-                    const hasChange = !!pendingChanges[s.key];
-                    const isSaving = savingKey === s.key;
-                    return (
-                      <TableRow key={s.key}>
-                        <TableCell className="text-sm font-medium whitespace-nowrap">{s.label}</TableCell>
-                        <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">{s.key}</TableCell>
+                  </TableHeader>
+                  <TableBody>
+                    {/* Tahap 2/3 koreksi: GRNI config UI walau key belum ada di GET */}
+                    {group.allowEmpty && groupSettings.length === 0 && (
+                      <TableRow className="bg-amber-50/40">
+                        <TableCell className="text-sm font-medium whitespace-nowrap">Penerimaan Dalam Proses (GRNI)</TableCell>
+                        <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">PENERIMAAN_DALAM_PROSES</TableCell>
                         <TableCell>
                           <SearchableDropdown
-                            value={currentValue}
-                            onValueChange={(v) => handleChange(s.key, v)}
-                            disabled={!s.id || isSaving}
-                            options={coaOptions.map((c) => ({
-                              id: c.id,
-                              label: `${c.kode} — ${c.nama}`,
-                              subtitle: c.header
-                            }))}
-                            placeholder="Pilih akun perkiraan..."
-                            emptyText="Tidak ada akun ditemukan"
+                            value={grniAkunId}
+                            onValueChange={setGrniAkunId}
+                            options={coaOptions
+                              .filter((c) => c.header === 'KEWAJIBAN')
+                              .map((c) => ({
+                                id: c.id,
+                                label: `${c.kode} — ${c.nama}`,
+                                subtitle: c.header
+                              }))}
+                            placeholder="Pilih akun GRNI (KEWAJIBAN DETAIL KREDIT)..."
+                            emptyText="Tidak ada akun KEWAJIBAN ditemukan"
                           />
-                          {NEW_SETTINGS[s.key] && <p className="mt-1 text-xs text-muted-foreground">Rekomendasi: {NEW_SETTINGS[s.key].code} — {NEW_SETTINGS[s.key].label}</p>}
-                          {mismatch && <p role="alert" className="mt-1 text-xs text-amber-700">Tipe akun tidak sesuai: disarankan {expected}, akun ini {selected.systemAccountType || 'belum memiliki tipe sistem'}.</p>}
-                          {!s.id && <p role="alert" className="mt-1 text-xs text-amber-700">Setting belum tersedia di server. Hubungi administrator untuk inisialisasi setting akun.</p>}
-                          {currentValue && !selected && <p role="alert" className="mt-1 text-xs text-amber-700">Akun tersimpan {s.akunPerkiraan?.kode} — {s.akunPerkiraan?.nama} tidak tersedia dalam pilihan akun aktif. Pilih akun pengganti.</p>}
-                          {!currentValue && <p className="mt-1 text-xs text-amber-700">Belum dikonfigurasi.</p>}
+                          <p className="text-[11px] text-muted-foreground mt-1">Backend validate: KEWAJIBAN + DETAIL + AKTIF + saldo normal KREDIT + bukan subledger/utang supplier/kontrol HUTANG_USAHA. Akan auto-create key via PUT.</p>
                         </TableCell>
                         <TableCell className="text-center whitespace-nowrap">
-                          {!s.id ? <Badge variant="outline">Belum tersedia</Badge> : !currentValue ? <Badge variant="outline">Belum dikonfigurasi</Badge> : hasChange ? (
-                            <div className="inline-flex items-center gap-1">
-                              <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={() => handleSave(s.key)} disabled={isSaving}>
-                                {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                                Simpan
-                              </Button>
-                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleReset(s.key)} disabled={isSaving}>
-                                Batal
-                              </Button>
-                            </div>
-                          ) : (
-                            <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs gap-1">
-                              <CheckCircle2 className="h-3 w-3" />
-                              Tersimpan
-                            </Badge>
-                          )}
+                          <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={handleSaveGrni} disabled={grniSaving || !grniAkunId}>
+                            {grniSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                            Konfigurasi GRNI
+                          </Button>
                         </TableCell>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                    )}
+                    {groupSettings.map((s) => {
+                      const currentValue = pendingChanges[s.key] || s.akunPerkiraanId;
+                      const expected = EXPECTED_SYSTEM_TYPES[s.key];
+                      const selected = coaOptions.find((a) => a.id === currentValue);
+                      const mismatch = selected && expected && selected.systemAccountType !== expected;
+                      const hasChange = !!pendingChanges[s.key];
+                      const isSaving = savingKey === s.key;
+                      return (
+                        <TableRow key={s.key}>
+                          <TableCell className="text-sm font-medium whitespace-nowrap">{s.label}</TableCell>
+                          <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">{s.key}</TableCell>
+                          <TableCell>
+                            <SearchableDropdown
+                              value={currentValue}
+                              onValueChange={(v) => handleChange(s.key, v)}
+                              disabled={!s.id || isSaving}
+                              options={coaOptions.map((c) => ({
+                                id: c.id,
+                                label: `${c.kode} — ${c.nama}`,
+                                subtitle: c.header
+                              }))}
+                              placeholder="Pilih akun perkiraan..."
+                              emptyText="Tidak ada akun ditemukan"
+                            />
+                            {NEW_SETTINGS[s.key] && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Rekomendasi: {NEW_SETTINGS[s.key].code} — {NEW_SETTINGS[s.key].label}
+                              </p>
+                            )}
+                            {mismatch && (
+                              <p role="alert" className="mt-1 text-xs text-amber-700">
+                                Tipe akun tidak sesuai: disarankan {expected}, akun ini {selected.systemAccountType || 'belum memiliki tipe sistem'}.
+                              </p>
+                            )}
+                            {!s.id && (
+                              <p role="alert" className="mt-1 text-xs text-amber-700">
+                                Setting belum tersedia di server. Hubungi administrator untuk inisialisasi setting akun.
+                              </p>
+                            )}
+                            {currentValue && !selected && (
+                              <p role="alert" className="mt-1 text-xs text-amber-700">
+                                Akun tersimpan {s.akunPerkiraan?.kode} — {s.akunPerkiraan?.nama} tidak tersedia dalam pilihan akun aktif. Pilih akun pengganti.
+                              </p>
+                            )}
+                            {!currentValue && <p className="mt-1 text-xs text-amber-700">Belum dikonfigurasi.</p>}
+                          </TableCell>
+                          <TableCell className="text-center whitespace-nowrap">
+                            {!s.id ? (
+                              <Badge variant="outline">Belum tersedia</Badge>
+                            ) : !currentValue ? (
+                              <Badge variant="outline">Belum dikonfigurasi</Badge>
+                            ) : hasChange ? (
+                              <div className="inline-flex items-center gap-1">
+                                <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={() => handleSave(s.key)} disabled={isSaving}>
+                                  {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                  Simpan
+                                </Button>
+                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleReset(s.key)} disabled={isSaving}>
+                                  Batal
+                                </Button>
+                              </div>
+                            ) : (
+                              <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs gap-1">
+                                <CheckCircle2 className="h-3 w-3" />
+                                Tersimpan
+                              </Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+            {/* ── Kartu Metode Valuasi global — tepat setelah grup Persediaan ── */}
+            {group.title === 'Persediaan' && (
+              <Card data-testid="card-metode-valuasi">
+                <CardContent className="p-0">
+                  <div className="border-b bg-muted/30 px-4 py-3">
+                    <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                      <Boxes className="h-4 w-4" />
+                      Metode Valuasi Persediaan
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Metode valuasi stok global untuk seluruh barang — menentukan perhitungan HPP (biaya persediaan keluar). Sebelumnya diatur per barang di form Barang &amp; Jasa.</p>
+                  </div>
+                  <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex-1 space-y-1.5">
+                      <Label className="text-xs">Metode Valuasi</Label>
+                      {valuasiError ? (
+                        <p className="text-xs text-destructive">{valuasiError}</p>
+                      ) : (
+                        <Select value={metodeValuasi} onValueChange={setMetodeValuasi} disabled={valuasiSaving}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Pilih metode valuasi" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {valuasiOptions.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        Berlaku untuk <strong>seluruh barang</strong> (kartu stok, penyesuaian, pemindahan, retur). Perubahan berlaku untuk transaksi berikutnya — histori valuasi yang sudah terposting tidak diubah.
+                      </p>
+                    </div>
+                    <div className="shrink-0">
+                      {metodeValuasi !== metodeValuasiTersimpan ? (
+                        <div className="inline-flex items-center gap-1">
+                          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={handleSaveMetodeValuasi} disabled={valuasiSaving} data-testid="simpan-metode-valuasi">
+                            {valuasiSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                            Simpan
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setMetodeValuasi(metodeValuasiTersimpan)} disabled={valuasiSaving}>
+                            Batal
+                          </Button>
+                        </div>
+                      ) : (
+                        <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Tersimpan
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </Fragment>
         );
       })}
 
@@ -376,7 +513,7 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">Total: {settings.length} setting akun</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{Object.keys(pendingChanges).length > 0 ? `${Object.keys(pendingChanges).length} perubahan belum disimpan` : settings.some(s=>!s.id || !s.akunPerkiraanId) ? 'Masih ada setting yang belum dikonfigurasi' : 'Semua setting sudah tersimpan'}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{Object.keys(pendingChanges).length > 0 ? `${Object.keys(pendingChanges).length} perubahan belum disimpan` : settings.some((s) => !s.id || !s.akunPerkiraanId) ? 'Masih ada setting yang belum dikonfigurasi' : 'Semua setting sudah tersimpan'}</p>
             </div>
             {Object.keys(pendingChanges).length > 0 && (
               <Button variant="outline" size="sm" onClick={() => setPendingChanges({})}>

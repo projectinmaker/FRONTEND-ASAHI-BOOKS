@@ -9,14 +9,15 @@ import { Button } from '@/components/ui/button';
 import { CalendarDays, RefreshCw, TrendingUp, TrendingDown, DollarSign, ArrowUpRight, ArrowDownRight, Package, Clock, Scale, AlertTriangle, CheckCircle2, ChevronRight, Activity, Loader2, Info } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { api, ApiError } from '@/lib/api';
+import { formatRp as formatRpIDR } from '@/lib/money';
 import type { DashboardSummaryResponse, FakturJatuhTempoItem, AktivitasItem, RekonsiliasiPersediaanRingkasanResponse, AccountingHealthResponse } from '@/types/api';
 import { useTabStore } from '@/store/tab-store';
 import { toast } from 'sonner';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function formatRp(value: number): string {
-  return `Rp ${value.toLocaleString('id-ID')}`;
+function formatRp(value: number | string): string {
+  return formatRpIDR(value);
 }
 
 function formatShort(value: number): string {

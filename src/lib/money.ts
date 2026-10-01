@@ -51,3 +51,74 @@ export function hasSubCentPrecision(input: string | number): boolean {
   const frac = s.split('.')[1] ?? '';
   return frac.length > 2;
 }
+
+// ─── Format Nominal (Display) ────────────────────────────────────────────────
+// Standard format harga aplikasi: 20.000.000 — ribuan dipisah titik (id-ID),
+// desimal (maks 2 digit) dipakai hanya bila ada, dipisah koma.
+
+/** Format angka harga/nominal → "20.000.000" atau "20.000.000,5". */
+export function formatNumberIDR(val: string | number | null | undefined, opts?: { maxFractionDigits?: number }): string {
+  const n = typeof val === 'number' ? val : parseFloat(String(val ?? ''));
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('id-ID', {
+    maximumFractionDigits: opts?.maxFractionDigits ?? 2
+  });
+}
+
+/** Format nominal dengan prefix "Rp " → "Rp 20.000.000". */
+export function formatRp(val: string | number | null | undefined): string {
+  return 'Rp ' + formatNumberIDR(val);
+}
+
+// ─── Format Nominal (Input) ──────────────────────────────────────────────────
+// Input harga menampilkan pemisah ribuan titik secara live saat mengetik.
+// State form menyimpan CANONICAL string ("20000000" / "20000000.5" / "")
+// sehingga logika submit (Number(...)) tidak perlu berubah.
+
+/**
+ * Ubah canonical → tampilan berformat.
+ * "20000000" → "20.000.000"; "20000000.5" (allowDecimal) → "20.000.000,5".
+ */
+export function formatInputNumber(canonical: string, allowDecimal = false): string {
+  const s = String(canonical ?? '').trim();
+  if (s === '' || s === '.') return '';
+  const [intPart, fracRaw] = s.split('.');
+  const int = Number(intPart || '0');
+  if (!Number.isFinite(int)) return '';
+  const intFormatted = int.toLocaleString('id-ID');
+  if (!allowDecimal) return intFormatted;
+  // fracRaw undefined → canonical tidak punya bagian desimal ("20000000") → integer.
+  if (fracRaw === undefined) return intFormatted;
+  // fracRaw kosong → user baru mengetik separator desimal ("20.") → tampilkan koma.
+  if (fracRaw === '') return `${intFormatted},`;
+  // Fraksi hanya nol (".00" — mis. hasil Decimal backend) → tampilkan sebagai integer.
+  const frac = fracRaw.slice(0, 2).replace(/0+$/, '');
+  return frac ? `${intFormatted},${frac}` : intFormatted;
+}
+
+/**
+ * Ubah teks input (boleh berisi titik/koma/formatan) → canonical.
+ * "20.000.000" → "20000000"; "20.000.000,5" / "20000000.5" → "20000000.5".
+ * Grup ribuan selalu 3 digit, sehingga separator terakhir yang diikuti
+ * 1–2 digit dianggap desimal (deterministik).
+ */
+export function parseFormattedNumber(text: string, allowDecimal = false): string {
+  const raw = String(text ?? '').trim();
+  if (raw === '') return '';
+  if (allowDecimal) {
+    const m = raw.match(/[.,](\d{1,2})$/);
+    if (m) {
+      const intDigits = raw.slice(0, raw.length - m[0].length).replace(/[^\d]/g, '');
+      const frac = m[1];
+      return `${intDigits || '0'}.${frac}`;
+    }
+    return raw.replace(/[^\d]/g, '');
+  }
+  return raw.replace(/[^\d]/g, '');
+}
+
+/** Parse canonical string → number (aman untuk submit). "" → 0. */
+export function parseInputValue(canonical: string | null | undefined): number {
+  const n = parseFloat(String(canonical ?? ''));
+  return Number.isFinite(n) ? n : 0;
+}

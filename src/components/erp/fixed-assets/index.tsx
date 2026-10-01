@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CurrencyInput } from '@/components/ui/currency-input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -611,7 +612,7 @@ function DaftarAsetCreateForm() {
             {/* Nilai Perolehan */}
             <div className="space-y-2">
               <Label htmlFor="aset-perolehan">Nilai Perolehan</Label>
-              <Input id="aset-perolehan" type="number" placeholder="0" value={form.nilaiPerolehan} onChange={(e) => updateForm('nilaiPerolehan', e.target.value)} />
+              <CurrencyInput id="aset-perolehan" allowDecimal placeholder="0" value={form.nilaiPerolehan} onValueChange={(v) => updateForm('nilaiPerolehan', v)} />
             </div>
 
             {/* Tanggal Mulai */}
@@ -923,7 +924,7 @@ function DaftarAsetEditForm({ editId }: { editId: string }) {
               {/* Nilai Perolehan */}
               <div className="space-y-2">
                 <Label htmlFor="edit-perolehan">Nilai Perolehan</Label>
-                <Input id="edit-perolehan" type="number" placeholder="0" value={editNilaiPerolehan} onChange={(e) => setEditNilaiPerolehan(e.target.value)} />
+                <CurrencyInput id="edit-perolehan" allowDecimal placeholder="0" value={editNilaiPerolehan} onValueChange={(v) => setEditNilaiPerolehan(v)} />
               </div>
 
               {/* Tanggal Mulai */}
@@ -2246,7 +2247,7 @@ function TransaksiAsetCreateForm() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Nilai Sisa</Label>
-                  <Input type="number" className="h-9 text-xs" value={fNilaiSisa} onChange={(e) => setFNilaiSisa(e.target.value)} placeholder="0" />
+                  <CurrencyInput allowDecimal className="h-9 text-xs" value={fNilaiSisa} onValueChange={(v) => setFNilaiSisa(v)} placeholder="0" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Akun Lawan (COA)</Label>
@@ -2268,7 +2269,7 @@ function TransaksiAsetCreateForm() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Akumulasi Awal</Label>
-                  <Input type="number" className="h-9 text-xs" value={fAkumulasiAwal} onChange={(e) => setFAkumulasiAwal(e.target.value)} placeholder="0" />
+                  <CurrencyInput allowDecimal className="h-9 text-xs" value={fAkumulasiAwal} onValueChange={(v) => setFAkumulasiAwal(v)} placeholder="0" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Umur Bulan</Label>
@@ -2276,7 +2277,7 @@ function TransaksiAsetCreateForm() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Nilai Sisa</Label>
-                  <Input type="number" className="h-9 text-xs" value={fNilaiSisa} onChange={(e) => setFNilaiSisa(e.target.value)} placeholder="0" />
+                  <CurrencyInput allowDecimal className="h-9 text-xs" value={fNilaiSisa} onValueChange={(v) => setFNilaiSisa(v)} placeholder="0" />
                 </div>
               </div>
             </div>
@@ -2311,7 +2312,7 @@ function TransaksiAsetCreateForm() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Nilai Pelepasan</Label>
-                  <Input type="number" className="h-9 text-xs" value={fNilaiPelepasan} onChange={(e) => setFNilaiPelepasan(e.target.value)} placeholder="0" />
+                  <CurrencyInput allowDecimal className="h-9 text-xs" value={fNilaiPelepasan} onValueChange={(v) => setFNilaiPelepasan(v)} placeholder="0" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Akun Laba/Rugi</Label>

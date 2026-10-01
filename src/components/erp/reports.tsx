@@ -12,6 +12,7 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
 import { api, ApiError } from '@/lib/api';
+import { formatRp as formatRpIDR } from '@/lib/money';
 import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse } from '@/types/api';
 import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -32,12 +33,9 @@ const ReconciliationDetailPage = dynamic(() => import('@/components/erp/reports/
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const formatRp = (val: number | string) => {
-  // Backend (Pydantic) menserialisasi Decimal sebagai string (mis. "-1500000.00").
-  // Koersi ke number supaya toLocaleString memformat dengan benar.
-  const n = typeof val === 'number' ? val : Number(val);
-  return 'Rp ' + (Number.isFinite(n) ? n : 0).toLocaleString('id-ID');
-};
+// Format nominal terpusat di @/lib/money — menerima number maupun string Decimal
+// dari backend (Pydantic), output "Rp 20.000.000".
+const formatRp = (val: number | string): string => formatRpIDR(val);
 const formatDate = (d: string | null | undefined) => {
   if (!d) return '—';
   try {

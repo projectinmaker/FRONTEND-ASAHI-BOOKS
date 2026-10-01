@@ -14,12 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Package, Search, RefreshCw, Scale, Layers, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, Loader2, Info, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
+import { formatRp as formatRpIDR } from '@/lib/money';
 import type { StokKartuEntryResponse, StokKartuSummaryResponse, MetodeValuasiOption, BarangDropdown, GudangResponse, StokRekonsiliasiResponse } from '@/types/api';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-const formatRp = (val: number | null | undefined) => (val == null ? '-' : 'Rp ' + Number(val).toLocaleString('id-ID'));
+const formatRp = (val: number | null | undefined) => (val == null ? '-' : formatRpIDR(val));
 
 const formatDate = (d: string | null) => {
   if (!d) return '-';

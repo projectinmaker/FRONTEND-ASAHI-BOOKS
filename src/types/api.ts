@@ -205,6 +205,18 @@ export interface SettingAkunUpdate {
   akunPerkiraanId: string;
 }
 
+// ── Setting Aplikasi Global (non-COA, mis. METODE_VALUASI) ──
+
+export interface AppSettingResponse {
+  key: string;
+  value: string;
+  updatedAt?: string | null;
+}
+
+export interface AppSettingUpdate {
+  value: string;
+}
+
 export interface KategoriSimple {
   id: string;
   nama: string;
@@ -529,6 +541,8 @@ export interface BarangResponse {
   kategoriId: string;
   satuanId: string;
   hargaPokok: number;
+  /** Harga jual default (bukan HPP — HPP mengikuti valuasi stok). */
+  hargaJual: number;
   stokMinimum: number;
   stok: number;
   status: string;
@@ -536,9 +550,13 @@ export interface BarangResponse {
   itemType?: ItemTypeBarang | null;
   akunHppId?: string | null;
   akunPenjualanId?: string | null;
+  akunReturPenjualanId?: string | null;
+  akunDiskonPenjualanId?: string | null;
   stockItem: boolean;
   akunHpp?: AkunPerkiraanSimple | null;
   akunPenjualan?: AkunPerkiraanSimple | null;
+  akunReturPenjualan?: AkunPerkiraanSimple | null;
+  akunDiskonPenjualan?: AkunPerkiraanSimple | null;
   // === Legacy (tetap ada, jangan di-update dari form — pakai itemType) ===
   jenisBarang?: JenisBarang;
   /** Tahap 1: mapping akun Persediaan. null untuk barang lama yang belum dipetakan. */
@@ -558,11 +576,15 @@ export interface BarangCreate {
   kategoriId: string;
   satuanId: string;
   hargaPokok?: number;
+  /** Harga jual default (bukan HPP). */
+  hargaJual?: number;
   stokMinimum?: number;
   // === Phase 2 — field baru ===
   itemType?: ItemTypeBarang | null;
   akunHppId?: string | null;
   akunPenjualanId?: string | null;
+  akunReturPenjualanId?: string | null;
+  akunDiskonPenjualanId?: string | null;
   stockItem?: boolean;
   // Task 27-c — dynamic form barang: metode valuasi opsional saat create (AVERAGE/FIFO/FEFO).
   metodeValuasi?: string;
@@ -579,12 +601,15 @@ export interface BarangUpdate {
   kategoriId?: string | null;
   satuanId?: string | null;
   hargaPokok?: number | null;
+  hargaJual?: number | null;
   stokMinimum?: number | null;
   status?: string;
   // === Phase 2 — field baru ===
   itemType?: ItemTypeBarang | null;
   akunHppId?: string | null;
   akunPenjualanId?: string | null;
+  akunReturPenjualanId?: string | null;
+  akunDiskonPenjualanId?: string | null;
   stockItem?: boolean | null;
   // === Legacy ===
   jenisBarang?: JenisBarang | null;
@@ -837,10 +862,10 @@ export interface BarangDropdown {
   kode: string;
   nama: string;
   hargaPokok: number;
+  /** Harga jual default — dipakai auto-fill harga di form SO. */
+  hargaJual: number;
   stok: number;
   // === Phase 2/3 — field baru (optional, forward-compatible).
-  // Backend /master/barang-dropdown saat ini belum return field ini,
-  // tapi kalau nanti di-expose, frontend otomatis pakai untuk filter non-stock.
   itemType?: ItemTypeBarang | null;
   stockItem?: boolean;
 }
