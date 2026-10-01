@@ -2509,11 +2509,21 @@ export interface SaldoAwalItem {
   saldoNormal: string;
   debit: number;
   kredit: number;
+  /** Satu nilai bersih (sisi mengikuti saldo normal akun). */
+  nilai?: number;
+}
+
+/** Input saldo awal: cukup SATU nilai per akun — sisi debit/kredit
+ *  otomatis dari saldo normal akun, selisih dipampangkan sistem ke
+ *  akun "Selisih Saldo Awal" (Modal). */
+export interface SaldoAwalItemInput {
+  akunPerkiraanId: string;
+  nilai: number;
 }
 
 export interface SaldoAwalRequest {
   tanggal: string;
-  items: SaldoAwalItem[];
+  items: SaldoAwalItemInput[];
 }
 
 export interface SaldoAwalResponse {

@@ -13,13 +13,13 @@ import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, FolderTree, SearchX, RefreshCw, Check, ChevronsUpDown, AlertTriangle, Info, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { classifyCoaCategory, getCoaCategoryInfo, isSaldoAwalEligible } from '@/lib/coa-category';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 
@@ -28,7 +28,7 @@ import { formatNumberIDR } from '@/lib/money';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import type { COAResponse, COACreate, COAUpdate, AccountTypeTemplate, COAParentOption, COAPreviewRequest, COAPreviewResponse, HeaderCOA, SaldoAwalItem, SaldoAwalResponse, TingkatAkun } from '@/types/api';
+import type { COAResponse, COACreate, COAUpdate, AccountTypeTemplate, COAParentOption, COAPreviewRequest, COAPreviewResponse, HeaderCOA, SaldoAwalItemInput, SaldoAwalResponse, TingkatAkun } from '@/types/api';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -99,11 +99,9 @@ interface COAFormState {
   kodeManual: boolean;
   status: 'AKTIF' | 'NONAKTIF';
   jenisKasBank: string;
-  // ── Saldo awal (jurnal berpasangan) ──
-  saldoAwalDebit: string;
-  saldoAwalKredit: string;
+  // ── Saldo awal (satu nilai; sisi debit/kredit otomatis dari saldo normal akun) ──
+  saldoAwalNilai: string;
   tanggalSaldoAwal: string;
-  akunLawanId: string;
 }
 
 const emptyCreateForm: COAFormState = {
@@ -116,10 +114,8 @@ const emptyCreateForm: COAFormState = {
   kodeManual: false,
   status: 'AKTIF',
   jenisKasBank: '',
-  saldoAwalDebit: '',
-  saldoAwalKredit: '',
-  tanggalSaldoAwal: todayIso(),
-  akunLawanId: ''
+  saldoAwalNilai: '',
+  tanggalSaldoAwal: todayIso()
 };
 
 interface COAPageProps {
@@ -362,7 +358,7 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
     };
   }, [mode, editId]);
 
-  // ── Saldo awal + daftar COA (untuk akun lawan) ──
+  // ── Saldo awal + daftar COA (validasi kelayakan item lain saat simpan) ──
   useEffect(() => {
     let mounted = true;
     const loadSaldoAwal = async () => {
@@ -373,10 +369,10 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
         setSaldoAwal(saldoRes);
         if (mode === 'edit' && editId) {
           const item = saldoRes.items.find((entry) => entry.akunPerkiraanId === editId);
+          const nilai = (item?.nilai ?? (item?.debit || item?.kredit)) || 0;
           setForm((prev) => ({
             ...prev,
-            saldoAwalDebit: item?.debit ? String(item.debit) : '',
-            saldoAwalKredit: item?.kredit ? String(item.kredit) : '',
+            saldoAwalNilai: nilai > 0 ? String(nilai) : '',
             tanggalSaldoAwal: saldoRes.tanggal || prev.tanggalSaldoAwal
           }));
         }
@@ -511,60 +507,60 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
   const editParentLabel = editAccount ? (editAccount.indukKode ? `${editAccount.indukKode} — induk saat ini` : 'Akun level root (tanpa induk)') : '—';
   const showJenisKasBank = mode === 'create' ? !!selectedTemplate?.requiresJenisKasBank : !!editAccount && (editAccount.accountSubclass === 'CASH_BANK' || !!editAccount.jenisKasBank);
 
-  // ── Simpan saldo awal (jurnal berpasangan) ──
-  const saveSaldoAwal = async (coa: COAResponse) => {
-    const debit = Number(form.saldoAwalDebit || 0);
-    const kredit = Number(form.saldoAwalKredit || 0);
-    const existingItem = saldoAwal?.items.find((item) => item.akunPerkiraanId === coa.id);
-    const oldDebit = existingItem?.debit || 0;
-    const oldKredit = existingItem?.kredit || 0;
+  // ── Kategori akun & kelayakan saldo awal (hanya 9 kategori didukung) ──
+  // Kategori: Kas dan Bank, Aset Lancar Lainnya, Kewajiban Lainnya, Modal,
+  // Pendapatan, HPP, Beban, Pendapatan Lainnya, Beban Lainnya. Kategori lain
+  // (Piutang Usaha, Persediaan, Aset Tetap, Hutang Usaha, saldo laba, dll.)
+  // dinonaktifkan + dialihkan ke modul terkait.
+  const saldoAwalCategory =
+    mode === 'edit'
+      ? editAccount
+        ? classifyCoaCategory({ kode: editAccount.kode, indukKode: editAccount.indukKode, accountSubclass: editAccount.accountSubclass, systemAccountType: editAccount.systemAccountType })
+        : null
+      : classifyCoaCategory({
+          typeCode: form.typeCode || null,
+          kode: form.kodeManual ? form.kode.trim() : null,
+          indukKode: indukSelected?.kode ?? preview?.indukKode ?? null,
+          accountSubclass: preview?.accountSubclass ?? selectedTemplate?.accountSubclass ?? null,
+          systemAccountType: preview?.systemAccountType ?? null
+        });
+  const saldoAwalInfo = getCoaCategoryInfo(saldoAwalCategory);
+  const createTingkat: TingkatAkun | undefined = preview?.tingkat ?? (form.isSub ? 'DETAIL' : form.structuralType);
+  const tingkatIsDetail = mode === 'edit' ? editAccount?.tingkat === 'DETAIL' : createTingkat === 'DETAIL';
+  const saldoAwalEligible = !!saldoAwalInfo?.saldoAwalEligible && tingkatIsDetail && form.status === 'AKTIF';
+  const saldoNormalDisplay = (mode === 'edit' ? editAccount?.saldoNormal : (preview?.saldoNormal ?? selectedTemplate?.saldoNormal ?? saldoAwalInfo?.saldoNormal ?? null)) || null;
+  const saldoSekarang = mode === 'edit' ? (editAccount?.saldo ?? 0) : 0;
 
-    if (debit === oldDebit && kredit === oldKredit) return;
-    if (!Number.isFinite(debit) || !Number.isFinite(kredit) || debit < 0 || kredit < 0) {
+  // Kelayakan berubah (ganti tipe akun / induk / status) → kosongkan nilai yang belum tersimpan
+  useEffect(() => {
+    if (!saldoAwalEligible) setForm((prev) => (prev.saldoAwalNilai ? { ...prev, saldoAwalNilai: '' } : prev));
+  }, [saldoAwalEligible]);
+
+  // ── Simpan saldo awal (satu nilai; jurnal auto-balance oleh sistem) ──
+  const saveSaldoAwal = async (coa: COAResponse) => {
+    const nilai = Number(form.saldoAwalNilai || 0);
+    const existingItem = saldoAwal?.items.find((item) => item.akunPerkiraanId === coa.id);
+    const oldNilai = existingItem?.nilai ?? 0;
+
+    if (nilai === oldNilai) return;
+    if (!Number.isFinite(nilai) || nilai < 0) {
       throw new Error('Saldo awal harus berupa angka nol atau lebih');
     }
-    if (debit > 0 && kredit > 0) {
-      throw new Error('Isi saldo awal pada sisi debit atau kredit saja');
-    }
-    if (!form.akunLawanId) {
-      throw new Error('Pilih akun lawan agar jurnal saldo awal tetap balance');
-    }
-    if (form.akunLawanId === coa.id) {
-      throw new Error('Akun lawan harus berbeda dari akun yang sedang diedit');
-    }
 
-    const akunLawan = allCoa.find((item) => item.id === form.akunLawanId);
-    if (!akunLawan) throw new Error('Akun lawan tidak ditemukan');
-
-    const items = [...(saldoAwal?.items || [])].map((item) => ({ ...item }));
-    const upsert = (item: SaldoAwalItem) => {
-      const index = items.findIndex((entry) => entry.akunPerkiraanId === item.akunPerkiraanId);
-      if (index >= 0) items[index] = item;
-      else items.push(item);
-    };
-    upsert({
-      akunPerkiraanId: coa.id,
-      kodeAkun: coa.kode,
-      namaAkun: coa.nama,
-      saldoNormal: coa.saldoNormal,
-      debit,
-      kredit
-    });
-
-    const existingLawan = items.find((item) => item.akunPerkiraanId === akunLawan.id);
-    const lawanDebit = (existingLawan?.debit || 0) + (kredit - oldKredit);
-    const lawanKredit = (existingLawan?.kredit || 0) + (debit - oldDebit);
-    if (lawanDebit < 0 || lawanKredit < 0) {
-      throw new Error('Perubahan ini mengurangi saldo akun lawan di bawah nol. Pilih akun lawan yang dipakai sebelumnya.');
+    // Saldo awal akun lain dipertahankan; hanya item yang kategorinya masih
+    // didukung yang ikut dikirim (sisi & balancing ditangani server).
+    const items: SaldoAwalItemInput[] = [];
+    for (const item of saldoAwal?.items ?? []) {
+      if (item.akunPerkiraanId === coa.id) continue;
+      const itemNilai = item.nilai ?? (item.debit || item.kredit);
+      if (!itemNilai || itemNilai <= 0) continue;
+      const akun = allCoa.find((entry) => entry.id === item.akunPerkiraanId);
+      if (!akun || akun.tingkat !== 'DETAIL') continue;
+      const key = classifyCoaCategory({ kode: akun.kode, indukKode: akun.indukKode, accountSubclass: akun.accountSubclass, systemAccountType: akun.systemAccountType });
+      if (!isSaldoAwalEligible(key)) continue;
+      items.push({ akunPerkiraanId: item.akunPerkiraanId, nilai: itemNilai });
     }
-    upsert({
-      akunPerkiraanId: akunLawan.id,
-      kodeAkun: akunLawan.kode,
-      namaAkun: akunLawan.nama,
-      saldoNormal: akunLawan.saldoNormal,
-      debit: lawanDebit,
-      kredit: lawanKredit
-    });
+    if (nilai > 0) items.push({ akunPerkiraanId: coa.id, nilai });
 
     await api.post<SaldoAwalResponse>('/coa/saldo-awal', {
       tanggal: form.tanggalSaldoAwal,
@@ -601,7 +597,7 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
         if (form.jenisKasBank) payload.jenisKasBank = form.jenisKasBank;
 
         const created = await api.post<COAResponse>('/coa/', payload);
-        if (Number(form.saldoAwalDebit || 0) > 0 || Number(form.saldoAwalKredit || 0) > 0) {
+        if (saldoAwalEligible && Number(form.saldoAwalNilai || 0) > 0) {
           await saveSaldoAwal(created);
         }
         toast.success('Akun perkiraan berhasil ditambahkan');
@@ -617,7 +613,7 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
           active: form.status === 'AKTIF'
         };
         const updated = await api.put<COAResponse>(`/coa/${editId}`, payload);
-        await saveSaldoAwal(updated);
+        if (saldoAwalEligible) await saveSaldoAwal(updated);
         toast.success('Akun perkiraan berhasil diperbarui');
       }
       refreshListTab('settings', 'coa');
@@ -899,32 +895,47 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
                 </div>
               )}
 
-              {/* Saldo awal (jurnal berpasangan) */}
+              {/* Saldo awal (satu nilai; sisi otomatis dari saldo normal akun) */}
               <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
-                <div>
-                  <Label className="text-sm font-medium">Saldo Awal</Label>
-                  <p className="mt-1 text-xs text-muted-foreground">Saldo awal dicatat sebagai jurnal berpasangan. Isi salah satu sisi dan pilih akun lawannya agar tetap balance.</p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <Label className="text-sm font-medium">Saldo Awal</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">Sisi debit/kredit mengikuti saldo normal akun. Selisih total otomatis dipampangkan ke akun “Selisih Saldo Awal” (Modal).</p>
+                  </div>
+                  {saldoNormalDisplay && (
+                    <Badge variant="outline" className={saldoNormalDisplay === 'DEBIT' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}>
+                      Saldo Normal: {saldoNormalDisplay === 'DEBIT' ? 'Debit (D)' : 'Kredit (K)'}
+                    </Badge>
+                  )}
                 </div>
+                {!saldoAwalEligible && (
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertDescription>
+                      {!tingkatIsDetail ? 'Hanya akun level DETAIL yang dapat diberi saldo awal.' : saldoAwalInfo?.hint ? saldoAwalInfo.hint : mode === 'create' && !form.typeCode ? 'Pilih Tipe Akun terlebih dahulu untuk menentukan kelayakan saldo awal.' : 'Kategori akun ini tidak didukung saldo awal langsung.'}
+                      {tingkatIsDetail && saldoAwalInfo && <span className="text-muted-foreground"> (Kategori: {saldoAwalInfo.label})</span>}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="coa-saldo-debit">Debit</Label>
-                    <CurrencyInput id="coa-saldo-debit" allowDecimal placeholder="0" value={form.saldoAwalDebit} onValueChange={(v) => setForm((prev) => ({ ...prev, saldoAwalDebit: v }))} disabled={loadingSaldoAwal} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="coa-saldo-kredit">Kredit</Label>
-                    <CurrencyInput id="coa-saldo-kredit" allowDecimal placeholder="0" value={form.saldoAwalKredit} onValueChange={(v) => setForm((prev) => ({ ...prev, saldoAwalKredit: v }))} disabled={loadingSaldoAwal} />
+                    <Label htmlFor="coa-saldo-awal">Saldo Awal</Label>
+                    <CurrencyInput id="coa-saldo-awal" allowDecimal placeholder="0" value={form.saldoAwalNilai} onValueChange={(v) => setForm((prev) => ({ ...prev, saldoAwalNilai: v }))} disabled={loadingSaldoAwal || !saldoAwalEligible} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="coa-tanggal-saldo-awal">Tanggal Saldo Awal</Label>
-                    <Input id="coa-tanggal-saldo-awal" type="date" value={form.tanggalSaldoAwal} onChange={(e) => setForm((prev) => ({ ...prev, tanggalSaldoAwal: e.target.value }))} disabled={loadingSaldoAwal} />
+                    <Input id="coa-tanggal-saldo-awal" type="date" value={form.tanggalSaldoAwal} onChange={(e) => setForm((prev) => ({ ...prev, tanggalSaldoAwal: e.target.value }))} disabled={loadingSaldoAwal || !saldoAwalEligible} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1">
+                      Saldo <span className="text-[10px] font-normal text-muted-foreground">(otomatis)</span>
+                    </Label>
+                    <div className="flex h-9 items-center justify-end rounded-md border bg-background px-3 font-mono text-sm tabular-nums" aria-label="Saldo akun saat ini">
+                      {loadingSaldoAwal ? '—' : formatSaldo(saldoSekarang)}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">Saldo akun saat ini, terisi otomatis.</p>
                   </div>
                 </div>
-                {(Number(form.saldoAwalDebit || 0) > 0 || Number(form.saldoAwalKredit || 0) > 0 || saldoAwal?.items.some((item) => item.akunPerkiraanId === editId && (item.debit > 0 || item.kredit > 0))) && (
-                  <div className="space-y-2">
-                    <Label>Akun Lawan Saldo Awal</Label>
-                    <SearchableDropdown value={form.akunLawanId} onValueChange={(value) => setForm((prev) => ({ ...prev, akunLawanId: value }))} options={allCoa.filter((item) => item.id !== editId && item.tingkat === 'DETAIL').map((item) => ({ id: item.id, label: `${item.kode} — ${item.nama}`, subtitle: item.header }))} placeholder="Pilih akun lawan" loading={loadingSaldoAwal} />
-                  </div>
-                )}
               </div>
             </TabsContent>
 
