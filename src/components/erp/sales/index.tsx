@@ -1030,6 +1030,19 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
   const [soLoading, setSoLoading] = useState(false);
+  // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
+  const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
+
+  // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}).
+  // Dipakai saat SO dipilih manual maupun saat draft dipulihkan (salesOrderId tersimpan).
+  const loadSoRefInfo = useCallback(async (soId: string) => {
+    try {
+      const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
+      setSoRefInfo({ noPesanan: so.noPesanan || '', customerPoNumber: so.customerPoNumber || '' });
+    } catch {
+      setSoRefInfo(null);
+    }
+  }, []);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1053,6 +1066,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFKeterangan(d.keterangan || '');
     setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
     setFBiayaTambahan(Array.isArray(d.biayaTambahan) ? d.biayaTambahan : []);
+    // Update #4: pulihkan info box No SO · No PO bila draft punya SO terpilih.
+    if (d.salesOrderId) void loadSoRefInfo(d.salesOrderId);
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Invoice Penjualan dimuat kembali otomatis.' });
   }, []);
 
@@ -1087,6 +1102,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     draft.clearDraft();
     setFPelangganId('');
     setFSalesOrderId('');
+    setSoRefInfo(null);
     setFTanggal(todayStr());
     setFSyaratBayarId('');
     setFEkspedisi('');
@@ -1106,39 +1122,47 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // line SO). Baris ter-link mengirim salesOrderDetailId sehingga komputasi
   // sisa faktur per SO line di backend tetap akurat.
   // Pilihan "Tidak ada" (kosong) TIDAK menghapus baris — user tetap bisa manual.
-  const handleSalesOrderChange = useCallback(async (soId: string) => {
-    setFSalesOrderId(soId);
-    if (!soId) return;
-    setSoLoading(true);
-    try {
-      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
-      setFPelangganId(sisa.pelangganId || '');
-      const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
-      if (rows.length === 0) {
-        toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
-        setFDetail([]);
+  // Update #4 (C4): selain sisa, muat info No SO · No PO customer utk info box.
+  const handleSalesOrderChange = useCallback(
+    async (soId: string) => {
+      setFSalesOrderId(soId);
+      if (!soId) {
+        setSoRefInfo(null);
         return;
       }
-      setFDetail(
-        rows.map((d) => ({
-          id: crypto.randomUUID(),
-          barangId: d.barangId,
-          kodeBarang: d.kodeBarang || '',
-          barangNama: d.namaBarang || '',
-          harga: String(d.harga ?? 0),
-          qty: String(d.sisaFaktur),
-          diskon: String(d.diskon ?? 0),
-          satuanId: d.satuanId || '',
-          satuanNama: d.satuanNama || '',
-          salesOrderDetailId: d.salesOrderDetailId
-        }))
-      );
-    } catch {
-      // Gagal memuat sisa SO — biarkan user isi baris manual
-    } finally {
+      setSoLoading(true);
+      try {
+        const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+        setFPelangganId(sisa.pelangganId || '');
+        const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+        if (rows.length === 0) {
+          toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
+          setFDetail([]);
+        } else {
+          setFDetail(
+            rows.map((d) => ({
+              id: crypto.randomUUID(),
+              barangId: d.barangId,
+              kodeBarang: d.kodeBarang || '',
+              barangNama: d.namaBarang || '',
+              harga: String(d.harga ?? 0),
+              qty: String(d.sisaFaktur),
+              diskon: String(d.diskon ?? 0),
+              satuanId: d.satuanId || '',
+              satuanNama: d.satuanNama || '',
+              salesOrderDetailId: d.salesOrderDetailId
+            }))
+          );
+        }
+      } catch {
+        // Gagal memuat sisa SO — biarkan user isi baris manual
+      }
+      // Info box No SO · No PO (gagal → sembunyikan; tidak mengganggu prefill baris).
+      await loadSoRefInfo(soId);
       setSoLoading(false);
-    }
-  }, []);
+    },
+    [loadSoRefInfo]
+  );
 
   const formSubtotal = useMemo(
     () =>
@@ -1245,6 +1269,14 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">Link ke Sales Order</Label>
               <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." disabled={soLoading} />
               {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
+              {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
+              {soRefInfo && (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  No SO: <span className="font-mono font-medium text-foreground">{soRefInfo.noPesanan}</span>
+                  <span className="mx-1.5">·</span>
+                  No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
+                </div>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1336,6 +1368,18 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   const [editPpn, setEditPpn] = useState('11');
   const [editKeterangan, setEditKeterangan] = useState('');
   const [soLoading, setSoLoading] = useState(false);
+  // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
+  const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
+
+  // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}). ===
+  const loadSoRefInfo = useCallback(async (soId: string) => {
+    try {
+      const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
+      setSoRefInfo({ noPesanan: so.noPesanan || '', customerPoNumber: so.customerPoNumber || '' });
+    } catch {
+      setSoRefInfo(null);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1358,6 +1402,15 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         setEditDiskonGlobal(String(inv.diskonGlobal ?? 0));
         setEditPpn(String(inv.ppn ?? 0));
         setEditKeterangan(inv.keterangan || '');
+        // Update #4: info box No SO · No PO dari response invoice (salesOrder nested);
+        // fallback fetch bila header ter-link tapi nested tidak ikut terkirim.
+        if (inv.salesOrder?.noPesanan) {
+          setSoRefInfo({ noPesanan: inv.salesOrder.noPesanan, customerPoNumber: inv.salesOrder.customerPoNumber || '' });
+        } else if (inv.salesOrderId) {
+          await loadSoRefInfo(inv.salesOrderId);
+        } else {
+          setSoRefInfo(null);
+        }
       } catch (e) {
         toast.error(e instanceof ApiError ? e.detail : 'Gagal memuat data invoice');
       } finally {
@@ -1368,25 +1421,32 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     return () => {
       cancelled = true;
     };
-  }, [editId]);
+  }, [editId, loadSoRefInfo]);
 
   // === Tarik data otomatis SO → Invoice Penjualan (edit) (Task 16-c2):
   // mengganti SO pada form edit hanya menarik data header (pelanggan) dari
   // endpoint /sisa. Detail barang invoice TIDAK diubah saat edit (payload PUT
   // tanpa `details` — baris tersimpan dipertahankan backend apa adanya).
-  const handleEditSalesOrderChange = useCallback(async (soId: string) => {
-    setEditSalesOrderId(soId);
-    if (!soId) return;
-    setSoLoading(true);
-    try {
-      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
-      if (sisa.pelangganId) setEditPelangganId(sisa.pelangganId);
-    } catch {
-      // Gagal memuat sisa SO — biarkan isian header saat ini
-    } finally {
+  // Update #4 (C4): perubahan SO juga memperbarui info box No SO · No PO.
+  const handleEditSalesOrderChange = useCallback(
+    async (soId: string) => {
+      setEditSalesOrderId(soId);
+      if (!soId) {
+        setSoRefInfo(null);
+        return;
+      }
+      setSoLoading(true);
+      try {
+        const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+        if (sisa.pelangganId) setEditPelangganId(sisa.pelangganId);
+      } catch {
+        // Gagal memuat sisa SO — biarkan isian header saat ini
+      }
+      await loadSoRefInfo(soId);
       setSoLoading(false);
-    }
-  }, []);
+    },
+    [loadSoRefInfo]
+  );
 
   const handleEditSubmit = useCallback(async () => {
     if (!editPelangganId) {
@@ -1473,6 +1533,14 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                   <Label className="text-xs font-medium">Link ke Sales Order</Label>
                   <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." disabled={soLoading} />
                   {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
+                  {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
+                  {soRefInfo && (
+                    <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                      No SO: <span className="font-mono font-medium text-foreground">{soRefInfo.noPesanan}</span>
+                      <span className="mx-1.5">·</span>
+                      No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

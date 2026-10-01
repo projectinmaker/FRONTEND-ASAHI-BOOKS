@@ -86,7 +86,10 @@ export async function generatePDF(elementId: string, filename: string) {
   const element = document.getElementById(elementId);
   if (!element) return;
 
-  const html2canvas = (await import('html2canvas')).default;
+  // html2canvas-pro: fork html2canvas dengan dukungan color function modern
+  // (oklch/lab/color-mix) — wajib untuk Tailwind CSS v4 yang memakai warna
+  // oklch; html2canvas 1.4.1 throw "unsupported color function lab" di Chrome baru.
+  const html2canvas = (await import('html2canvas-pro')).default;
   const { jsPDF } = await import('jspdf');
 
   const canvas = await html2canvas(element, {

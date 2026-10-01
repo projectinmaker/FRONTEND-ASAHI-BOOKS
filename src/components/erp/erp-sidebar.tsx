@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2 } from 'lucide-react';
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2 } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -59,6 +59,8 @@ const modules: NavModule[] = [
       { id: 'pesanan', label: 'Pesanan', icon: ClipboardList },
       { id: 'pengiriman', label: 'Pengiriman', icon: Truck },
       { id: 'invoice', label: 'Invoice', icon: Receipt },
+      // Tukar Faktur / Tanda Terima (proof of receipt) — update #4, di bawah Invoice
+      { id: 'tukar-faktur', label: 'Tukar Faktur', icon: FileCheck },
       { id: 'retur', label: 'Retur', icon: RotateCcw },
       // Pelunasan Piutang dipindahkan dari modul Pelunasan ke modul Penjualan
       { id: 'pelunasan-piutang', label: 'Pelunasan Piutang', icon: HandCoins }
@@ -212,6 +214,7 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     pesanan: 'sales.sales_order.view',
     pengiriman: 'sales.pengiriman.view',
     invoice: 'sales.sales_invoice.view',
+    'tukar-faktur': 'sales.tukar_faktur.view',
     retur: 'sales.sales_retur.view',
     'pelunasan-piutang': 'settlement.pelunasan_piutang.view'
   },

@@ -868,6 +868,8 @@ export interface BarangDropdown {
   // === Phase 2/3 — field baru (optional, forward-compatible).
   itemType?: ItemTypeBarang | null;
   stockItem?: boolean;
+  // === Update #4 — deteksi FEFO di form penerimaan (input kedaluwarsa kondisional).
+  metodeValuasi?: string | null;
 }
 
 // ── Enums (Phase 5) ─────────────────────────────────────────────────
@@ -940,6 +942,8 @@ export interface SupplierSimple {
 export interface SalesOrderSimple {
   id: string;
   noPesanan: string;
+  // === Update #4 — No PO customer (tampil di print invoice/SJ/SO & info form) ===
+  customerPoNumber?: string | null;
 }
 
 export interface PurchaseOrderSimple {
@@ -1018,6 +1022,50 @@ export interface PenawaranResponse {
   creator?: { id: string; nama: string } | null;
   details: PenawaranDetailResponse[];
   biayaTambahan: TransaksiBiayaResponse[];
+}
+
+// ── Tukar Faktur / Tanda Terima (Update #4) ──────────────────────────
+
+export interface TukarFakturDetailResponse {
+  id: string;
+  barangId: string;
+  satuanId?: string | null;
+  qty: number;
+  barang?: { id: string; kode: string; nama: string; hargaPokok?: number | string | null } | null;
+  satuan?: { id: string; nama: string } | null;
+}
+
+export interface TukarFakturCreate {
+  tanggal: string;
+  salesInvoiceId: string;
+  keterangan?: string | null;
+}
+
+export type TukarFakturUpdate = Partial<Pick<TukarFakturCreate, 'tanggal' | 'keterangan'>>;
+
+export interface TukarFakturResponse {
+  id: string;
+  noTukarFaktur: string;
+  tanggal: string;
+  salesInvoiceId: string;
+  pelangganId: string;
+  /** Snapshot nomor SO sumber invoice (null bila invoice tanpa SO). */
+  noSo?: string | null;
+  /** Snapshot No PO customer dari SO (null bila tidak ada). */
+  noPoCustomer?: string | null;
+  /** Snapshot No Surat Jalan ter-link (join koma; null bila invoice dari SO langsung). */
+  noSuratJalan?: string | null;
+  /** Snapshot grand total invoice saat TF dibuat. */
+  total: string | number;
+  keterangan?: string | null;
+  status: 'DRAFT' | 'SELESAI' | string;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  pelanggan?: { id: string; kode: string; nama: string } | null;
+  salesInvoice?: { id: string; noInvoice: string } | null;
+  creator?: { id: string; username: string; namaLengkap?: string | null } | null;
+  details: TukarFakturDetailResponse[];
 }
 
 // ── Sisa qty dokumen sumber (tarik data SO/PO) ───────────────────────
@@ -1402,6 +1450,8 @@ export interface SalesInvoiceUpdate {
 export interface SalesInvoiceResponse {
   id: string;
   noInvoice: string;
+  // === Update #4 — No Surat Jalan ter-link (distinct via delivery detail, join koma; null bila dari SO langsung).
+  noSuratJalan?: string | null;
   tanggal: string;
   pelangganId: string;
   syaratBayarId: string | null;
@@ -1962,6 +2012,8 @@ export interface PermintaanBarangCreate {
   qty: number;
   diajukanOleh: string;
   keterangan?: string | null;
+  // === Update #4 — link opsional ke Sales Order (informasional). ===
+  salesOrderId?: string | null;
 }
 
 export interface PermintaanBarangUpdate {
@@ -1970,6 +2022,7 @@ export interface PermintaanBarangUpdate {
   qty?: number;
   diajukanOleh?: string;
   keterangan?: string | null;
+  salesOrderId?: string | null;
 }
 
 export interface PermintaanBarangResponse {
@@ -1988,6 +2041,9 @@ export interface PermintaanBarangResponse {
   barang: BarangSimple | null;
   creator: PenggunaSimple | null;
   jurnal: JurnalSimple | null;
+  // === Update #4 — link SO (informasional). ===
+  salesOrderId?: string | null;
+  salesOrder?: SalesOrderSimple | null;
 }
 
 // ── Aset Tetap ───────────────────────────────────────────────────────

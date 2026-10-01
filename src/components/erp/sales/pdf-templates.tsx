@@ -28,6 +28,8 @@ export interface PesananData {
   ekspedisi: string;
   tanggalPengiriman: string;
   penjual: string;
+  // === Update #4 — No PO customer dari SO (label "No PO" di print pesanan) ===
+  noPo: string;
   detail: DetailRow[];
   biayaTambahan: BiayaTambahan[];
   keterangan: string;
@@ -41,7 +43,9 @@ export interface PengirimanData {
   kepada: string;
   alamatPenerima: string;
   ekspedisi: string;
-  poNo: string;
+  // === Update #4 — ganti poNo tunggal → No SO + No PO customer ===
+  noSo: string;
+  noPo: string;
   detail: DetailRow[];
   keterangan: string;
 }
@@ -54,7 +58,10 @@ export interface InvoiceData {
   syaratPembayaran: string;
   ekspedisi: string;
   tanggalPengiriman: string;
-  poNo: string;
+  // === Update #4 — ganti poNo tunggal → No SO / No PO customer / No Surat Jalan ===
+  noSo: string;
+  noPo: string;
+  noSuratJalan: string;
   mataUang: string;
   detail: DetailRow[];
   biayaTambahan: BiayaTambahan[];
@@ -267,6 +274,7 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
           <InfoCell label="Nomor" value={data.nomor} />
+          <InfoCell label="No PO" value={data.noPo} />
           <InfoCell label="Syarat Pembayaran" value={data.syaratPembayaran} />
           <InfoCell label="Ekspedisi" value={data.ekspedisi} />
           <InfoCell label="Tanggal Pengiriman" value={formatDate(data.tanggalPengiriman)} />
@@ -367,7 +375,8 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
           <InfoCell label="Nomor" value={data.nomor} />
           <InfoCell label="Ekspedisi" value={data.ekspedisi} />
-          <InfoCell label="PO No" value={data.poNo} />
+          <InfoCell label="No SO" value={data.noSo} />
+          <InfoCell label="No PO" value={data.noPo} />
         </div>
       </div>
 
@@ -485,7 +494,9 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
           <InfoCell label="Syarat Pembayaran" value={data.syaratPembayaran} />
           <InfoCell label="Ekspedisi" value={data.ekspedisi} />
           <InfoCell label="Tanggal Pengiriman" value={formatDate(data.tanggalPengiriman)} />
-          <InfoCell label="PO No" value={data.poNo} />
+          <InfoCell label="No SO" value={data.noSo} />
+          <InfoCell label="No PO" value={data.noPo} />
+          <InfoCell label="No Surat Jalan" value={data.noSuratJalan} />
           <InfoCell label="Mata Uang" value={data.mataUang} />
         </div>
       </div>

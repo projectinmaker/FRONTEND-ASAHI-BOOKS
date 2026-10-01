@@ -22,6 +22,9 @@ const Reports = dynamic(() => import('@/components/erp/reports'), { ssr: false }
 const Organisasi = dynamic(() => import('@/components/erp/organisasi'), { ssr: false });
 const Settings = dynamic(() => import('@/components/erp/settings'), { ssr: false });
 const WorkflowQueue = dynamic(() => import('@/components/erp/workflow-queue'), { ssr: false });
+// Tukar Faktur (update #4) — routing subPage 'tukar-faktur' di-render langsung di sini
+// (mirror pola Penawaran; sales/index.tsx tidak disentuh).
+const TukarFakturModule = dynamic(() => import('@/components/erp/sales/tukar-faktur').then((m) => m.TukarFakturModule), { ssr: false });
 
 const moduleLabels: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -48,6 +51,7 @@ const subPageLabels: Record<string, string> = {
   pesanan: 'Pesanan',
   pengiriman: 'Pengiriman',
   invoice: 'Invoice',
+  'tukar-faktur': 'Tukar Faktur',
   retur: 'Retur',
   // Pelunasan (kini di bawah Penjualan / Pembelian)
   'pelunasan-piutang': 'Pelunasan Piutang',
@@ -105,6 +109,11 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
     case 'cash-bank':
       return <CashBank subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'sales':
+      // Tukar Faktur (update #4): list + form + cetak di-handle modul mandiri
+      // (penawaran & modul lain tetap lewat Sales).
+      if (subPage === 'tukar-faktur') {
+        return <TukarFakturModule subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
+      }
       return <Sales subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'purchasing':
       return <Purchasing subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;

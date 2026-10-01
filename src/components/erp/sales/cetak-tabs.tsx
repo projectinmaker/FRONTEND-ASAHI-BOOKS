@@ -48,6 +48,8 @@ function mapPesananData(d: SalesOrderResponse): PesananData {
     ekspedisi: d.ekspedisi || '',
     tanggalPengiriman: d.tanggalPengiriman || '',
     penjual: d.penjual || '',
+    // Update #4: No PO customer dari SO (SalesOrderResponse.customerPoNumber).
+    noPo: d.customerPoNumber || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
       barang: r.barang?.nama || '',
@@ -144,7 +146,9 @@ function mapPengirimanData(d: PengirimanBarangResponse): PengirimanData {
     kepada: d.pelanggan?.nama || '',
     alamatPenerima: d.alamatPengiriman || '',
     ekspedisi: d.ekspedisi || '',
-    poNo: d.salesOrder?.noPesanan || '',
+    // Update #4: No SO + No PO customer dari SO ter-link pengiriman.
+    noSo: d.salesOrder?.noPesanan || '',
+    noPo: d.salesOrder?.customerPoNumber || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
       barang: r.barang?.nama || '',
@@ -236,7 +240,10 @@ function mapInvoiceData(d: SalesInvoiceResponse): InvoiceData {
     syaratPembayaran: d.syaratBayar?.nama || '',
     ekspedisi: d.ekspedisi || '',
     tanggalPengiriman: d.tanggalPengiriman || '',
-    poNo: d.salesOrder?.noPesanan || '',
+    // Update #4: No SO + No PO customer dari SO ter-link + No Surat Jalan ter-link invoice.
+    noSo: d.salesOrder?.noPesanan || '',
+    noPo: d.salesOrder?.customerPoNumber || '',
+    noSuratJalan: d.noSuratJalan || '',
     mataUang: d.mataUang || 'IDR',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,

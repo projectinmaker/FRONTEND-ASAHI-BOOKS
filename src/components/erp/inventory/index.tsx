@@ -23,7 +23,7 @@ import { Package, AlertTriangle, DollarSign, Plus, Search, ArrowRightLeft, Wareh
 import { toast } from 'sonner';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { formatRp } from '@/lib/pdf-utils';
-import type { PenyesuaianStokResponse, PenyesuaianStokCreate, PenyesuaianStokUpdate, PemindahanBarangResponse, PemindahanBarangCreate, PemindahanBarangUpdate, PermintaanBarangResponse, PermintaanBarangCreate, PermintaanBarangUpdate, BarangDropdown, GudangResponse, BarangResponse, KategoriBarangResponse, TipePenyesuaian, ProsesPemindahan } from '@/types/api';
+import type { PenyesuaianStokResponse, PenyesuaianStokCreate, PenyesuaianStokUpdate, PemindahanBarangResponse, PemindahanBarangCreate, PemindahanBarangUpdate, PermintaanBarangResponse, PermintaanBarangCreate, PermintaanBarangUpdate, BarangDropdown, GudangResponse, BarangResponse, KategoriBarangResponse, TipePenyesuaian, ProsesPemindahan, SalesOrderResponse, SalesOrderSisaResponse } from '@/types/api';
 import StokKartuTab from '@/components/erp/inventory/stok-kartu';
 import BarangForm from '@/components/erp/inventory/barang-form';
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
@@ -39,6 +39,8 @@ const PAGE_SIZE = 100;
 
 interface PermintaanBarangDraftData {
   tanggal: string;
+  // === Update #4 (Q1): link opsional ke Sales Order ===
+  salesOrderId: string;
   barangId: string;
   qty: string;
   diajukanOleh: string;
@@ -201,10 +203,87 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
   const [submitting, setSubmitting] = useState(false);
 
   const [formTanggal, setFormTanggal] = useState('');
+  // === Update #4 (Q1): link opsional ke Sales Order + filter barang SO ===
+  const [salesOrderOptions, setSalesOrderOptions] = useState<{ id: string; noPesanan: string }[]>([]);
+  const [formSalesOrderId, setFormSalesOrderId] = useState('');
+  const [soSisaMap, setSoSisaMap] = useState<Record<string, number>>({});
+  const [soBarangIds, setSoBarangIds] = useState<Set<string>>(new Set());
+  const [soLoading, setSoLoading] = useState(false);
+  const autoQtyRef = useRef(false);
   const [formBarangId, setFormBarangId] = useState('');
   const [formQty, setFormQty] = useState('');
   const [formDiajukanOleh, setFormDiajukanOleh] = useState('');
   const [formKeterangan, setFormKeterangan] = useState('');
+
+  // === Update #4 (Q1): ambil sisa kirim per barang SO terpilih (untuk filter
+  // dropdown barang + auto-isi qty = sisa kirim). Gagal fetch → filter reset. ===
+  const applySoSisa = useCallback(async (soId: string) => {
+    try {
+      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+      const map: Record<string, number> = {};
+      const ids = new Set<string>();
+      (sisa.details || []).forEach((d) => {
+        map[d.barangId] = Number(d.sisaKirim) || 0;
+        ids.add(d.barangId);
+      });
+      setSoSisaMap(map);
+      setSoBarangIds(ids);
+    } catch {
+      setSoSisaMap({});
+      setSoBarangIds(new Set());
+    }
+  }, []);
+
+  // Update #4 (Q1): ganti/kosongkan SO — reset qty yang di-auto-isi dari SO
+  // sebelumnya (qty yang diisi manual user tidak disentuh), lalu muat filter baru.
+  const handleSalesOrderChange = useCallback(
+    async (soId: string) => {
+      setFormSalesOrderId(soId);
+      if (autoQtyRef.current) {
+        setFormQty('');
+        autoQtyRef.current = false;
+      }
+      if (!soId) {
+        setSoSisaMap({});
+        setSoBarangIds(new Set());
+        return;
+      }
+      setSoLoading(true);
+      try {
+        await applySoSisa(soId);
+      } finally {
+        setSoLoading(false);
+      }
+    },
+    [applySoSisa]
+  );
+
+  // Update #4 (Q1): pilih barang — auto-isi qty = sisa kirim pada SO terpilih
+  // (selalu timpa saat ganti barang; user bisa edit setelahnya).
+  const handleBarangChange = useCallback(
+    (barangId: string) => {
+      setFormBarangId(barangId);
+      const sisaKirim = soSisaMap[barangId];
+      if (sisaKirim != null) {
+        setFormQty(String(sisaKirim));
+        autoQtyRef.current = true;
+      } else {
+        autoQtyRef.current = false;
+      }
+    },
+    [soSisaMap]
+  );
+
+  // Update #4 (Q1): bila SO dipilih, dropdown barang terfilter ke barang SO itu
+  // (subtitle menampilkan sisa kirim per barang).
+  const barangDropdownOptions = useMemo(() => {
+    const filtered = soBarangIds.size > 0 ? barangOptions.filter((b) => soBarangIds.has(b.id)) : barangOptions;
+    return filtered.map((b) => ({
+      id: b.id,
+      label: b.kode + ' - ' + b.nama,
+      subtitle: soSisaMap[b.id] != null ? `Sisa kirim: ${(Number(soSisaMap[b.id]) || 0).toLocaleString('id-ID')}` : undefined
+    }));
+  }, [barangOptions, soBarangIds, soSisaMap]);
 
   // ── Draft otomatis (mode create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -217,10 +296,13 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
     const d = draft.draft;
     if (!d) return;
     setFormTanggal(d.tanggal || '');
+    setFormSalesOrderId(d.salesOrderId || '');
     setFormBarangId(d.barangId || '');
     setFormQty(d.qty || '');
     setFormDiajukanOleh(d.diajukanOleh || '');
     setFormKeterangan(d.keterangan || '');
+    // Update #4: pulihkan filter barang sesuai SO tersimpan (qty tidak disentuh).
+    if (d.salesOrderId) void applySoSisa(d.salesOrderId);
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Permintaan Barang dimuat kembali otomatis.' });
   }, []);
 
@@ -234,13 +316,17 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
       skipNextSaveRef.current = false;
       return;
     }
-    if (!isEdit) draft.saveDraft({ tanggal: formTanggal, barangId: formBarangId, qty: formQty, diajukanOleh: formDiajukanOleh, keterangan: formKeterangan });
-  }, [formTanggal, formBarangId, formQty, formDiajukanOleh, formKeterangan]);
+    if (!isEdit) draft.saveDraft({ tanggal: formTanggal, salesOrderId: formSalesOrderId, barangId: formBarangId, qty: formQty, diajukanOleh: formDiajukanOleh, keterangan: formKeterangan });
+  }, [formTanggal, formSalesOrderId, formBarangId, formQty, formDiajukanOleh, formKeterangan]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
     draft.clearDraft();
     setFormTanggal('');
+    setFormSalesOrderId('');
+    setSoSisaMap({});
+    setSoBarangIds(new Set());
+    autoQtyRef.current = false;
     setFormBarangId('');
     setFormQty('');
     setFormDiajukanOleh('');
@@ -257,8 +343,10 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
     const fetchDropdowns = async () => {
       setDropdownsLoading(true);
       try {
-        const barangRes = await api.get<BarangDropdown[]>('/master/barang-dropdown');
+        // Update #4 (Q1): opsi SO utk dropdown "Link ke Sales Order" (tanpa DIBATALKAN).
+        const [barangRes, soRes] = await Promise.all([api.get<BarangDropdown[]>('/master/barang-dropdown'), api.get<PaginatedResponse<SalesOrderResponse>>('/penjualan/sales-order?limit=200')]);
         setBarangOptions(barangRes);
+        setSalesOrderOptions(soRes.data.filter((so) => so.status !== 'DIBATALKAN').map((so) => ({ id: so.id, noPesanan: so.noPesanan })));
       } catch {
         /* non-critical */
       } finally {
@@ -279,6 +367,10 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
         setFormQty(String(item.qty));
         setFormDiajukanOleh(item.diajukanOleh);
         setFormKeterangan(item.keterangan || '');
+        // Update #4 (Q1): SO ter-link → set dropdown + filter barang SO itu
+        // (qty tersimpan TIDAK ditimpa auto-isi).
+        setFormSalesOrderId(item.salesOrderId || '');
+        if (item.salesOrderId) void applySoSisa(item.salesOrderId);
       } catch (err) {
         toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat data permintaan');
       } finally {
@@ -286,7 +378,7 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
       }
     };
     fetchItem();
-  }, [isEdit, editId]);
+  }, [isEdit, editId, applySoSisa]);
 
   const handleSubmit = async () => {
     if (!formTanggal || !formBarangId || !formQty || !formDiajukanOleh) {
@@ -301,7 +393,9 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
           barangId: formBarangId,
           qty: Number(formQty),
           diajukanOleh: formDiajukanOleh,
-          keterangan: formKeterangan || null
+          keterangan: formKeterangan || null,
+          // Update #4 (Q1): link SO ikut dikirim (null di-ignore backend; id baru = ganti SO).
+          salesOrderId: formSalesOrderId || null
         };
         await api.put<PermintaanBarangResponse>(`/persediaan/permintaan/${editId}`, payload);
         toast.success('Permintaan barang berhasil diperbarui');
@@ -311,7 +405,9 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
           barangId: formBarangId,
           qty: Number(formQty),
           diajukanOleh: formDiajukanOleh,
-          keterangan: formKeterangan || null
+          keterangan: formKeterangan || null,
+          // Update #4 (Q1): link opsional ke Sales Order.
+          salesOrderId: formSalesOrderId || null
         };
         await api.post<PermintaanBarangResponse>('/persediaan/permintaan', payload);
         toast.success('Permintaan barang berhasil diajukan');
@@ -345,19 +441,27 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
                   <Input type="date" value={formTanggal} onChange={(e) => setFormTanggal(e.target.value)} autoFocus />
                 </div>
                 <div className="space-y-2">
-                  <Label>
-                    Barang <span className="text-destructive">*</span>
-                  </Label>
-                  <SearchableDropdown value={formBarangId} onValueChange={setFormBarangId} options={barangOptions.map((b) => ({ id: b.id, label: b.kode + ' - ' + b.nama }))} placeholder="Pilih barang" loading={dropdownsLoading} compact />
+                  <Label>Link ke Sales Order</Label>
+                  <SearchableDropdown value={formSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih SO (opsional)..." disabled={soLoading} />
+                  {soLoading && <p className="text-xs text-muted-foreground">Memuat sisa SO...</p>}
+                  {!soLoading && formSalesOrderId && <p className="text-xs text-muted-foreground">Barang difilter ke barang pada SO terpilih; qty otomatis diisi sisa kirim.</p>}
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>
+                    Barang <span className="text-destructive">*</span>
+                  </Label>
+                  <SearchableDropdown value={formBarangId} onValueChange={handleBarangChange} options={barangDropdownOptions} placeholder="Pilih barang" loading={dropdownsLoading} emptyText={formSalesOrderId ? 'Tidak ada barang pada SO ini.' : 'Tidak ditemukan.'} compact />
+                </div>
                 <div className="space-y-2">
                   <Label>
                     Qty <span className="text-destructive">*</span>
                   </Label>
                   <Input type="number" placeholder="0" value={formQty} onChange={(e) => setFormQty(e.target.value)} />
                 </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>
                     Diajukan Oleh <span className="text-destructive">*</span>
@@ -1132,23 +1236,25 @@ function PermintaanBarangTab({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="whitespace-nowrap">Nama Barang</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Qty</TableHead>
                   <TableHead className="whitespace-nowrap">Diajukan Oleh</TableHead>
+                  {/* Update #4 (Q1): kolom SO ter-link (nomor pesanan) */}
+                  <TableHead className="whitespace-nowrap">SO</TableHead>
                   <TableHead className="whitespace-nowrap">Status</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Workflow</TableHead>
                   <TableHead className="whitespace-nowrap">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && <TableSkeletonRows cols={8} />}
+                {loading && <TableSkeletonRows cols={9} />}
                 {error && (
                   <TableRow>
-                    <TableCell colSpan={8}>
+                    <TableCell colSpan={9}>
                       <ErrorCard message={error} onRetry={fetchData} />
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading && !error && data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                       Tidak ada data permintaan barang
                     </TableCell>
                   </TableRow>
@@ -1162,6 +1268,7 @@ function PermintaanBarangTab({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="whitespace-nowrap">{row.barang?.nama || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap text-right">{Number(row.qty).toLocaleString('id-ID')}</TableCell>
                       <TableCell className="whitespace-nowrap">{row.diajukanOleh}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs">{row.salesOrder?.noPesanan || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap">
                         <StatusBadge status={row.status} />
                       </TableCell>

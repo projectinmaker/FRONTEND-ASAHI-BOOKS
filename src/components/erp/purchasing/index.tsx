@@ -334,6 +334,15 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
 
 // ─── Detail Table Simple (for Penerimaan form) ──────────────────────────────
 
+// === Update #4 (Q5): baris barang FEFO? (metodeValuasi dari barang-dropdown).
+// Input kedaluwarsa hanya relevan untuk barang FEFO — backend menolak eksekusi
+// FEFO tanpa expiry; barang AVERAGE/FIFO tidak memerlukan tanggal kedaluwarsa.
+function isFefoRow(row: FormDetailRow, barangOptions: BarangDropdown[]): boolean {
+  if (!row.barangId) return false;
+  const found = barangOptions.find((b) => b.id === row.barangId);
+  return found?.metodeValuasi === 'FEFO';
+}
+
 function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[] }) {
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
@@ -361,6 +370,8 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
 
   const totalQty = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
   const jumlahBarang = rows.length;
+  // Update #4 (Q5): kolom Kedaluwarsa hanya tampil bila ada minimal satu baris FEFO.
+  const hasFefoRow = rows.some((r) => isFefoRow(r, barangOptions));
 
   return (
     <div className="space-y-3">
@@ -372,7 +383,7 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
               <TableHead className="min-w-[200px]">Nama Barang</TableHead>
               <TableHead className="w-[80px] text-right">Kts</TableHead>
               <TableHead className="w-[120px]">Satuan</TableHead>
-              <TableHead className="w-[140px]">Kedaluwarsa</TableHead>
+              {hasFefoRow && <TableHead className="w-[140px]">Kedaluwarsa</TableHead>}
               <TableHead className="w-[40px]" />
             </TableRow>
           </TableHeader>
@@ -396,9 +407,17 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
                 <TableCell>
                   <SearchableDropdown value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact />
                 </TableCell>
-                <TableCell>
-                  <Input type="date" className="h-8 text-xs" value={row.tanggalKedaluwarsa} onChange={(e) => updateRow(row.id, 'tanggalKedaluwarsa', e.target.value)} />
-                </TableCell>
+                {hasFefoRow && (
+                  <TableCell>
+                    {isFefoRow(row, barangOptions) ? (
+                      <Input type="date" className="h-8 text-xs" value={row.tanggalKedaluwarsa} onChange={(e) => updateRow(row.id, 'tanggalKedaluwarsa', e.target.value)} />
+                    ) : (
+                      <span className="text-xs text-muted-foreground" title="Barang non-FEFO tidak memerlukan kedaluwarsa">
+                        —
+                      </span>
+                    )}
+                  </TableCell>
+                )}
                 <TableCell>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
                     <Trash2 className="h-3.5 w-3.5" />
@@ -408,7 +427,7 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="h-16 text-center text-muted-foreground">
+                <TableCell colSpan={hasFefoRow ? 6 : 5} className="h-16 text-center text-muted-foreground">
                   Belum ada item. Klik "+ Tambah Baris" untuk menambahkan.
                 </TableCell>
               </TableRow>
@@ -740,6 +759,12 @@ function PenerimaanCreateForm() {
     if (!fGudangId) errs.gudangId = 'Gudang wajib diisi';
     const detailError = stockLineError(fDetail);
     if (detailError) errs.detail = detailError;
+    else {
+      // Update #4 (Q5): tanggal kedaluwarsa WAJIB untuk barang FEFO
+      // (backend menolak eksekusi FEFO tanpa expiry — cegah sebelum kirim).
+      const fefoMissing = fDetail.filter((r) => r.barangId).find((r) => isFefoRow(r, barangOptions) && !r.tanggalKedaluwarsa);
+      if (fefoMissing) errs.detail = 'Isi tanggal kedaluwarsa untuk barang FEFO';
+    }
     if (Object.keys(errs).length) {
       setFormErrors(errs);
       return;
@@ -1152,6 +1177,8 @@ function InvoiceCreateForm() {
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
   const [poLoading, setPoLoading] = useState(false);
+  // === Update #4 (Q2): snapshot sisa PO terpilih — info barang belum diterima ===
+  const [poSisaInfo, setPoSisaInfo] = useState<PurchaseOrderSisaResponse | null>(null);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1218,6 +1245,7 @@ function InvoiceCreateForm() {
     setFKeterangan('');
     setFDetail([newDetailRow()]);
     setFBiayaTambahan([]);
+    setPoSisaInfo(null);
     setFormErrors({});
   }, []);
 
@@ -1227,12 +1255,18 @@ function InvoiceCreateForm() {
   // mengikuti line PO). Baris ter-link mengirim purchaseOrderDetailId sehingga
   // komputasi sisa faktur per PO line di backend tetap akurat.
   // Pilihan "Tanpa PO" (kosong) TIDAK menghapus baris — user tetap bisa manual.
+  // Update #4 (Q2): response /sisa juga disimpan ke poSisaInfo untuk panel info
+  // status penerimaan (read-only, tidak mengubah prefill baris sama sekali).
   const handlePurchaseOrderChange = useCallback(async (poId: string) => {
     setFPurchaseOrderId(poId);
-    if (!poId) return;
+    if (!poId) {
+      setPoSisaInfo(null);
+      return;
+    }
     setPoLoading(true);
     try {
       const sisa = await api.get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${poId}/sisa`);
+      setPoSisaInfo(sisa);
       if (sisa.supplierId) setFSupplierId(sisa.supplierId);
       const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
       if (rows.length === 0) {
@@ -1258,6 +1292,7 @@ function InvoiceCreateForm() {
       );
     } catch {
       // Gagal memuat sisa PO — biarkan user isi baris manual
+      setPoSisaInfo(null);
     } finally {
       setPoLoading(false);
     }
@@ -1367,6 +1402,62 @@ function InvoiceCreateForm() {
             </div>
             <InvoiceTypeField value={fInvoiceType} onChange={setFInvoiceType} />
           </div>
+          {/* === Update #4 (Q2): panel info status penerimaan PO (read-only) === */}
+          {poSisaInfo && (
+            <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium">Status Penerimaan PO {poSisaInfo.noPesanan}</p>
+                <span className="text-[11px] text-muted-foreground">(informasi — tidak mengubah isian baris)</span>
+              </div>
+              <div className="overflow-x-auto rounded-md border bg-background">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-xs whitespace-nowrap">Nama Barang</TableHead>
+                      <TableHead className="text-xs whitespace-nowrap text-right">Qty PO</TableHead>
+                      <TableHead className="text-xs whitespace-nowrap text-right">Sudah Diterima</TableHead>
+                      <TableHead className="text-xs whitespace-nowrap text-right">Sisa Belum Diterima</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(poSisaInfo.details || []).map((d) => {
+                      const sisaTerima = Number(d.sisaTerima) || 0;
+                      return (
+                        <TableRow key={d.purchaseOrderDetailId}>
+                          <TableCell className="text-xs">
+                            {d.namaBarang || '-'}
+                            {d.kodeBarang ? <span className="ml-1.5 font-mono text-[10px] text-muted-foreground">{d.kodeBarang}</span> : null}
+                          </TableCell>
+                          <TableCell className="text-xs text-right font-mono">{(Number(d.qtyPesanan) || 0).toLocaleString('id-ID')}</TableCell>
+                          <TableCell className="text-xs text-right font-mono">{(Number(d.qtyDiterima) || 0).toLocaleString('id-ID')}</TableCell>
+                          <TableCell className="text-right">
+                            {sisaTerima > 0 ? (
+                              <span className="inline-flex flex-col items-end gap-1">
+                                <span className="font-mono text-xs font-medium text-amber-700">{sisaTerima.toLocaleString('id-ID')}</span>
+                                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">Belum diterima: {sisaTerima.toLocaleString('id-ID')}</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Lengkap
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {(poSisaInfo.details || []).length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-10 text-center text-xs text-muted-foreground">
+                          PO tidak memiliki baris barang.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
           <p className="text-sm text-muted-foreground">Isi data faktur pembelian baru</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
