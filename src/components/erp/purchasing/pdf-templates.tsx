@@ -1,84 +1,82 @@
-"use client"
+'use client';
 
-import { COMPANY_INFO, formatNumber, formatDate, terbilang } from "@/lib/pdf-utils"
+import { COMPANY_INFO, formatNumber, formatDate, terbilang } from '@/lib/pdf-utils';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface PembelianDetailRow {
-  id: string
-  kodeBarang: string
-  barang: string
-  harga: number
-  qty: number
-  diskon: number // percentage
+  id: string;
+  barang: string;
+  harga: number;
+  qty: number;
+  diskon: number; // percentage
+  satuan?: string; // for pesanan (tanpa harga)
 }
 
 export interface PenerimaanDetailRow {
-  id: string
-  kodeBarang: string
-  barang: string
-  qty: number
-  satuan: string
+  id: string;
+  barang: string;
+  qty: number;
+  satuan: string;
 }
 
 export interface ReturDetailRow {
-  id: string
-  kodeBarang: string
-  barang: string
-  harga: number
-  qty: number
+  id: string;
+  barang: string;
+  harga: number;
+  qty: number;
 }
 
 export interface BiayaTambahan {
-  id: string
-  nama: string
-  jumlah: number
+  id: string;
+  nama: string;
+  jumlah: number;
 }
 
 export interface PembelianData {
-  nomor: string
-  tanggal: string
-  tanggalKirim: string
-  kepada: string
-  alamat: string
-  detail: PembelianDetailRow[]
-  biayaTambahan: BiayaTambahan[]
-  keterangan: string
-  diskonGlobal: number
-  ppn: number
+  nomor: string;
+  tanggal: string;
+  tanggalKirim: string;
+  kepada: string;
+  alamat: string;
+  detail: PembelianDetailRow[];
+  biayaTambahan: BiayaTambahan[];
+  keterangan: string;
+  diskonGlobal: number;
+  ppn: number;
 }
 
 export interface PenerimaanData {
-  nomor: string
-  tanggal: string
-  kepada: string
-  alamat: string
-  detail: PenerimaanDetailRow[]
-  keterangan: string
+  nomor: string;
+  tanggal: string;
+  kepada: string;
+  alamat: string;
+  detail: PenerimaanDetailRow[];
+  keterangan: string;
 }
 
 export interface InvoicePembelianData {
-  nomor: string
-  noFaktur: string
-  tanggal: string
-  dari: string
-  alamat: string
-  detail: PembelianDetailRow[]
-  biayaTambahan: BiayaTambahan[]
-  keterangan: string
-  diskonGlobal: number
-  ppn: number
+  nomor: string;
+  noFaktur: string;
+  tanggal: string;
+  dari: string;
+  alamat: string;
+  detail: PembelianDetailRow[];
+  biayaTambahan: BiayaTambahan[];
+  keterangan: string;
+  diskonGlobal: number;
+  ppn: number;
 }
 
 export interface ReturPembelianData {
-  nomor: string
-  tanggal: string
-  noReferensi: string
-  kepada: string
-  alamat: string
-  detail: ReturDetailRow[]
-  keterangan: string
-  ppn: number
+  nomor: string;
+  tanggal: string;
+  noReferensi: string;
+  kepada: string;
+  alamat: string;
+  detail: ReturDetailRow[];
+  keterangan: string;
+  ppn: number;
 }
 
 // ─── Shared Styles ───────────────────────────────────────────────────────────
@@ -86,34 +84,30 @@ export interface ReturPembelianData {
 const rootStyle: React.CSSProperties = {
   fontFamily: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif',
   fontSize: '11px',
-  lineHeight: '1.4',
-}
+  lineHeight: '1.4'
+};
 
 const tableStyle: React.CSSProperties = {
   borderCollapse: 'collapse',
-  width: '100%',
-}
+  width: '100%'
+};
 
 const cellStyle: React.CSSProperties = {
   border: '1px solid #333',
-  padding: '4px 8px',
-}
+  padding: '4px 8px'
+};
 
 const headerCellStyle: React.CSSProperties = {
   ...cellStyle,
   backgroundColor: '#f3f4f6',
   fontWeight: 'bold',
-  textAlign: 'center' as const,
-}
+  textAlign: 'center' as const
+};
 
 // ─── Helper: Logo Placeholder ────────────────────────────────────────────────
 
 function LogoPlaceholder() {
-  return (
-    <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-xs font-bold shrink-0">
-      LOGO
-    </div>
-  )
+  return <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-xs font-bold shrink-0">LOGO</div>;
 }
 
 // ─── Helper: Info Cell (label-value pair) ────────────────────────────────────
@@ -121,32 +115,24 @@ function LogoPlaceholder() {
 function InfoCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-1" style={{ fontSize: '11px' }}>
-      <span style={{ minWidth: '130px', whiteSpace: 'nowrap' }}><strong>{label}</strong></span>
+      <span style={{ minWidth: '130px', whiteSpace: 'nowrap' }}>
+        <strong>{label}</strong>
+      </span>
       <span style={{ minWidth: '12px' }}>:</span>
       <span>{value || '-'}</span>
     </div>
-  )
+  );
 }
 
-// ─── Helper: SummaryTable (used by Pembelian / Invoice) ─────────────────────
+// ─── Helper: SummaryTable (used by Invoice) ─────────────────────────────
 
-function SummaryTable({
-  detail,
-  diskonGlobal,
-  ppn,
-  biayaTambahan,
-}: {
-  detail: PembelianDetailRow[]
-  diskonGlobal: number
-  ppn: number
-  biayaTambahan: BiayaTambahan[]
-}) {
-  const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0)
-  const diskonAmt = diskonGlobal ? (subTotal * diskonGlobal) / 100 : 0
-  const afterDiskon = subTotal - diskonAmt
-  const ppnAmt = ppn ? (afterDiskon * ppn) / 100 : 0
-  const biayaLain = biayaTambahan.reduce((s, b) => s + b.jumlah, 0)
-  const grandTotal = afterDiskon + ppnAmt + biayaLain
+function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: PembelianDetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[] }) {
+  const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmt = diskonGlobal ? (subTotal * diskonGlobal) / 100 : 0;
+  const afterDiskon = subTotal - diskonAmt;
+  const ppnAmt = ppn ? (afterDiskon * ppn) / 100 : 0;
+  const biayaLain = biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
+  const grandTotal = afterDiskon + ppnAmt + biayaLain;
 
   return (
     <table style={tableStyle}>
@@ -175,21 +161,15 @@ function SummaryTable({
         </tr>
       </tbody>
     </table>
-  )
+  );
 }
 
 // ─── Helper: Retur SummaryTable (no diskon, no biaya tambahan) ───────────────
 
-function ReturSummaryTable({
-  detail,
-  ppn,
-}: {
-  detail: ReturDetailRow[]
-  ppn: number
-}) {
-  const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0)
-  const ppnAmt = ppn ? (subTotal * ppn) / 100 : 0
-  const grandTotal = subTotal + ppnAmt
+function ReturSummaryTable({ detail, ppn }: { detail: ReturDetailRow[]; ppn: number }) {
+  const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const ppnAmt = ppn ? (subTotal * ppn) / 100 : 0;
+  const grandTotal = subTotal + ppnAmt;
 
   return (
     <table style={tableStyle}>
@@ -208,41 +188,39 @@ function ReturSummaryTable({
         </tr>
       </tbody>
     </table>
-  )
+  );
 }
 
-// ─── Helper: Detail Table with price columns (Pembelian / Invoice) ───────────
+// ─── Helper: Detail Table with price columns (Invoice) ──────────────
 
 function DetailTableWithPrice({ detail }: { detail: PembelianDetailRow[] }) {
   return (
     <table style={tableStyle}>
       <thead>
         <tr>
-          <th style={{ ...headerCellStyle, width: '100px' }}>Kode Barang</th>
           <th style={headerCellStyle}>Nama Barang</th>
-          <th style={{ ...headerCellStyle, width: '50px' }}>Kts</th>
-          <th style={{ ...headerCellStyle, width: '100px' }}>@Harga</th>
-          <th style={{ ...headerCellStyle, width: '70px' }}>Diskon (%)</th>
-          <th style={{ ...headerCellStyle, width: '120px' }}>Total Harga</th>
+          <th style={{ ...headerCellStyle, width: '60px' }}>Kts</th>
+          <th style={{ ...headerCellStyle, width: '110px' }}>@Harga</th>
+          <th style={{ ...headerCellStyle, width: '80px' }}>Diskon (%)</th>
+          <th style={{ ...headerCellStyle, width: '130px' }}>Total Harga</th>
         </tr>
       </thead>
       <tbody>
         {detail.map((row) => {
-          const totalHarga = row.qty * row.harga
+          const totalHarga = row.qty * row.harga;
           return (
             <tr key={row.id}>
-              <td style={cellStyle}>{row.kodeBarang}</td>
               <td style={cellStyle}>{row.barang}</td>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(row.harga)}</td>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{row.diskon || 0}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(totalHarga)}</td>
             </tr>
-          )
+          );
         })}
       </tbody>
     </table>
-  )
+  );
 }
 
 // ─── Helper: Retur Detail Table (no diskon column) ──────────────────────────
@@ -252,29 +230,27 @@ function ReturDetailTable({ detail }: { detail: ReturDetailRow[] }) {
     <table style={tableStyle}>
       <thead>
         <tr>
-          <th style={{ ...headerCellStyle, width: '100px' }}>Kode Barang</th>
           <th style={headerCellStyle}>Nama Barang</th>
-          <th style={{ ...headerCellStyle, width: '50px' }}>Kts</th>
-          <th style={{ ...headerCellStyle, width: '100px' }}>@Harga</th>
-          <th style={{ ...headerCellStyle, width: '120px' }}>Total Harga</th>
+          <th style={{ ...headerCellStyle, width: '60px' }}>Kts</th>
+          <th style={{ ...headerCellStyle, width: '110px' }}>@Harga</th>
+          <th style={{ ...headerCellStyle, width: '140px' }}>Total Harga</th>
         </tr>
       </thead>
       <tbody>
         {detail.map((row) => {
-          const totalHarga = row.qty * row.harga
+          const totalHarga = row.qty * row.harga;
           return (
             <tr key={row.id}>
-              <td style={cellStyle}>{row.kodeBarang}</td>
               <td style={cellStyle}>{row.barang}</td>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(row.harga)}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(totalHarga)}</td>
             </tr>
-          )
+          );
         })}
       </tbody>
     </table>
-  )
+  );
 }
 
 // ─── Helper: Penerimaan Detail Table (no price columns) ─────────────────────
@@ -284,15 +260,13 @@ function PenerimaanDetailTable({ detail }: { detail: PenerimaanDetailRow[] }) {
     <table style={tableStyle}>
       <thead>
         <tr>
-          <th style={{ ...headerCellStyle, width: '120px' }}>Kode Barang</th>
           <th style={headerCellStyle}>Nama Barang</th>
-          <th style={{ ...headerCellStyle, width: '120px' }}>Kts. Satuan</th>
+          <th style={{ ...headerCellStyle, width: '140px' }}>Kts. Satuan</th>
         </tr>
       </thead>
       <tbody>
         {detail.map((row) => (
           <tr key={row.id}>
-            <td style={cellStyle}>{row.kodeBarang}</td>
             <td style={cellStyle}>{row.barang}</td>
             <td style={{ ...cellStyle, textAlign: 'center' }}>
               {formatNumber(row.qty)} {row.satuan}
@@ -301,13 +275,13 @@ function PenerimaanDetailTable({ detail }: { detail: PenerimaanDetailRow[] }) {
         ))}
       </tbody>
     </table>
-  )
+  );
 }
 
 // ─── Helper: Biaya Tambahan Table ───────────────────────────────────────────
 
 function BiayaTambahanTable({ items }: { items: BiayaTambahan[] }) {
-  if (!items || items.length === 0) return null
+  if (!items || items.length === 0) return null;
   return (
     <table style={{ ...tableStyle, marginTop: '6px' }}>
       <thead>
@@ -325,7 +299,7 @@ function BiayaTambahanTable({ items }: { items: BiayaTambahan[] }) {
         ))}
       </tbody>
     </table>
-  )
+  );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -333,19 +307,11 @@ function BiayaTambahanTable({ items }: { items: BiayaTambahan[] }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0)
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0
-  const afterDiskon = subTotal - diskonAmt
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0
-  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0)
-  const grandTotal = afterDiskon + ppnAmt + biayaLain
+  const totalQty = data.detail.reduce((s, r) => s + r.qty, 0);
+  const jumlahBarang = data.detail.length;
 
   return (
-    <div
-      id="pdf-content"
-      className="bg-white text-black p-8 min-w-[210mm]"
-      style={rootStyle}
-    >
+    <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-start gap-4">
@@ -361,7 +327,9 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <div style={{ marginBottom: '2px' }}><strong>Kepada</strong></div>
+          <div style={{ marginBottom: '2px' }}>
+            <strong>Kepada</strong>
+          </div>
           <div style={{ marginBottom: '2px' }}>{data.kepada}</div>
           <div>{data.alamat}</div>
         </div>
@@ -372,44 +340,55 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
         </div>
       </div>
 
-      {/* ── Detail Table ── */}
+      {/* ── Detail Table (tanpa harga) ── */}
       <div className="mb-4">
-        <DetailTableWithPrice detail={data.detail} />
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={headerCellStyle}>Nama Barang</th>
+              <th style={{ ...headerCellStyle, width: '80px' }}>Kts</th>
+              <th style={{ ...headerCellStyle, width: '100px' }}>Satuan</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.detail.map((row) => (
+              <tr key={row.id}>
+                <td style={cellStyle}>{row.barang}</td>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
-
-      {/* ── Biaya Tambahan ── */}
-      {data.biayaTambahan.length > 0 && (
-        <div className="mb-4">
-          <BiayaTambahanTable items={data.biayaTambahan} />
-        </div>
-      )}
 
       {/* ── Footer ── */}
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
         <div>
-          <div style={{ marginBottom: '6px' }}>
-            <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
-          </div>
           {data.keterangan && (
             <div style={{ marginBottom: '12px' }}>
               <strong>Keterangan:</strong>
               <div style={{ whiteSpace: 'pre-wrap' }}>{data.keterangan}</div>
             </div>
           )}
-          <div style={{ marginTop: '24px' }}>
-            Disetujui, Tgl. ________
-          </div>
+          <div style={{ marginTop: '24px' }}>Disetujui, Tgl. ________</div>
         </div>
 
-        {/* Right */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <SummaryTable
-            detail={data.detail}
-            diskonGlobal={data.diskonGlobal}
-            ppn={data.ppn}
-            biayaTambahan={data.biayaTambahan}
-          />
+        {/* Right: Summary stats */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <span>
+              <strong>Total Kuantitas:</strong>
+            </span>
+            <span>{formatNumber(totalQty)}</span>
+          </div>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <span>
+              <strong>Jumlah Barang:</strong>
+            </span>
+            <span>{jumlahBarang}</span>
+          </div>
         </div>
       </div>
 
@@ -428,11 +407,9 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
       </div>
 
       {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>
-        Halaman 1 dari 1
-      </div>
+      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
     </div>
-  )
+  );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -440,15 +417,11 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
-  const totalQty = data.detail.reduce((s, r) => s + r.qty, 0)
-  const jumlahBarang = data.detail.length
+  const totalQty = data.detail.reduce((s, r) => s + r.qty, 0);
+  const jumlahBarang = data.detail.length;
 
   return (
-    <div
-      id="pdf-content"
-      className="bg-white text-black p-8 min-w-[210mm]"
-      style={rootStyle}
-    >
+    <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-start gap-4">
@@ -464,7 +437,9 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <div style={{ marginBottom: '2px' }}><strong>Kepada</strong></div>
+          <div style={{ marginBottom: '2px' }}>
+            <strong>Kepada</strong>
+          </div>
           <div style={{ marginBottom: '2px' }}>{data.kepada}</div>
           <div>{data.alamat}</div>
         </div>
@@ -494,11 +469,15 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
         {/* Right: Summary stats */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <span><strong>Total Kuantitas:</strong></span>
+            <span>
+              <strong>Total Kuantitas:</strong>
+            </span>
             <span>{formatNumber(totalQty)}</span>
           </div>
           <div style={{ display: 'flex', gap: '4px' }}>
-            <span><strong>Jumlah Barang:</strong></span>
+            <span>
+              <strong>Jumlah Barang:</strong>
+            </span>
             <span>{jumlahBarang}</span>
           </div>
         </div>
@@ -524,11 +503,9 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
       </div>
 
       {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>
-        Halaman 1 dari 1
-      </div>
+      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
     </div>
-  )
+  );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -536,19 +513,15 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianData }) {
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0)
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0
-  const afterDiskon = subTotal - diskonAmt
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0
-  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0)
-  const grandTotal = afterDiskon + ppnAmt + biayaLain
+  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
+  const afterDiskon = subTotal - diskonAmt;
+  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
+  const grandTotal = afterDiskon + ppnAmt + biayaLain;
 
   return (
-    <div
-      id="pdf-content"
-      className="bg-white text-black p-8 min-w-[210mm]"
-      style={rootStyle}
-    >
+    <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-start gap-4">
@@ -564,7 +537,9 @@ export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianDa
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <div style={{ marginBottom: '2px' }}><strong>Dari</strong></div>
+          <div style={{ marginBottom: '2px' }}>
+            <strong>Dari</strong>
+          </div>
           <div style={{ marginBottom: '2px' }}>{data.dari}</div>
           <div>{data.alamat}</div>
         </div>
@@ -604,12 +579,7 @@ export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianDa
 
         {/* Right */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <SummaryTable
-            detail={data.detail}
-            diskonGlobal={data.diskonGlobal}
-            ppn={data.ppn}
-            biayaTambahan={data.biayaTambahan}
-          />
+          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} />
         </div>
       </div>
 
@@ -628,11 +598,9 @@ export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianDa
       </div>
 
       {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>
-        Halaman 1 dari 1
-      </div>
+      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
     </div>
-  )
+  );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -640,16 +608,12 @@ export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianDa
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function ReturPembelianPDFTemplate({ data }: { data: ReturPembelianData }) {
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0)
-  const ppnAmt = data.ppn ? (subTotal * data.ppn) / 100 : 0
-  const grandTotal = subTotal + ppnAmt
+  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const ppnAmt = data.ppn ? (subTotal * data.ppn) / 100 : 0;
+  const grandTotal = subTotal + ppnAmt;
 
   return (
-    <div
-      id="pdf-content"
-      className="bg-white text-black p-8 min-w-[210mm]"
-      style={rootStyle}
-    >
+    <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-start gap-4">
@@ -665,7 +629,9 @@ export function ReturPembelianPDFTemplate({ data }: { data: ReturPembelianData }
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <div style={{ marginBottom: '2px' }}><strong>Kepada</strong></div>
+          <div style={{ marginBottom: '2px' }}>
+            <strong>Kepada</strong>
+          </div>
           <div style={{ marginBottom: '2px' }}>{data.kepada}</div>
           <div>{data.alamat}</div>
         </div>
@@ -695,17 +661,12 @@ export function ReturPembelianPDFTemplate({ data }: { data: ReturPembelianData }
 
         {/* Right */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <ReturSummaryTable
-            detail={data.detail}
-            ppn={data.ppn}
-          />
+          <ReturSummaryTable detail={data.detail} ppn={data.ppn} />
         </div>
       </div>
 
       {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>
-        Halaman 1 dari 1
-      </div>
+      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
     </div>
-  )
+  );
 }

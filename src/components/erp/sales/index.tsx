@@ -7,7 +7,7 @@ import { stockLineError } from '@/lib/delivery-receipt';
 import { StockOperationErrorDialog, useStockOperationError } from '@/components/erp/stock-operation-error-dialog';
 
 import OrderDocumentForm from '@/components/erp/orders/order-document-form';
-import { canEditOrder, formatOrderMoney, summarizeOrderTotals } from '@/lib/order-documents';
+import { canEditOrder } from '@/lib/order-documents';
 
 import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -23,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, TrendingUp, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2 } from 'lucide-react';
+import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2 } from 'lucide-react';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
@@ -34,12 +34,13 @@ import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { useERPStore } from '@/store/erp-store';
 import { PesananCetakTab, PengirimanCetakTab, InvoiceCetakTab, ReturCetakTab } from '@/components/erp/sales/cetak-tabs';
+import { PenawaranTab, PenawaranCreateForm, PenawaranCetakTab } from '@/components/erp/sales/penawaran';
 import { PelunasanPiutangView } from '@/components/erp/pelunasan';
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { useInvoiceSaldos } from '@/lib/use-invoice-saldos';
-import type { SalesOrderResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+import type { SalesOrderResponse, SalesOrderSisaResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -164,7 +165,6 @@ interface InvoicePenjualanDraftData {
   salesOrderId: string;
   tanggal: string;
   syaratBayarId: string;
-  fob: string;
   ekspedisi: string;
   tanggalPengiriman: string;
   alamatPengiriman: string;
@@ -621,8 +621,9 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     setFormErrors({});
   }, []);
 
-  // === Fix persist salesOrderDetailId: saat SO dipilih, ambil detail SO dan
-  // prefill baris barang (qty + satuan + link line SO) serta pelanggan.
+  // === Tarik data otomatis SO → Pengiriman (Task 16-c2): saat SO dipilih,
+  // ambil SISA qty per baris (endpoint /sisa) dan prefill hanya baris yang
+  // masih ada sisaKirim (qty = sisa), plus pelanggan & alamat pengiriman SO.
   // Baris ter-link otomatis mengirim salesOrderDetailId sehingga validasi
   // over-delivery per line aktif di backend (create + finish).
   const handleSalesOrderChange = useCallback(async (soId: string) => {
@@ -631,26 +632,32 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     if (!soId) return;
     setSoLoading(true);
     try {
-      const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
-      setFPelangganId(so.pelangganId || '');
-      if (Array.isArray(so.details) && so.details.length > 0) {
-        setFDetail(
-          so.details.map((d) => ({
-            id: crypto.randomUUID(),
-            barangId: d.barangId,
-            kodeBarang: d.barang?.kode || '',
-            barangNama: d.barang?.nama || '',
-            harga: String(d.harga ?? 0),
-            qty: String(d.qty ?? 1),
-            diskon: '0',
-            satuanId: d.satuanId || '',
-            satuanNama: d.satuan?.nama || '',
-            salesOrderDetailId: d.id
-          }))
-        );
+      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+      setFPelangganId(sisa.pelangganId || '');
+      // Hanya timpa alamat bila SO punya alamat (jangan kosongkan isian user).
+      if (sisa.alamatPengiriman) setFAlamatPengiriman(sisa.alamatPengiriman);
+      const rows = (sisa.details || []).filter((d) => Number(d.sisaKirim) > 0);
+      if (rows.length === 0) {
+        toast.info('Semua baris SO sudah terkirim sepenuhnya', { description: 'Tidak ada sisa qty yang perlu dikirim untuk SO ini.' });
+        setFDetail([]);
+        return;
       }
+      setFDetail(
+        rows.map((d) => ({
+          id: crypto.randomUUID(),
+          barangId: d.barangId,
+          kodeBarang: d.kodeBarang || '',
+          barangNama: d.namaBarang || '',
+          harga: String(d.harga ?? 0),
+          qty: String(d.sisaKirim),
+          diskon: String(d.diskon ?? 0),
+          satuanId: d.satuanId || '',
+          satuanNama: d.satuanNama || '',
+          salesOrderDetailId: d.salesOrderDetailId
+        }))
+      );
     } catch {
-      // Gagal memuat detail SO — biarkan user isi baris manual (tanpa link)
+      // Gagal memuat sisa SO — biarkan user isi baris manual (tanpa link)
     } finally {
       setSoLoading(false);
     }
@@ -1014,7 +1021,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fSalesOrderId, setFSalesOrderId] = useState('');
   const [fTanggal, setFTanggal] = useState(todayStr());
   const [fSyaratBayarId, setFSyaratBayarId] = useState('');
-  const [fFob, setFFob] = useState('');
   const [fEkspedisi, setFEkspedisi] = useState('');
   const [fTanggalPengiriman, setFTanggalPengiriman] = useState('');
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
@@ -1023,6 +1029,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
+  const [soLoading, setSoLoading] = useState(false);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1038,7 +1045,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFSalesOrderId(d.salesOrderId || '');
     setFTanggal(d.tanggal || todayStr());
     setFSyaratBayarId(d.syaratBayarId || '');
-    setFFob(d.fob || '');
     setFEkspedisi(d.ekspedisi || '');
     setFTanggalPengiriman(d.tanggalPengiriman || '');
     setFAlamatPengiriman(d.alamatPengiriman || '');
@@ -1065,7 +1071,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       salesOrderId: fSalesOrderId,
       tanggal: fTanggal,
       syaratBayarId: fSyaratBayarId,
-      fob: fFob,
       ekspedisi: fEkspedisi,
       tanggalPengiriman: fTanggalPengiriman,
       alamatPengiriman: fAlamatPengiriman,
@@ -1075,7 +1080,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       detail: fDetail,
       biayaTambahan: fBiayaTambahan
     });
-  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fFob, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fKeterangan, fDetail, fBiayaTambahan]);
+  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fKeterangan, fDetail, fBiayaTambahan]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
@@ -1084,7 +1089,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFSalesOrderId('');
     setFTanggal(todayStr());
     setFSyaratBayarId('');
-    setFFob('');
     setFEkspedisi('');
     setFTanggalPengiriman('');
     setFAlamatPengiriman('');
@@ -1094,6 +1098,46 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFDetail([newDetailRow()]);
     setFBiayaTambahan([]);
     setFormErrors({});
+  }, []);
+
+  // === Tarik data otomatis SO → Invoice Penjualan (Task 16-c2): saat SO
+  // dipilih, ambil SISA qty per baris (endpoint /sisa), auto-set pelanggan,
+  // dan prefill hanya baris yang masih ada sisaFaktur (harga/diskon mengikuti
+  // line SO). Baris ter-link mengirim salesOrderDetailId sehingga komputasi
+  // sisa faktur per SO line di backend tetap akurat.
+  // Pilihan "Tidak ada" (kosong) TIDAK menghapus baris — user tetap bisa manual.
+  const handleSalesOrderChange = useCallback(async (soId: string) => {
+    setFSalesOrderId(soId);
+    if (!soId) return;
+    setSoLoading(true);
+    try {
+      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+      setFPelangganId(sisa.pelangganId || '');
+      const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+      if (rows.length === 0) {
+        toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
+        setFDetail([]);
+        return;
+      }
+      setFDetail(
+        rows.map((d) => ({
+          id: crypto.randomUUID(),
+          barangId: d.barangId,
+          kodeBarang: d.kodeBarang || '',
+          barangNama: d.namaBarang || '',
+          harga: String(d.harga ?? 0),
+          qty: String(d.sisaFaktur),
+          diskon: String(d.diskon ?? 0),
+          satuanId: d.satuanId || '',
+          satuanNama: d.satuanNama || '',
+          salesOrderDetailId: d.salesOrderDetailId
+        }))
+      );
+    } catch {
+      // Gagal memuat sisa SO — biarkan user isi baris manual
+    } finally {
+      setSoLoading(false);
+    }
   }, []);
 
   const formSubtotal = useMemo(
@@ -1126,7 +1170,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
           const qty = parseFloat(r.qty) || 0;
           const harga = parseFloat(r.harga) || 0;
           const diskon = parseFloat(r.diskon) || 0;
-          return { barangId: r.barangId, harga, qty, diskon: diskon || null, subTotal: qty * harga * (1 - diskon / 100) };
+          // Task 16-c2: link per baris ke line SO (bila baris ditarik dari SO).
+          return { barangId: r.barangId, harga, qty, diskon: diskon || null, subTotal: qty * harga * (1 - diskon / 100), salesOrderDetailId: r.salesOrderDetailId || null };
         });
       const biaya: TransaksiBiayaCreate[] = fBiayaTambahan
         .filter((b) => b.nama)
@@ -1140,7 +1185,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         pelangganId: fPelangganId,
         syaratBayarId: fSyaratBayarId || null,
         salesOrderId: fSalesOrderId || null,
-        fob: fFob || null,
         ekspedisi: fEkspedisi || null,
         tanggalPengiriman: fTanggalPengiriman || null,
         alamatPengiriman: fAlamatPengiriman || null,
@@ -1160,7 +1204,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     } finally {
       setSubmitting(false);
     }
-  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fFob, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fKeterangan, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fKeterangan, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
 
   if (ddLoading) {
     return (
@@ -1199,20 +1243,15 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Link ke Sales Order</Label>
-              <SearchableDropdown value={fSalesOrderId} onValueChange={setFSalesOrderId} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." />
+              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." disabled={soLoading} />
+              {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">FOB</Label>
-              <Input className="h-9 text-xs" value={fFob} onChange={(e) => setFFob(e.target.value)} placeholder="e.g. Jakarta" />
-            </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Ekspedisi</Label>
               <Input className="h-9 text-xs" value={fEkspedisi} onChange={(e) => setFEkspedisi(e.target.value)} />
             </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Tanggal Pengiriman</Label>
               <Input type="date" className="h-9 text-xs" value={fTanggalPengiriman} onChange={(e) => setFTanggalPengiriman(e.target.value)} />
@@ -1289,7 +1328,6 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   const [editTanggal, setEditTanggal] = useState('');
   const [editSyaratBayarId, setEditSyaratBayarId] = useState('');
   const [editSalesOrderId, setEditSalesOrderId] = useState('');
-  const [editFob, setEditFob] = useState('');
   const [editEkspedisi, setEditEkspedisi] = useState('');
   const [editTanggalPengiriman, setEditTanggalPengiriman] = useState('');
   const [editAlamatPengiriman, setEditAlamatPengiriman] = useState('');
@@ -1297,6 +1335,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   const [editDiskonGlobal, setEditDiskonGlobal] = useState('0');
   const [editPpn, setEditPpn] = useState('11');
   const [editKeterangan, setEditKeterangan] = useState('');
+  const [soLoading, setSoLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1312,7 +1351,6 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         setEditTanggal(inv.tanggal ? inv.tanggal.slice(0, 10) : '');
         setEditSyaratBayarId(inv.syaratBayarId || '');
         setEditSalesOrderId(inv.salesOrderId || '');
-        setEditFob(inv.fob || '');
         setEditEkspedisi(inv.ekspedisi || '');
         setEditTanggalPengiriman(inv.tanggalPengiriman ? inv.tanggalPengiriman.slice(0, 10) : '');
         setEditAlamatPengiriman(inv.alamatPengiriman || '');
@@ -1332,6 +1370,24 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     };
   }, [editId]);
 
+  // === Tarik data otomatis SO → Invoice Penjualan (edit) (Task 16-c2):
+  // mengganti SO pada form edit hanya menarik data header (pelanggan) dari
+  // endpoint /sisa. Detail barang invoice TIDAK diubah saat edit (payload PUT
+  // tanpa `details` — baris tersimpan dipertahankan backend apa adanya).
+  const handleEditSalesOrderChange = useCallback(async (soId: string) => {
+    setEditSalesOrderId(soId);
+    if (!soId) return;
+    setSoLoading(true);
+    try {
+      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+      if (sisa.pelangganId) setEditPelangganId(sisa.pelangganId);
+    } catch {
+      // Gagal memuat sisa SO — biarkan isian header saat ini
+    } finally {
+      setSoLoading(false);
+    }
+  }, []);
+
   const handleEditSubmit = useCallback(async () => {
     if (!editPelangganId) {
       toast.error('Pelanggan wajib diisi');
@@ -1348,7 +1404,6 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         pelangganId: editPelangganId,
         syaratBayarId: editSyaratBayarId || null,
         salesOrderId: editSalesOrderId || null,
-        fob: editFob || null,
         ekspedisi: editEkspedisi || null,
         tanggalPengiriman: editTanggalPengiriman || null,
         alamatPengiriman: editAlamatPengiriman || null,
@@ -1366,7 +1421,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     } finally {
       setEditSubmitting(false);
     }
-  }, [editId, editPelangganId, editTanggal, editSyaratBayarId, editSalesOrderId, editFob, editEkspedisi, editTanggalPengiriman, editAlamatPengiriman, editMataUang, editDiskonGlobal, editPpn, editKeterangan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [editId, editPelangganId, editTanggal, editSyaratBayarId, editSalesOrderId, editEkspedisi, editTanggalPengiriman, editAlamatPengiriman, editMataUang, editDiskonGlobal, editPpn, editKeterangan, subPage, activeTabId, closeTab, refreshListTab]);
 
   return (
     <FormTabShell title="Edit Invoice Penjualan">
@@ -1416,20 +1471,15 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Link ke Sales Order</Label>
-                  <SearchableDropdown value={editSalesOrderId} onValueChange={setEditSalesOrderId} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." />
+                  <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." disabled={soLoading} />
+                  {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">FOB</Label>
-                  <Input className="h-9 text-xs" value={editFob} onChange={(e) => setEditFob(e.target.value)} placeholder="e.g. Jakarta" />
-                </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Ekspedisi</Label>
                   <Input className="h-9 text-xs" value={editEkspedisi} onChange={(e) => setEditEkspedisi(e.target.value)} />
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Tanggal Pengiriman</Label>
                   <Input type="date" className="h-9 text-xs" value={editTanggalPengiriman} onChange={(e) => setEditTanggalPengiriman(e.target.value)} />
@@ -2013,35 +2063,20 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
     refreshKey
   );
 
-  const summaryTotal = summarizeOrderTotals(data);
-
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card className="border-emerald-200 bg-emerald-50/50">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-              <ShoppingCart className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs text-emerald-600 font-medium">Total Pesanan</p>
-              {loading ? <Skeleton className="mt-1 h-6 w-16" /> : <p className="text-2xl font-bold text-emerald-700">{total}</p>}
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-emerald-200 bg-emerald-50/50">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-              <TrendingUp className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs text-emerald-600 font-medium">Total Nilai (halaman ini)</p>
-              {loading ? <Skeleton className="mt-1 h-6 w-28" /> : <p className="text-2xl font-bold text-emerald-700">{summaryTotal}</p>}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="border-emerald-200 bg-emerald-50/50">
+        <CardContent className="p-4 flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <ShoppingCart className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-xs text-emerald-600 font-medium">Total Pesanan</p>
+            {loading ? <Skeleton className="mt-1 h-6 w-16" /> : <p className="text-2xl font-bold text-emerald-700">{total}</p>}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* List Card */}
       <Card>
@@ -2146,7 +2181,6 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                     <TableHead>Pelanggan</TableHead>
                     <TableHead>Customer PO</TableHead>
                     <TableHead>Fulfillment Status</TableHead>
-                    <TableHead className="text-right w-[160px]">Total Nilai</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
                     <TableHead className="w-[140px] text-center">Workflow</TableHead>
                     <TableHead className="w-[100px] text-center">Aksi</TableHead>
@@ -2154,10 +2188,10 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={9} />
+                    <SkeletonRows cols={8} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                         Tidak ada data pesanan.
                       </TableCell>
                     </TableRow>
@@ -2171,7 +2205,6 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                         <TableCell>
                           <Badge variant="outline">{d.fulfillmentStatus || '-'}</Badge>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-xs font-medium">{formatOrderMoney(d.grandTotal, d.currency)}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
                         </TableCell>
@@ -3289,6 +3322,17 @@ export default function Sales({ subPage: subPageProp, refreshKey, formMode, form
       return <ReturCetakTab id={editId} />;
     }
 
+    // ── Penawaran (quotation) — update #3 ──
+    if (formMode === 'penawaran-create') {
+      return <PenawaranCreateForm subPage={subPage} />;
+    }
+    if (formMode === 'penawaran-edit' && editId) {
+      return <PenawaranCreateForm editId={editId} subPage={subPage} />;
+    }
+    if (formMode === 'penawaran-cetak' && editId) {
+      return <PenawaranCetakTab id={editId} />;
+    }
+
     if (formMode === 'pesanan-penjualan-create') {
       return <PesananPenjualanCreateForm subPage={subPage} />;
     }
@@ -3368,6 +3412,7 @@ function SalesList({ subPage, refreshKey }: { subPage: string; refreshKey?: numb
         </div>
       ) : (
         <>
+          {subPage === 'penawaran' && <PenawaranTab pelangganOptions={pelangganOptions} refreshKey={refreshKey} />}
           {subPage === 'pesanan' && <PesananTab pelangganOptions={pelangganOptions} syaratBayarOptions={syaratBayarOptions} barangOptions={barangOptions} refreshKey={refreshKey} />}
           {subPage === 'pengiriman' && <PengirimanTab pelangganOptions={pelangganOptions} barangOptions={barangOptions} satuanOptions={satuanOptions} salesOrderOptions={salesOrderOptions} refreshKey={refreshKey} />}
           {subPage === 'invoice' && <InvoiceTab pelangganOptions={pelangganOptions} syaratBayarOptions={syaratBayarOptions} barangOptions={barangOptions} salesOrderOptions={salesOrderOptions} refreshKey={refreshKey} />}

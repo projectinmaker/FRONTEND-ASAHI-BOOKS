@@ -958,6 +958,135 @@ export interface TransaksiBiayaResponse extends TransaksiBiayaCreate {
   id: string;
 }
 
+// ── Penawaran (Quotation) ────────────────────────────────────────────
+
+export interface PenawaranDetailCreate {
+  barangId: string;
+  satuanId?: string | null;
+  qty: number;
+  harga: number;
+  diskon?: number;
+  subTotal?: number;
+  keterangan?: string | null;
+}
+
+export interface PenawaranDetailResponse extends PenawaranDetailCreate {
+  id: string;
+  barang?: { id: string; kode: string; nama: string } | null;
+  satuan?: { id: string; nama: string } | null;
+}
+
+export interface PenawaranCreate {
+  pelangganId: string;
+  tanggal: string;
+  berlakuHingga?: string | null;
+  syaratBayarId?: string | null;
+  alamatPengiriman?: string | null;
+  keterangan?: string | null;
+  mataUang?: string;
+  diskonGlobal?: number;
+  ppn?: number;
+  details: PenawaranDetailCreate[];
+  biayaTambahan?: TransaksiBiayaCreate[];
+}
+
+export type PenawaranUpdate = Partial<PenawaranCreate>;
+
+export interface PenawaranResponse {
+  id: string;
+  noPenawaran: string;
+  tanggal: string;
+  berlakuHingga?: string | null;
+  pelangganId: string;
+  syaratBayarId?: string | null;
+  alamatPengiriman?: string | null;
+  keterangan?: string | null;
+  mataUang: string;
+  diskonGlobal: string;
+  ppn: string;
+  subTotal: string;
+  totalDiskon: string;
+  totalPpn: string;
+  totalBiayaTambahan: string;
+  grandTotal: string;
+  status: string;
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  pelanggan?: { id: string; kode: string; nama: string } | null;
+  syaratBayar?: { id: string; nama: string; hari?: number | null } | null;
+  creator?: { id: string; nama: string } | null;
+  details: PenawaranDetailResponse[];
+  biayaTambahan: TransaksiBiayaResponse[];
+}
+
+// ── Sisa qty dokumen sumber (tarik data SO/PO) ───────────────────────
+
+export interface SalesOrderSisaDetail {
+  salesOrderDetailId: string;
+  barangId: string;
+  kodeBarang: string;
+  namaBarang: string;
+  satuanId?: string | null;
+  satuanNama?: string | null;
+  qtyPesanan: number;
+  qtyTerkirim: number;
+  qtyTerfaktur: number;
+  sisaKirim: number;
+  sisaFaktur: number;
+  harga: number;
+  diskon: number;
+}
+
+export interface SalesOrderSisaResponse {
+  salesOrderId: string;
+  pelangganId: string;
+  syaratBayarId?: string | null;
+  noPesanan: string;
+  alamatPengiriman?: string | null;
+  details: SalesOrderSisaDetail[];
+}
+
+export interface PurchaseOrderSisaDetail {
+  purchaseOrderDetailId: string;
+  barangId: string;
+  kodeBarang: string;
+  namaBarang: string;
+  satuanId?: string | null;
+  satuanNama?: string | null;
+  qtyPesanan: number;
+  qtyDiterima: number;
+  qtyTerfaktur: number;
+  sisaTerima: number;
+  sisaFaktur: number;
+  harga: number;
+  diskon: number;
+}
+
+export interface PurchaseOrderSisaResponse {
+  purchaseOrderId: string;
+  supplierId: string;
+  noPesanan: string;
+  alamat?: string | null;
+  syaratBayarId?: string | null;
+  details: PurchaseOrderSisaDetail[];
+}
+
+// ── Pilihan akun per aktivitas (form Barang & Jasa) ──────────────────
+
+export interface BarangAkunPilihan {
+  id: string;
+  kode: string;
+  nama: string;
+}
+
+export interface BarangAkunPilihanResponse {
+  hpp: BarangAkunPilihan[];
+  penjualan: BarangAkunPilihan[];
+  retur: BarangAkunPilihan[];
+  diskon: BarangAkunPilihan[];
+}
+
 // ── Kas & Bank ───────────────────────────────────────────────────────
 
 export interface PembayaranRincianCreate {
@@ -1153,7 +1282,6 @@ export interface SalesOrderCreate {
   tanggal: string;
   pelangganId: string;
   syaratBayarId?: string | null;
-  fob?: string | null;
   ekspedisi?: string | null;
   tanggalPengiriman?: string | null;
   penjual?: string | null;
@@ -1176,7 +1304,6 @@ export interface SalesOrderUpdate {
   tanggal?: string;
   pelangganId?: string;
   syaratBayarId?: string | null;
-  fob?: string | null;
   ekspedisi?: string | null;
   tanggalPengiriman?: string | null;
   penjual?: string | null;
@@ -1197,7 +1324,6 @@ export interface SalesOrderResponse {
   tanggal: string;
   pelangganId: string;
   syaratBayarId: string | null;
-  fob: string | null;
   ekspedisi: string | null;
   tanggalPengiriman: string | null;
   penjual: string | null;
@@ -1246,7 +1372,6 @@ export interface SalesInvoiceCreate {
   pelangganId: string;
   syaratBayarId?: string | null;
   salesOrderId?: string | null;
-  fob?: string | null;
   ekspedisi?: string | null;
   tanggalPengiriman?: string | null;
   alamatPengiriman?: string | null;
@@ -1264,7 +1389,6 @@ export interface SalesInvoiceUpdate {
   pelangganId?: string;
   syaratBayarId?: string | null;
   salesOrderId?: string | null;
-  fob?: string | null;
   ekspedisi?: string | null;
   tanggalPengiriman?: string | null;
   alamatPengiriman?: string | null;
@@ -1282,7 +1406,6 @@ export interface SalesInvoiceResponse {
   pelangganId: string;
   syaratBayarId: string | null;
   salesOrderId: string | null;
-  fob: string | null;
   ekspedisi: string | null;
   tanggalPengiriman: string | null;
   alamatPengiriman: string | null;

@@ -8,13 +8,8 @@ import { Printer, Download, AlertCircle } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { generatePDF } from '@/lib/pdf-utils';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
-import {
-  PesananPDFTemplate, PengirimanPDFTemplate, InvoicePDFTemplate, ReturPDFTemplate,
-  type PesananData, type PengirimanData, type InvoiceData, type ReturData, type DetailRow, type BiayaTambahan,
-} from '@/components/erp/sales/pdf-templates';
-import type {
-  SalesOrderResponse, SalesInvoiceResponse, SalesReturResponse, PengirimanBarangResponse,
-} from '@/types/api';
+import { PesananPDFTemplate, PengirimanPDFTemplate, InvoicePDFTemplate, ReturPDFTemplate, type PesananData, type PengirimanData, type InvoiceData, type ReturData, type DetailRow, type BiayaTambahan } from '@/components/erp/sales/pdf-templates';
+import type { SalesOrderResponse, SalesInvoiceResponse, SalesReturResponse, PengirimanBarangResponse } from '@/types/api';
 
 // ─── Shared error card ──────────────────────────────────────────────────────
 
@@ -50,26 +45,25 @@ function mapPesananData(d: SalesOrderResponse): PesananData {
     kepada: d.pelanggan?.nama || '',
     alamatPenerima: d.alamatPengiriman || '',
     syaratPembayaran: d.syaratBayar?.nama || '',
-    fob: d.fob || '',
     ekspedisi: d.ekspedisi || '',
     tanggalPengiriman: d.tanggalPengiriman || '',
     penjual: d.penjual || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
-      kodeBarang: r.barang?.kode || '',
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
       diskon: Number(r.diskon) || 0,
+      satuan: r.satuan?.nama || ''
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,
       nama: b.nama || '',
-      jumlah: Number(b.jumlah) || 0,
+      jumlah: Number(b.jumlah) || 0
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0,
+    ppn: Number(d.ppn) || 0
   };
 }
 
@@ -94,7 +88,9 @@ export function PesananCetakTab({ id }: { id: string }) {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDownload = useCallback(async () => {
     if (!data) return;
@@ -121,12 +117,18 @@ export function PesananCetakTab({ id }: { id: string }) {
             <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
           </Button>
         </div>
-        {loading ? <CetakLoading /> : error ? <CetakError message={error} /> : data && (
-          <div className="overflow-x-auto border rounded-md bg-white">
-            <div id={elementId} className="inline-block">
-              <PesananPDFTemplate data={data} />
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <PesananPDFTemplate data={data} />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </FormTabShell>
@@ -145,14 +147,13 @@ function mapPengirimanData(d: PengirimanBarangResponse): PengirimanData {
     poNo: d.salesOrder?.noPesanan || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
-      kodeBarang: r.barang?.kode || '',
       barang: r.barang?.nama || '',
       harga: 0,
       qty: Number(r.qty) || 0,
       diskon: 0,
-      satuan: r.satuan?.nama || '',
+      satuan: r.satuan?.nama || ''
     })),
-    keterangan: d.keterangan || '',
+    keterangan: d.keterangan || ''
   };
 }
 
@@ -177,7 +178,9 @@ export function PengirimanCetakTab({ id }: { id: string }) {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDownload = useCallback(async () => {
     if (!data) return;
@@ -189,7 +192,9 @@ export function PengirimanCetakTab({ id }: { id: string }) {
     }
   }, [data, elementId, id]);
 
-  const handlePrint = useCallback(() => { window.print(); }, []);
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <FormTabShell title={`Cetak Surat Jalan${data ? ` — ${data.nomor}` : ''}`}>
@@ -202,12 +207,18 @@ export function PengirimanCetakTab({ id }: { id: string }) {
             <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
           </Button>
         </div>
-        {loading ? <CetakLoading /> : error ? <CetakError message={error} /> : data && (
-          <div className="overflow-x-auto border rounded-md bg-white">
-            <div id={elementId} className="inline-block">
-              <PengirimanPDFTemplate data={data} />
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <PengirimanPDFTemplate data={data} />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </FormTabShell>
@@ -223,27 +234,25 @@ function mapInvoiceData(d: SalesInvoiceResponse): InvoiceData {
     kepada: d.pelanggan?.nama || '',
     alamatPenerima: d.alamatPengiriman || '',
     syaratPembayaran: d.syaratBayar?.nama || '',
-    fob: d.fob || '',
     ekspedisi: d.ekspedisi || '',
     tanggalPengiriman: d.tanggalPengiriman || '',
     poNo: d.salesOrder?.noPesanan || '',
     mataUang: d.mataUang || 'IDR',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
-      kodeBarang: r.barang?.kode || '',
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
-      diskon: Number(r.diskon) || 0,
+      diskon: Number(r.diskon) || 0
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,
       nama: b.nama || '',
-      jumlah: Number(b.jumlah) || 0,
+      jumlah: Number(b.jumlah) || 0
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0,
+    ppn: Number(d.ppn) || 0
   };
 }
 
@@ -268,7 +277,9 @@ export function InvoiceCetakTab({ id }: { id: string }) {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDownload = useCallback(async () => {
     if (!data) return;
@@ -280,7 +291,9 @@ export function InvoiceCetakTab({ id }: { id: string }) {
     }
   }, [data, elementId, id]);
 
-  const handlePrint = useCallback(() => { window.print(); }, []);
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <FormTabShell title={`Cetak Faktur Penjualan${data ? ` — ${data.nomor}` : ''}`}>
@@ -293,12 +306,18 @@ export function InvoiceCetakTab({ id }: { id: string }) {
             <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
           </Button>
         </div>
-        {loading ? <CetakLoading /> : error ? <CetakError message={error} /> : data && (
-          <div className="overflow-x-auto border rounded-md bg-white">
-            <div id={elementId} className="inline-block">
-              <InvoicePDFTemplate data={data} />
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <InvoicePDFTemplate data={data} />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </FormTabShell>
@@ -316,15 +335,14 @@ function mapReturData(d: SalesReturResponse): ReturData {
     noPengembalian: d.noPengembalian || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
-      kodeBarang: r.barang?.kode || '',
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
-      diskon: 0,
+      diskon: 0
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0,
+    ppn: Number(d.ppn) || 0
   };
 }
 
@@ -349,7 +367,9 @@ export function ReturCetakTab({ id }: { id: string }) {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDownload = useCallback(async () => {
     if (!data) return;
@@ -361,7 +381,9 @@ export function ReturCetakTab({ id }: { id: string }) {
     }
   }, [data, elementId, id]);
 
-  const handlePrint = useCallback(() => { window.print(); }, []);
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <FormTabShell title={`Cetak Retur Penjualan${data ? ` — ${data.nomor}` : ''}`}>
@@ -374,12 +396,18 @@ export function ReturCetakTab({ id }: { id: string }) {
             <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
           </Button>
         </div>
-        {loading ? <CetakLoading /> : error ? <CetakError message={error} /> : data && (
-          <div className="overflow-x-auto border rounded-md bg-white">
-            <div id={elementId} className="inline-block">
-              <ReturPDFTemplate data={data} />
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <ReturPDFTemplate data={data} />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </FormTabShell>

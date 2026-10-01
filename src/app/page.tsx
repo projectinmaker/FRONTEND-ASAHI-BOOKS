@@ -44,6 +44,7 @@ const subPageLabels: Record<string, string> = {
   'transfer-bank': 'Transfer Bank',
   'rekonsiliasi-bank': 'Rekonsiliasi Bank',
   // Penjualan / Pembelian
+  penawaran: 'Penawaran',
   pesanan: 'Pesanan',
   pengiriman: 'Pengiriman',
   invoice: 'Invoice',

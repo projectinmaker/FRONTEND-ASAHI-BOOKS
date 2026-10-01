@@ -8,14 +8,8 @@ import { Printer, Download, AlertCircle } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { generatePDF } from '@/lib/pdf-utils';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
-import {
-  PembelianPDFTemplate, PenerimaanPDFTemplate, InvoicePembelianPDFTemplate, ReturPembelianPDFTemplate,
-  type PembelianData, type PenerimaanData, type InvoicePembelianData, type ReturPembelianData,
-  type PembelianDetailRow, type PenerimaanDetailRow, type ReturDetailRow, type BiayaTambahan,
-} from '@/components/erp/purchasing/pdf-templates';
-import type {
-  PurchaseOrderResponse, PurchaseInvoiceResponse, PurchaseReturResponse, PenerimaanBarangResponse,
-} from '@/types/api';
+import { PembelianPDFTemplate, PenerimaanPDFTemplate, InvoicePembelianPDFTemplate, ReturPembelianPDFTemplate, type PembelianData, type PenerimaanData, type InvoicePembelianData, type ReturPembelianData, type PembelianDetailRow, type PenerimaanDetailRow, type ReturDetailRow, type BiayaTambahan } from '@/components/erp/purchasing/pdf-templates';
+import type { PurchaseOrderResponse, PurchaseInvoiceResponse, PurchaseReturResponse, PenerimaanBarangResponse } from '@/types/api';
 
 // ─── Shared error card ──────────────────────────────────────────────────────
 
@@ -53,20 +47,20 @@ function mapPembelianData(d: PurchaseOrderResponse): PembelianData {
     alamat: d.alamat || '',
     detail: (d.details || []).map<PembelianDetailRow>((r) => ({
       id: r.id,
-      kodeBarang: r.barang?.kode || '',
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
       diskon: Number(r.diskon) || 0,
+      satuan: r.satuan?.nama || ''
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,
       nama: b.nama || '',
-      jumlah: Number(b.jumlah) || 0,
+      jumlah: Number(b.jumlah) || 0
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0,
+    ppn: Number(d.ppn) || 0
   };
 }
 
@@ -91,7 +85,9 @@ export function PesananPembelianCetakTab({ id }: { id: string }) {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDownload = useCallback(async () => {
     if (!data) return;
@@ -103,7 +99,9 @@ export function PesananPembelianCetakTab({ id }: { id: string }) {
     }
   }, [data, elementId, id]);
 
-  const handlePrint = useCallback(() => { window.print(); }, []);
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <FormTabShell title={`Cetak Pesanan Pembelian${data ? ` — ${data.nomor}` : ''}`}>
@@ -116,12 +114,18 @@ export function PesananPembelianCetakTab({ id }: { id: string }) {
             <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
           </Button>
         </div>
-        {loading ? <CetakLoading /> : error ? <CetakError message={error} /> : data && (
-          <div className="overflow-x-auto border rounded-md bg-white">
-            <div id={elementId} className="inline-block">
-              <PembelianPDFTemplate data={data} />
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <PembelianPDFTemplate data={data} />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </FormTabShell>
@@ -138,12 +142,11 @@ function mapPenerimaanData(d: PenerimaanBarangResponse): PenerimaanData {
     alamat: d.alamat || '',
     detail: (d.details || []).map<PenerimaanDetailRow>((r) => ({
       id: r.id,
-      kodeBarang: r.barang?.kode || '',
       barang: r.barang?.nama || '',
       qty: Number(r.qty) || 0,
-      satuan: r.satuan?.nama || '',
+      satuan: r.satuan?.nama || ''
     })),
-    keterangan: d.keterangan || '',
+    keterangan: d.keterangan || ''
   };
 }
 
@@ -168,7 +171,9 @@ export function PenerimaanCetakTab({ id }: { id: string }) {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDownload = useCallback(async () => {
     if (!data) return;
@@ -180,7 +185,9 @@ export function PenerimaanCetakTab({ id }: { id: string }) {
     }
   }, [data, elementId, id]);
 
-  const handlePrint = useCallback(() => { window.print(); }, []);
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <FormTabShell title={`Cetak Penerimaan Barang${data ? ` — ${data.nomor}` : ''}`}>
@@ -193,12 +200,18 @@ export function PenerimaanCetakTab({ id }: { id: string }) {
             <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
           </Button>
         </div>
-        {loading ? <CetakLoading /> : error ? <CetakError message={error} /> : data && (
-          <div className="overflow-x-auto border rounded-md bg-white">
-            <div id={elementId} className="inline-block">
-              <PenerimaanPDFTemplate data={data} />
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <PenerimaanPDFTemplate data={data} />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </FormTabShell>
@@ -216,20 +229,19 @@ function mapInvoicePembelianData(d: PurchaseInvoiceResponse): InvoicePembelianDa
     alamat: d.alamat || '',
     detail: (d.details || []).map<PembelianDetailRow>((r) => ({
       id: r.id,
-      kodeBarang: r.barang?.kode || '',
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
-      diskon: Number(r.diskon) || 0,
+      diskon: Number(r.diskon) || 0
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,
       nama: b.nama || '',
-      jumlah: Number(b.jumlah) || 0,
+      jumlah: Number(b.jumlah) || 0
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0,
+    ppn: Number(d.ppn) || 0
   };
 }
 
@@ -254,7 +266,9 @@ export function InvoicePembelianCetakTab({ id }: { id: string }) {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDownload = useCallback(async () => {
     if (!data) return;
@@ -266,7 +280,9 @@ export function InvoicePembelianCetakTab({ id }: { id: string }) {
     }
   }, [data, elementId, id]);
 
-  const handlePrint = useCallback(() => { window.print(); }, []);
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <FormTabShell title={`Cetak Faktur Pembelian${data ? ` — ${data.nomor}` : ''}`}>
@@ -279,12 +295,18 @@ export function InvoicePembelianCetakTab({ id }: { id: string }) {
             <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
           </Button>
         </div>
-        {loading ? <CetakLoading /> : error ? <CetakError message={error} /> : data && (
-          <div className="overflow-x-auto border rounded-md bg-white">
-            <div id={elementId} className="inline-block">
-              <InvoicePembelianPDFTemplate data={data} />
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <InvoicePembelianPDFTemplate data={data} />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </FormTabShell>
@@ -302,13 +324,12 @@ function mapReturPembelianData(d: PurchaseReturResponse): ReturPembelianData {
     alamat: d.alamat || '',
     detail: (d.details || []).map<ReturDetailRow>((r) => ({
       id: r.id,
-      kodeBarang: r.barang?.kode || '',
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
-      qty: Number(r.qty) || 0,
+      qty: Number(r.qty) || 0
     })),
     keterangan: d.keterangan || '',
-    ppn: Number(d.ppn) || 0,
+    ppn: Number(d.ppn) || 0
   };
 }
 
@@ -333,7 +354,9 @@ export function ReturPembelianCetakTab({ id }: { id: string }) {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleDownload = useCallback(async () => {
     if (!data) return;
@@ -345,7 +368,9 @@ export function ReturPembelianCetakTab({ id }: { id: string }) {
     }
   }, [data, elementId, id]);
 
-  const handlePrint = useCallback(() => { window.print(); }, []);
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
 
   return (
     <FormTabShell title={`Cetak Retur Pembelian${data ? ` — ${data.nomor}` : ''}`}>
@@ -358,12 +383,18 @@ export function ReturPembelianCetakTab({ id }: { id: string }) {
             <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
           </Button>
         </div>
-        {loading ? <CetakLoading /> : error ? <CetakError message={error} /> : data && (
-          <div className="overflow-x-auto border rounded-md bg-white">
-            <div id={elementId} className="inline-block">
-              <ReturPembelianPDFTemplate data={data} />
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <ReturPembelianPDFTemplate data={data} />
+              </div>
             </div>
-          </div>
+          )
         )}
       </div>
     </FormTabShell>

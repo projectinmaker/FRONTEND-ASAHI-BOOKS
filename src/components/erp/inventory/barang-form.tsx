@@ -14,6 +14,14 @@
  * - Draft otomatis (mode create): restore saat mount, simpan tiap perubahan,
  *   buang setelah submit sukses — pakai useFormDraft + DraftIndicator.
  * - Backend memvalidasi ulang (item_type_policy + master_service): UI hide ≠ validasi.
+ *
+ * Task 16-c3 — Akun perkiraan per tipe barang:
+ * - 4 Select di tab Akun memakai daftar rekomendasi GET /master/barang-akun-pilihan
+ *   (HPP valid / penjualan / retur / diskon) menggantikan getCOAOptions per class.
+ * - Picker akun persediaan terfilter per rincian jenis (query param item_type).
+ * - Auto-default akun yang relevan untuk field yang MASIH KOSONG (tidak menimpa
+ *   isian user / nilai tersimpan mode edit); nilai tersimpan di luar daftar
+ *   rekomendasi dipertahankan di payload + diberi hint.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -44,9 +52,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
-import type { BarangResponse, BarangCreate, BarangUpdate, BarangSatuanResponse, BarangSatuanCreate, BarangSatuanUpdate, KategoriBarangResponse, SatuanResponse, BarangAkunPersediaanItem, AkunPersediaanSimple, ItemTypeBarang } from '@/types/api';
+import type { BarangResponse, BarangCreate, BarangUpdate, BarangSatuanResponse, BarangSatuanCreate, BarangSatuanUpdate, KategoriBarangResponse, SatuanResponse, BarangAkunPersediaanItem, BarangAkunPilihan, BarangAkunPilihanResponse, AkunPersediaanSimple, ItemTypeBarang } from '@/types/api';
 import { ITEM_TYPE_OPTIONS } from '@/types/api';
-import { getCOAOptions, type COAOption } from '@/lib/master-data';
 
 // ─── Jenis item (UI type) — konstanta & mapping ────────────────────────────
 
@@ -168,9 +175,11 @@ interface AkunPersediaanPickerProps {
   currentAkun?: AkunPersediaanSimple | null;
   /** Disable picker (mis. jenis item non-persediaan) */
   disabled?: boolean;
+  /** Filter subclass persediaan per rincian jenis (BARANG_DAGANG/JADI/BAKU/BANTU) — dikirim sebagai query param item_type (Task 16-c3). */
+  itemType?: string;
 }
 
-function AkunPersediaanPicker({ value, onChange, currentAkun, disabled }: AkunPersediaanPickerProps) {
+function AkunPersediaanPicker({ value, onChange, currentAkun, disabled, itemType }: AkunPersediaanPickerProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [options, setOptions] = useState<BarangAkunPersediaanItem[]>([]);
@@ -196,6 +205,7 @@ function AkunPersediaanPicker({ value, onChange, currentAkun, disabled }: AkunPe
         params.set('skip', String(newSkip));
         params.set('limit', String(PAGE_SIZE));
         if (search) params.set('search', search);
+        if (itemType) params.set('item_type', itemType);
         const res = await api.get<PaginatedResponse<BarangAkunPersediaanItem>>(`/master/barang-akun-persediaan?${params.toString()}`);
         if (resetSkip || newSkip === 0) {
           setOptions(res.data);
@@ -216,7 +226,7 @@ function AkunPersediaanPicker({ value, onChange, currentAkun, disabled }: AkunPe
         setLoading(false);
       }
     },
-    [search, skip]
+    [search, skip, itemType]
   );
 
   // Debounce search
@@ -245,6 +255,14 @@ function AkunPersediaanPicker({ value, onChange, currentAkun, disabled }: AkunPe
       setOptions([]);
     }
   }, [open]);
+
+  // Filter rincian jenis (Task 16-c3): buang daftar saat item_type berubah —
+  // daftar baru (dengan filter subclass) dimuat ulang saat popover dibuka.
+  useEffect(() => {
+    setOptions([]);
+    setSearch('');
+    setSkip(0);
+  }, [itemType]);
 
   // Label saat ini: prioritas dari currentAkun (object), fallback ke options list,
   // lalu fallback ke snapshot pilihan terakhir (supaya label tidak hilang saat
@@ -390,9 +408,14 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
   const isPersediaan = form.uiType === 'PERSEDIAAN';
   const isJasa = form.uiType === 'JASA';
 
-  // ── COA options for HPP & Penjualan ──
-  const [coaHppOptions, setCoaHppOptions] = useState<COAOption[]>([]);
-  const [coaPenjualanOptions, setCoaPenjualanOptions] = useState<COAOption[]>([]);
+  // ── Pilihan akun per aktivitas (GET /master/barang-akun-pilihan — Task 16-c3) ──
+  // Sumber opsi 4 Select di tab Akun: HPP valid, penjualan, retur, diskon.
+  const [akunPilihan, setAkunPilihan] = useState<BarangAkunPilihanResponse>({ hpp: [], penjualan: [], retur: [], diskon: [] });
+
+  // ── Kandidat akun persediaan utk rincian jenis aktif (Task 16-c3) ──
+  // Dipakai utk auto-default & validasi mapping (Dagang/Jadi→114004, Baku→114001,
+  // Bantu→114002); dropdown picker memfilter sendiri via prop itemType.
+  const [persediaanOptions, setPersediaanOptions] = useState<{ itemType: string; data: BarangAkunPersediaanItem[] } | null>(null);
 
   // ── Multi-satuan state ──
   const [satuanList, setSatuanList] = useState<BarangSatuanResponse[]>([]);
@@ -463,16 +486,71 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
     fetchLookups();
   }, []);
 
-  // ── Fetch COA options for HPP & Penjualan on mount ──
+  // ── Fetch pilihan akun per aktivitas (sumber opsi tab Akun — Task 16-c3) ──
   useEffect(() => {
-    // HPP account = COGS class. Sales account = REVENUE class.
-    getCOAOptions({ accountClass: 'COGS', tingkat: 'DETAIL', activeOnly: true })
-      .then(setCoaHppOptions)
-      .catch(() => setCoaHppOptions([]));
-    getCOAOptions({ accountClass: 'REVENUE', tingkat: 'DETAIL', activeOnly: true })
-      .then(setCoaPenjualanOptions)
-      .catch(() => setCoaPenjualanOptions([]));
+    api
+      .get<BarangAkunPilihanResponse>('/master/barang-akun-pilihan')
+      .then(setAkunPilihan)
+      .catch(() => {
+        /* daftar tetap kosong — Select menampilkan placeholder; nilai tersimpan tidak dihapus */
+      });
   }, []);
+
+  // ── Fetch kandidat akun persediaan utk rincian jenis aktif (Task 16-c3) ──
+  useEffect(() => {
+    if (form.uiType !== 'PERSEDIAAN') return;
+    const itemType = form.rincianJenis;
+    let cancelled = false;
+    api
+      .get<PaginatedResponse<BarangAkunPersediaanItem>>(`/master/barang-akun-persediaan?limit=50&item_type=${encodeURIComponent(itemType)}`)
+      .then((res) => {
+        if (!cancelled) setPersediaanOptions({ itemType, data: res.data });
+      })
+      .catch(() => {
+        /* opsi lama dipertahankan — context guard di efek validasi mencegah salah pakai */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [form.uiType, form.rincianJenis]);
+
+  // ── Auto-default akun HPP / retur / diskon saat jenis item ditetapkan (Task 16-c3) ──
+  // Hanya mengisi field yang MASIH KOSONG — tidak menimpa isian user maupun nilai
+  // tersimpan mode edit. Akun Penjualan sengaja TIDAK di-auto (ada beberapa opsi —
+  // biarkan user memilih; utk Jasa pun tidak di-auto).
+  useEffect(() => {
+    setForm((prev) => {
+      const next: Partial<FormState> = {};
+      if (prev.uiType !== 'JASA' && !prev.akunHppId && akunPilihan.hpp.length > 0) next.akunHppId = akunPilihan.hpp[0].id;
+      if (!prev.akunReturPenjualanId && akunPilihan.retur.length > 0) next.akunReturPenjualanId = akunPilihan.retur[0].id;
+      if (!prev.akunDiskonPenjualanId && akunPilihan.diskon.length > 0) next.akunDiskonPenjualanId = akunPilihan.diskon[0].id;
+      return Object.keys(next).length > 0 ? { ...prev, ...next } : prev;
+    });
+  }, [form.uiType, form.akunHppId, form.akunReturPenjualanId, form.akunDiskonPenjualanId, akunPilihan]);
+
+  // ── Auto-default + validasi akun persediaan vs daftar subclass (Task 16-c3) ──
+  // Saat daftar kandidat utk rincian jenis aktif tiba:
+  // - field kosong & tepat 1 kandidat → isi otomatis;
+  // - nilai terisi TIDAK ada di daftar (mis. ganti rincian Baku→Jadi, atau nilai
+  //   lama di luar subclass baru) → ganti ke satu-satunya kandidat + toast.info.
+  // Context guard (itemType === rincianJenis) mencegah reaksi terhadap respons
+  // fetch lama saat data edit / draft sedang dimuat.
+  useEffect(() => {
+    if (!persediaanOptions || persediaanOptions.data.length !== 1) return;
+    if (form.uiType !== 'PERSEDIAAN' || form.rincianJenis !== persediaanOptions.itemType) return;
+    const sole = persediaanOptions.data[0];
+    if (form.akunPersediaanId === sole.id) return;
+    const labelRincian = RINCIAN_PERSEDIAAN_OPTIONS.find((o) => o.value === persediaanOptions.itemType)?.label ?? persediaanOptions.itemType;
+    if (!form.akunPersediaanId) {
+      // Auto-default — hanya bila field masih kosong.
+      setForm((prev) => (prev.uiType === 'PERSEDIAAN' && prev.rincianJenis === persediaanOptions.itemType && !prev.akunPersediaanId ? { ...prev, akunPersediaanId: sole.id } : prev));
+    } else {
+      // Nilai tersimpan tidak berlaku utk rincian ini → ganti ke default + info.
+      setForm((prev) => (prev.uiType === 'PERSEDIAAN' && prev.rincianJenis === persediaanOptions.itemType && prev.akunPersediaanId !== sole.id ? { ...prev, akunPersediaanId: sole.id } : prev));
+      setCurrentAkun(sole);
+      toast.info('Akun persediaan disesuaikan otomatis', { description: `Rincian "${labelRincian}" memakai akun ${sole.kode} — ${sole.nama}. Mapping lama tidak berlaku untuk rincian ini.` });
+    }
+  }, [persediaanOptions]);
 
   // ── Draft: restore saat mount (create only) ──
   useEffect(() => {
@@ -830,6 +908,19 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
 
   // ─── Render helpers ───────────────────────────────────────────────────────
 
+  /** True bila field terisi tapi nilainya tidak ada di daftar opsi baru
+   *  (mis. akun lama 521xxx/421xxx saat edit) — nilai TETAP di state & payload. */
+  const isStoredOutsideList = (value: string, list: BarangAkunPilihan[]): boolean => Boolean(value) && list.length > 0 && !list.some((a) => a.id === value);
+
+  /** Hint amber utk nilai tersimpan di luar daftar rekomendasi (Task 16-c3). */
+  const renderStoredOutsideHint = (show: boolean) =>
+    show ? (
+      <p className="text-[11px] text-amber-700 flex items-start gap-1">
+        <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+        <span>Nilai tersimpan di luar daftar rekomendasi — nilai lama tetap terkirim saat disimpan bila tidak diganti.</span>
+      </p>
+    ) : null;
+
   const renderTypeCards = () => (
     <div role="radiogroup" aria-label="Jenis item" data-testid="barang-jenis-item" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       {typePolicies.map((p) => {
@@ -1095,7 +1186,7 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     Pilih akun perkiraan (COA) untuk persediaan barang ini. Boleh kosong pada tahap ini. Jika akun belum ada, buat dulu di menu <strong>Pengaturan → Akun Perkiraan</strong>, lalu refresh dropdown.
                   </p>
-                  <AkunPersediaanPicker value={form.akunPersediaanId} onChange={(id) => updateForm('akunPersediaanId', id)} currentAkun={currentAkun} />
+                  <AkunPersediaanPicker value={form.akunPersediaanId} onChange={(id) => updateForm('akunPersediaanId', id)} currentAkun={currentAkun} itemType={isPersediaan ? form.rincianJenis : undefined} />
                 </div>
               )}
 
@@ -1108,14 +1199,15 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
                       <SelectValue placeholder={isPersediaan ? 'Pilih akun HPP' : 'Pilih akun beban/HPP'} />
                     </SelectTrigger>
                     <SelectContent>
-                      {coaHppOptions.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
+                      {akunPilihan.hpp.map((opt) => (
+                        <SelectItem key={opt.id} value={opt.id}>
+                          {`${opt.kode} — ${opt.nama}`}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <p className="text-[11px] text-muted-foreground">{isPersediaan ? 'Dipakai saat posting HPP dari gerakan stok.' : 'Nonpersediaan: beban/aset sesuai sifat pembelian — bukan akun stok.'}</p>
+                  {renderStoredOutsideHint(isStoredOutsideList(form.akunHppId, akunPilihan.hpp))}
                 </div>
               )}
 
@@ -1127,14 +1219,15 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
                     <SelectValue placeholder="Pilih akun penjualan" />
                   </SelectTrigger>
                   <SelectContent>
-                    {coaPenjualanOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {akunPilihan.penjualan.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        {`${opt.kode} — ${opt.nama}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {isJasa && <p className="text-[11px] text-muted-foreground">Item Jasa hanya memetakan akun pendapatan — tanpa akun persediaan/HPP stok.</p>}
+                {renderStoredOutsideHint(isStoredOutsideList(form.akunPenjualanId, akunPilihan.penjualan))}
               </div>
 
               {/* Akun Retur Penjualan — COA contra-revenue untuk retur barang ini */}
@@ -1145,14 +1238,15 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
                     <SelectValue placeholder="Pilih akun retur penjualan" />
                   </SelectTrigger>
                   <SelectContent>
-                    {coaPenjualanOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {akunPilihan.retur.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        {`${opt.kode} — ${opt.nama}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">Mapping COA retur penjualan (contra-revenue) untuk barang ini. Boleh kosong — retur tetap memakai setting global RETUR_PENJUALAN.</p>
+                {renderStoredOutsideHint(isStoredOutsideList(form.akunReturPenjualanId, akunPilihan.retur))}
               </div>
 
               {/* Akun Diskon Penjualan — COA contra-revenue untuk diskon barang ini */}
@@ -1163,14 +1257,15 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
                     <SelectValue placeholder="Pilih akun diskon penjualan" />
                   </SelectTrigger>
                   <SelectContent>
-                    {coaPenjualanOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {akunPilihan.diskon.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.id}>
+                        {`${opt.kode} — ${opt.nama}`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">Mapping COA diskon/potongan penjualan (contra-revenue) untuk barang ini. Boleh kosong.</p>
+                {renderStoredOutsideHint(isStoredOutsideList(form.akunDiskonPenjualanId, akunPilihan.diskon))}
               </div>
 
               {!isPersediaan && <div className="rounded-md bg-muted/40 border p-3 text-[11px] text-muted-foreground leading-relaxed">{isJasa ? 'Jasa: pendapatan jasa tanpa gerakan stok, gudang, GRNI, atau HPP stok (spec §4).' : 'Nonpersediaan: pembelian masuk ke beban/aset (bukan akun stok); penjualan tetap ke akun pendapatan (spec §4).'}</div>}

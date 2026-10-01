@@ -5,9 +5,10 @@ import { invoicePhaseDFields, invoiceSaveMismatches, createPurchaseInvoice, dupl
 
 import { stockLineError, loadReceiptInvoiceOptions, loadPostedInvoiceOptions } from '@/lib/delivery-receipt';
 import { StockOperationErrorDialog, useStockOperationError } from '@/components/erp/stock-operation-error-dialog';
+import { PurchaseReturnSourceLines, usePurchaseReturnSource, type PurchaseReturnQuantities } from '@/components/erp/purchase-return-source';
 
 import OrderDocumentForm from '@/components/erp/orders/order-document-form';
-import { canEditOrder, formatOrderMoney, summarizeOrderTotals } from '@/lib/order-documents';
+import { canEditOrder } from '@/lib/order-documents';
 
 import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -40,7 +41,7 @@ import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workfl
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { useInvoiceSaldos } from '@/lib/use-invoice-saldos';
-import type { PurchaseOrderResponse, PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderDetailCreate, PenerimaanBarangResponse, PenerimaanBarangCreate, PenerimaanBarangUpdate, PenerimaanBarangDetailCreate, PurchaseInvoiceResponse, PurchaseInvoiceCreate, PurchaseInvoiceUpdate, PurchaseInvoiceDetailCreate, PurchaseReturResponse, PurchaseReturCreate, PurchaseReturUpdate, PurchaseReturDetailCreate, SupplierDropdown, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+import type { PurchaseOrderResponse, PurchaseOrderSisaResponse, PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderDetailCreate, PenerimaanBarangResponse, PenerimaanBarangCreate, PenerimaanBarangUpdate, PenerimaanBarangDetailCreate, PurchaseInvoiceResponse, PurchaseInvoiceCreate, PurchaseInvoiceUpdate, PurchaseInvoiceDetailCreate, PurchaseReturResponse, PurchaseReturCreate, PurchaseReturUpdate, PurchaseReturDetailCreate, SupplierDropdown, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -131,6 +132,8 @@ interface FormDetailRow {
   satuanNama: string;
   hargaPerolehan: string;
   tanggalKedaluwarsa: string;
+  // === Tarik data PO (Task 16-c2): link baris ke line PO sumber ===
+  purchaseOrderDetailId?: string;
 }
 
 interface FormBiayaRow {
@@ -183,7 +186,8 @@ interface ReturPembelianDraftData {
   ppn: string;
   keterangan: string;
   purchaseInvoiceId: string;
-  detail: FormDetailRow[];
+  /** Task 16-c2: qty retur per baris invoice sumber (key = invoice detail id). */
+  quantities: PurchaseReturnQuantities;
 }
 
 // ─── Detail Table With Price (for PO / Invoice / Retur forms) ──────────────
@@ -340,7 +344,9 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
           if (r.id !== id) return r;
           if (field === 'barangId') {
             const found = barangOptions.find((b) => b.id === value);
-            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '' };
+            // Auto-fill harga perolehan dari harga pokok barang (bila belum terisi).
+            // Field tetap dikirim di payload walau input disembunyikan; nanti ditimpa harga PO saat tarik data.
+            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', hargaPerolehan: !r.hargaPerolehan && found ? String(found.hargaPokok) : r.hargaPerolehan };
           }
           if (field === 'satuanId') {
             const found = satuanOptions.find((s) => s.id === value);
@@ -366,7 +372,6 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
               <TableHead className="min-w-[200px]">Nama Barang</TableHead>
               <TableHead className="w-[80px] text-right">Kts</TableHead>
               <TableHead className="w-[120px]">Satuan</TableHead>
-              <TableHead className="w-[130px] text-right">Harga Perolehan</TableHead>
               <TableHead className="w-[140px]">Kedaluwarsa</TableHead>
               <TableHead className="w-[40px]" />
             </TableRow>
@@ -374,7 +379,14 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id}>
-                <TableCell className="font-mono text-xs">{row.kodeBarang || '-'}</TableCell>
+                <TableCell className="font-mono text-xs">
+                  {row.kodeBarang || '-'}
+                  {row.purchaseOrderDetailId && (
+                    <span className="ml-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700" title="Baris ter-link ke line Purchase Order">
+                      PO
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell>
                   <SearchableDropdown value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
                 </TableCell>
@@ -383,9 +395,6 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
                 </TableCell>
                 <TableCell>
                   <SearchableDropdown value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact />
-                </TableCell>
-                <TableCell>
-                  <CurrencyInput className="h-8 text-right text-xs" placeholder="0" value={row.hargaPerolehan} onValueChange={(v) => updateRow(row.id, 'hargaPerolehan', v)} />
                 </TableCell>
                 <TableCell>
                   <Input type="date" className="h-8 text-xs" value={row.tanggalKedaluwarsa} onChange={(e) => updateRow(row.id, 'tanggalKedaluwarsa', e.target.value)} />
@@ -399,7 +408,7 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="h-16 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="h-16 text-center text-muted-foreground">
                   Belum ada item. Klik "+ Tambah Baris" untuk menambahkan.
                 </TableCell>
               </TableRow>
@@ -613,6 +622,7 @@ function PenerimaanCreateForm() {
   // Tahap 2: link ke invoice pembelian (opsional)
   const [fPurchaseInvoiceId, setFPurchaseInvoiceId] = useState('');
   const { options: unpostedInvoiceOptions, loading: invoiceOptionsLoading, error: invoiceOptionsError, retry: retryInvoiceOptions } = useUnpostedInvoiceOptions(fSupplierId || null);
+  const [poLoading, setPoLoading] = useState(false);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -671,6 +681,57 @@ function PenerimaanCreateForm() {
     setFormErrors({});
   }, []);
 
+  // === Tarik data otomatis PO → Penerimaan (Task 16-c2): saat PO dipilih,
+  // ambil SISA qty per baris (endpoint /sisa), auto-set supplier & alamat PO,
+  // dan prefill hanya baris yang masih ada sisaTerima. hargaPerolehan dihitung
+  // dari harga PO dikurangi diskon (net of discount) — walau input harga
+  // disembunyikan, nilainya tetap dikirim di payload.
+  // Baris ter-link mengirim purchaseOrderDetailId (validasi over-receipt aktif).
+  const handlePurchaseOrderChange = useCallback(
+    async (poId: string) => {
+      setFPurchaseOrderId(poId);
+      setFormErrors((prev) => ({ ...prev, purchaseOrderId: '' }));
+      if (!poId) return;
+      setPoLoading(true);
+      try {
+        const sisa = await api.get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${poId}/sisa`);
+        if (sisa.supplierId && sisa.supplierId !== fSupplierId) {
+          setFSupplierId(sisa.supplierId);
+          setFPurchaseInvoiceId('');
+        }
+        // Hanya timpa alamat bila PO punya alamat (jangan kosongkan isian user).
+        if (sisa.alamat) setFAlamat(sisa.alamat);
+        const rows = (sisa.details || []).filter((d) => Number(d.sisaTerima) > 0);
+        if (rows.length === 0) {
+          toast.info('Semua baris PO sudah diterima sepenuhnya', { description: 'Tidak ada sisa qty yang perlu diterima untuk PO ini.' });
+          setFDetail([]);
+          return;
+        }
+        setFDetail(
+          rows.map((d) => ({
+            id: crypto.randomUUID(),
+            barangId: d.barangId,
+            kodeBarang: d.kodeBarang || '',
+            barangNama: d.namaBarang || '',
+            harga: String(d.harga ?? 0),
+            qty: String(d.sisaTerima),
+            diskon: String(d.diskon ?? 0),
+            satuanId: d.satuanId || '',
+            satuanNama: d.satuanNama || '',
+            hargaPerolehan: String(Math.round(((Number(d.harga) || 0) * (100 - (Number(d.diskon) || 0))) / 100)),
+            tanggalKedaluwarsa: '',
+            purchaseOrderDetailId: d.purchaseOrderDetailId
+          }))
+        );
+      } catch {
+        // Gagal memuat sisa PO — biarkan user isi baris manual (tanpa link)
+      } finally {
+        setPoLoading(false);
+      }
+    },
+    [fSupplierId]
+  );
+
   const handleSubmit = async () => {
     const errs: Record<string, string> = {};
     if (!fPurchaseOrderId) errs.purchaseOrderId = 'Purchase Order wajib diisi';
@@ -693,7 +754,9 @@ function PenerimaanCreateForm() {
           qty: Number(r.qty),
           satuanId: r.satuanId,
           hargaPerolehan: r.hargaPerolehan ? Number(r.hargaPerolehan) : null,
-          tanggalKedaluwarsa: r.tanggalKedaluwarsa || null
+          tanggalKedaluwarsa: r.tanggalKedaluwarsa || null,
+          // Task 16-c2: link per baris ke line PO (bila baris ditarik dari PO).
+          purchaseOrderDetailId: r.purchaseOrderDetailId || null
         }));
       const body: PenerimaanBarangCreate = {
         tanggal: fTanggal,
@@ -738,7 +801,8 @@ function PenerimaanCreateForm() {
               <Label className="text-xs font-medium">
                 Purchase Order <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fPurchaseOrderId} onValueChange={setFPurchaseOrderId} options={purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO..." />
+              <SearchableDropdown value={fPurchaseOrderId} onValueChange={handlePurchaseOrderChange} options={purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO..." disabled={poLoading} />
+              {poLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa PO...</p>}
               {formErrors.purchaseOrderId && <p className="text-xs text-destructive mt-1">{formErrors.purchaseOrderId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -1087,6 +1151,7 @@ function InvoiceCreateForm() {
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
+  const [poLoading, setPoLoading] = useState(false);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1156,6 +1221,48 @@ function InvoiceCreateForm() {
     setFormErrors({});
   }, []);
 
+  // === Tarik data otomatis PO → Invoice Pembelian (Task 16-c2): saat PO
+  // dipilih, ambil SISA qty per baris (endpoint /sisa), auto-set supplier,
+  // dan prefill hanya baris yang masih ada sisaFaktur (harga/diskon/satuan
+  // mengikuti line PO). Baris ter-link mengirim purchaseOrderDetailId sehingga
+  // komputasi sisa faktur per PO line di backend tetap akurat.
+  // Pilihan "Tanpa PO" (kosong) TIDAK menghapus baris — user tetap bisa manual.
+  const handlePurchaseOrderChange = useCallback(async (poId: string) => {
+    setFPurchaseOrderId(poId);
+    if (!poId) return;
+    setPoLoading(true);
+    try {
+      const sisa = await api.get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${poId}/sisa`);
+      if (sisa.supplierId) setFSupplierId(sisa.supplierId);
+      const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+      if (rows.length === 0) {
+        toast.info('Semua baris PO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk PO ini.' });
+        setFDetail([]);
+        return;
+      }
+      setFDetail(
+        rows.map((d) => ({
+          id: crypto.randomUUID(),
+          barangId: d.barangId,
+          kodeBarang: d.kodeBarang || '',
+          barangNama: d.namaBarang || '',
+          harga: String(d.harga ?? 0),
+          qty: String(d.sisaFaktur),
+          diskon: String(d.diskon ?? 0),
+          satuanId: d.satuanId || '',
+          satuanNama: d.satuanNama || '',
+          hargaPerolehan: '',
+          tanggalKedaluwarsa: '',
+          purchaseOrderDetailId: d.purchaseOrderDetailId
+        }))
+      );
+    } catch {
+      // Gagal memuat sisa PO — biarkan user isi baris manual
+    } finally {
+      setPoLoading(false);
+    }
+  }, []);
+
   const formSubtotal = useMemo(
     () =>
       fDetail.reduce((s, r) => {
@@ -1190,7 +1297,8 @@ function InvoiceCreateForm() {
           const qty = parseFloat(r.qty) || 0;
           const harga = parseFloat(r.harga) || 0;
           const diskon = parseFloat(r.diskon) || 0;
-          return { barangId: r.barangId, satuanId: r.satuanId || null, harga, qty, diskon: diskon || null, subTotal: qty * harga * (1 - diskon / 100) };
+          // Task 16-c2: link per baris ke line PO (bila baris ditarik dari PO).
+          return { barangId: r.barangId, satuanId: r.satuanId || null, harga, qty, diskon: diskon || null, subTotal: qty * harga * (1 - diskon / 100), purchaseOrderDetailId: r.purchaseOrderDetailId || null };
         });
       const biaya: TransaksiBiayaCreate[] = fBiayaTambahan
         .filter((b) => b.nama)
@@ -1254,7 +1362,8 @@ function InvoiceCreateForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Purchase Order (opsional)</Label>
-              <SearchableDropdown value={fPurchaseOrderId} onValueChange={setFPurchaseOrderId} options={[...(fPurchaseOrderId && !purchaseOrderOptions.some((po) => po.id === fPurchaseOrderId) ? [{ id: fPurchaseOrderId, label: savedInvoice?.purchaseOrder?.noPesanan || fPurchaseOrderId }] : []), ...purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))]} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} />
+              <SearchableDropdown value={fPurchaseOrderId} onValueChange={handlePurchaseOrderChange} options={[...(fPurchaseOrderId && !purchaseOrderOptions.some((po) => po.id === fPurchaseOrderId) ? [{ id: fPurchaseOrderId, label: savedInvoice?.purchaseOrder?.noPesanan || fPurchaseOrderId }] : []), ...purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))]} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} disabled={poLoading} />
+              {poLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa PO...</p>}
             </div>
             <InvoiceTypeField value={fInvoiceType} onChange={setFInvoiceType} />
           </div>
@@ -1546,7 +1655,7 @@ function InvoiceEditForm({ editId }: { editId: string }) {
 
 function ReturCreateForm() {
   const { error: returnError, clearError: clearReturnError, handleError: handleReturnError } = useStockOperationError('purchase_retur');
-  const { supplierOptions, barangOptions, purchaseOrderOptions, gudangOptions, loading: dropdownsLoading } = usePurchasingDropdowns();
+  const { supplierOptions, purchaseOrderOptions, gudangOptions, loading: dropdownsLoading } = usePurchasingDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -1560,11 +1669,25 @@ function ReturCreateForm() {
   const [fAlamat, setFAlamat] = useState('');
   const [fPpn, setFPpn] = useState('11');
   const [fKeterangan, setFKeterangan] = useState('');
-  const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   // Link ke invoice pembelian — backend menolak POSTING retur tanpa purchaseInvoiceId
   // ("Pilih purchaseInvoiceId sebelum posting retur pembelian..."). Boleh kosong saat draft.
   const [fPurchaseInvoiceId, setFPurchaseInvoiceId] = useState('');
+  // === Tarik data otomatis Invoice → Retur (Task 16-c2): detail retur ditarik
+  // dari baris invoice sumber (pola source-table, mirror retur penjualan).
+  const [quantities, setQuantities] = useState<PurchaseReturnQuantities>({});
+  const source = usePurchaseReturnSource(fPurchaseInvoiceId);
   const { options: postedInvoiceOptions, loading: postedInvoiceLoading, error: postedInvoiceError, retry: retryPostedInvoices } = usePostedInvoiceOptions(fSupplierId || null);
+
+  // Saat invoice sumber termuat: auto-set PO (bila invoice ter-link PO) dan
+  // supplier dari invoice. PO tetap bisa diganti manual setelahnya (tidak dipaksa).
+  const appliedSourceRef = useRef('');
+  useEffect(() => {
+    const invoice = source.invoice;
+    if (!invoice || appliedSourceRef.current === invoice.id) return;
+    appliedSourceRef.current = invoice.id;
+    if (invoice.purchaseOrderId) setFPurchaseOrderId(invoice.purchaseOrderId);
+    if (invoice.supplierId) setFSupplierId(invoice.supplierId);
+  }, [source.invoice]);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1584,7 +1707,7 @@ function ReturCreateForm() {
     setFPpn(d.ppn ?? '11');
     setFKeterangan(d.keterangan || '');
     setFPurchaseInvoiceId(d.purchaseInvoiceId || '');
-    setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
+    setQuantities(d.quantities || {});
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Retur Pembelian dimuat kembali otomatis.' });
   }, []);
 
@@ -1607,9 +1730,9 @@ function ReturCreateForm() {
       ppn: fPpn,
       keterangan: fKeterangan,
       purchaseInvoiceId: fPurchaseInvoiceId,
-      detail: fDetail
+      quantities
     });
-  }, [fPurchaseOrderId, fSupplierId, fGudangId, fTanggal, fAlamat, fPpn, fKeterangan, fPurchaseInvoiceId, fDetail]);
+  }, [fPurchaseOrderId, fSupplierId, fGudangId, fTanggal, fAlamat, fPpn, fKeterangan, fPurchaseInvoiceId, quantities]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
@@ -1622,38 +1745,49 @@ function ReturCreateForm() {
     setFPpn('11');
     setFKeterangan('');
     setFPurchaseInvoiceId('');
-    setFDetail([newDetailRow()]);
+    setQuantities({});
+    appliedSourceRef.current = '';
     setFormErrors({});
   }, []);
-
-  const formSubtotal = useMemo(
-    () =>
-      fDetail.reduce((s, r) => {
-        const q = parseFloat(r.qty) || 0;
-        const h = parseFloat(r.harga) || 0;
-        return s + q * h;
-      }, 0),
-    [fDetail]
-  );
 
   const handleSubmit = async () => {
     const errs: Record<string, string> = {};
     if (!fPurchaseOrderId) errs.purchaseOrderId = 'Purchase Order wajib diisi';
     if (!fSupplierId) errs.supplierId = 'Supplier wajib diisi';
-    if (!fDetail.some((r) => r.barangId)) errs.detail = 'Minimal 1 barang harus dipilih';
+    if (!fPurchaseInvoiceId) errs.purchaseInvoiceId = 'Pilih invoice sumber agar baris retur bisa ditarik otomatis';
+    // === Task 16-c2: baris retur dibangun dari baris invoice sumber —
+    // hanya baris dengan qty retur > 0 yang dikirim; harga mengikuti invoice;
+    // tiap baris ter-link purchaseInvoiceDetailId (+purchaseOrderDetailId bila ada).
+    let details: PurchaseReturDetailCreate[] = [];
+    if (source.invoice) {
+      for (let index = 0; index < source.invoice.details.length; index++) {
+        const line = source.invoice.details[index];
+        const value = quantities[line.id] ?? '';
+        if (value === '' || Number(value) === 0) continue;
+        const qty = Number(value);
+        const harga = Number(line.harga);
+        if (!Number.isSafeInteger(qty) || qty < 1) {
+          errs.detail = `Baris ${index + 1}: qty retur harus bilangan bulat minimal 1. Gunakan 0 untuk barang yang tidak diretur.`;
+          break;
+        }
+        if (qty > Number(line.qty)) {
+          errs.detail = `Baris ${index + 1}: qty retur (${qty}) melebihi qty invoice (${line.qty}).`;
+          break;
+        }
+        if (!Number.isFinite(harga) || harga < 0) {
+          errs.detail = 'Harga invoice sumber tidak valid. Muat ulang invoice.';
+          break;
+        }
+        details.push({ barangId: line.barangId, purchaseInvoiceDetailId: line.id, purchaseOrderDetailId: line.purchaseOrderDetailId || null, harga, qty, subTotal: qty * harga });
+      }
+      if (!errs.detail && details.length === 0) errs.detail = 'Isi qty retur pada minimal satu baris invoice.';
+    }
     if (Object.keys(errs).length) {
       setFormErrors(errs);
       return;
     }
     setSubmitting(true);
     try {
-      const details: PurchaseReturDetailCreate[] = fDetail
-        .filter((r) => r.barangId)
-        .map((r) => {
-          const qty = parseFloat(r.qty) || 0;
-          const harga = parseFloat(r.harga) || 0;
-          return { barangId: r.barangId, harga, qty, subTotal: qty * harga };
-        });
       const body: PurchaseReturCreate = {
         autoPostJurnal: false,
         tanggal: fTanggal,
@@ -1700,6 +1834,7 @@ function ReturCreateForm() {
                 Purchase Order <span className="text-destructive">*</span>
               </Label>
               <SearchableDropdown value={fPurchaseOrderId} onValueChange={setFPurchaseOrderId} options={purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO..." />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">Otomatis terisi dari invoice sumber; boleh diganti manual bila perlu.</p>
               {formErrors.purchaseOrderId && <p className="text-xs text-destructive mt-1">{formErrors.purchaseOrderId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -1711,6 +1846,7 @@ function ReturCreateForm() {
                 onValueChange={(value) => {
                   setFSupplierId(value);
                   setFPurchaseInvoiceId('');
+                  setQuantities({});
                 }}
                 options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
                 placeholder="Pilih supplier..."
@@ -1740,7 +1876,20 @@ function ReturCreateForm() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Invoice Pembelian (wajib sebelum posting)</Label>
-            <SearchableDropdown value={fPurchaseInvoiceId} onValueChange={setFPurchaseInvoiceId} options={postedInvoiceOptions.map((inv) => ({ id: inv.id, label: `${inv.noForm} — ${inv.noFaktur || '-'} (${formatRp(Number(inv.grandTotal))})` }))} placeholder={fSupplierId ? 'Pilih invoice pembelian supplier (posted)...' : 'Pilih supplier dulu...'} loading={postedInvoiceLoading} emptyText={fSupplierId ? 'Tidak ada invoice yang sudah di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'} allOption={{ id: '', label: 'Tanpa invoice — wajib dipilih sebelum posting' }} />
+            <SearchableDropdown
+              value={fPurchaseInvoiceId}
+              onValueChange={(value) => {
+                setFPurchaseInvoiceId(value);
+                setQuantities({});
+                appliedSourceRef.current = '';
+                setFormErrors({});
+              }}
+              options={postedInvoiceOptions.map((inv) => ({ id: inv.id, label: `${inv.noForm} — ${inv.noFaktur || '-'} (${formatRp(Number(inv.grandTotal))})` }))}
+              placeholder={fSupplierId ? 'Pilih invoice pembelian supplier (posted)...' : 'Pilih supplier dulu...'}
+              loading={postedInvoiceLoading}
+              emptyText={fSupplierId ? 'Tidak ada invoice yang sudah di-POST untuk supplier ini.' : 'Pilih supplier untuk melihat opsi invoice.'}
+              allOption={{ id: '', label: 'Tanpa invoice — wajib dipilih sebelum posting' }}
+            />
             {postedInvoiceError && (
               <div role="alert" className="text-xs text-destructive">
                 {postedInvoiceError}{' '}
@@ -1750,13 +1899,23 @@ function ReturCreateForm() {
               </div>
             )}
             <p className="text-[11px] text-muted-foreground leading-relaxed">Retur tidak bisa diposting tanpa invoice. Pilih invoice supplier yang sudah selesai (posted) agar hutang invoice dapat diperbarui saat posting.</p>
+            {formErrors.purchaseInvoiceId && <p className="text-xs text-destructive mt-1">{formErrors.purchaseInvoiceId}</p>}
           </div>
           <Separator />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">
               Detail Barang <span className="text-destructive">*</span>
             </Label>
-            <DetailTableWithPrice rows={fDetail} setRows={setFDetail} barangOptions={barangOptions} />
+            {source.loading && <p className="text-sm text-muted-foreground">Memuat invoice sumber...</p>}
+            {source.error && (
+              <div role="alert" className="text-sm text-destructive">
+                {source.error}{' '}
+                <Button variant="outline" size="sm" onClick={source.retry}>
+                  Coba Lagi
+                </Button>
+              </div>
+            )}
+            {source.invoice ? <PurchaseReturnSourceLines invoice={source.invoice} quantities={quantities} onChange={(id, qty) => setQuantities((previous) => ({ ...previous, [id]: qty }))} /> : !source.loading && !source.error && <p className="text-sm text-muted-foreground">Pilih invoice untuk menarik baris retur secara otomatis.</p>}
             {formErrors.detail && <p className="text-xs text-destructive mt-1">{formErrors.detail}</p>}
           </div>
           <Separator />
@@ -2056,35 +2215,20 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
     refreshKey
   );
 
-  const summaryTotal = summarizeOrderTotals(data);
-
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card className="border-orange-200 bg-orange-50/50">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-100 text-orange-600">
-              <ShoppingCart className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs text-orange-600 font-medium">Total Pesanan</p>
-              {loading ? <Skeleton className="mt-1 h-6 w-16" /> : <p className="text-2xl font-bold text-orange-700">{total}</p>}
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-orange-200 bg-orange-50/50">
-          <CardContent className="p-4 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-100 text-orange-600">
-              <TrendingDown className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs text-orange-600 font-medium">Total Nilai (halaman ini)</p>
-              {loading ? <Skeleton className="mt-1 h-6 w-28" /> : <p className="text-2xl font-bold text-orange-700">{summaryTotal}</p>}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="border-orange-200 bg-orange-50/50">
+        <CardContent className="p-4 flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+            <ShoppingCart className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-xs text-orange-600 font-medium">Total Pesanan</p>
+            {loading ? <Skeleton className="mt-1 h-6 w-16" /> : <p className="text-2xl font-bold text-orange-700">{total}</p>}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* List Card */}
       <Card>
@@ -2190,7 +2334,6 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                     <TableHead>Supplier</TableHead>
                     <TableHead>Payment Term</TableHead>
                     <TableHead>Currency</TableHead>
-                    <TableHead className="text-right w-[160px]">Total Nilai</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
                     <TableHead className="w-[140px] text-center">Workflow</TableHead>
                     <TableHead className="w-[80px] text-center">Aksi</TableHead>
@@ -2198,10 +2341,10 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={9} />
+                    <SkeletonRows cols={8} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
                         Tidak ada data pesanan.
                       </TableCell>
                     </TableRow>
@@ -2213,7 +2356,6 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                         <TableCell className="text-xs">{d.supplierNameSnapshot || d.supplier?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.syaratBayar?.nama || d.syaratBayarId || '-'}</TableCell>
                         <TableCell className="text-xs">{d.currency || '-'}</TableCell>
-                        <TableCell className="text-right font-mono text-xs font-medium">{formatOrderMoney(d.grandTotal, d.currency)}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
                         </TableCell>

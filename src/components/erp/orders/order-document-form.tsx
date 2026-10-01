@@ -285,7 +285,6 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                   <>
                     {input('customerPoNumber', 'Customer PO Number')}
                     {input('customerPoDate', 'Customer PO Date', 'date')}
-                    {input('fob', 'FOB')}
                     {input('ekspedisi', 'Ekspedisi')}
                     {input('tanggalPengiriman', 'Tanggal Pengiriman', 'date')}
                     {input('penjual', 'Penjual')}

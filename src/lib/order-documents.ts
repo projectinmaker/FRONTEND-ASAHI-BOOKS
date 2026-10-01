@@ -33,7 +33,7 @@ export function serializeOrderLines(lines: OrderLine[]) {
 }
 
 const commonKeys = ['tanggal', 'syaratBayarId', 'currency', 'diskonGlobal', 'ppn', 'keterangan'] as const;
-const salesKeys = ['pelangganId', 'fob', 'ekspedisi', 'tanggalPengiriman', 'penjual', 'alamatPengiriman', 'customerPoNumber', 'customerPoDate'] as const;
+const salesKeys = ['pelangganId', 'ekspedisi', 'tanggalPengiriman', 'penjual', 'alamatPengiriman', 'customerPoNumber', 'customerPoDate'] as const;
 const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat'] as const;
 export type OrderHeaderKey = (typeof commonKeys)[number] | (typeof salesKeys)[number] | (typeof purchaseKeys)[number];
 export type OrderHeader = Record<OrderHeaderKey, string>;

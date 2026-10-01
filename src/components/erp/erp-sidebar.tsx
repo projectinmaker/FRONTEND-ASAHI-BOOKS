@@ -55,7 +55,8 @@ const modules: NavModule[] = [
     label: 'Penjualan',
     icon: TrendingUp,
     subPages: [
-      { id: 'pesanan', label: 'Pesanan', icon: FileText },
+      { id: 'penawaran', label: 'Penawaran', icon: FileText },
+      { id: 'pesanan', label: 'Pesanan', icon: ClipboardList },
       { id: 'pengiriman', label: 'Pengiriman', icon: Truck },
       { id: 'invoice', label: 'Invoice', icon: Receipt },
       { id: 'retur', label: 'Retur', icon: RotateCcw },
@@ -207,6 +208,7 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     'rekonsiliasi-bank': 'cash_bank.rekonsiliasi_bank.view'
   },
   sales: {
+    penawaran: 'sales.penawaran.view',
     pesanan: 'sales.sales_order.view',
     pengiriman: 'sales.pengiriman.view',
     invoice: 'sales.sales_invoice.view',
