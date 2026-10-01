@@ -334,16 +334,17 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
 
 // ─── Detail Table Simple (for Penerimaan form) ──────────────────────────────
 
-// === Update #4 (Q5): baris barang FEFO? (metodeValuasi dari barang-dropdown).
-// Input kedaluwarsa hanya relevan untuk barang FEFO — backend menolak eksekusi
-// FEFO tanpa expiry; barang AVERAGE/FIFO tidak memerlukan tanggal kedaluwarsa.
-function isFefoRow(row: FormDetailRow, barangOptions: BarangDropdown[]): boolean {
+// === Audit manufaktur (2026-10-01): FEFO kini mengikuti metode valuasi GLOBAL
+// (Setting Akun → METODE_VALUASI). Kolom legacy per-barang (metodeValuasi di
+// barang-dropdown, seluruhnya masih "AVERAGE") tidak lagi dipakai engine
+// stok backend — keputusan input kedaluwarsa harus memakai metode global
+// agar konsisten dengan validasi eksekusi FEFO di backend.
+function isFefoRow(row: FormDetailRow, metodeValuasiGlobal?: string): boolean {
   if (!row.barangId) return false;
-  const found = barangOptions.find((b) => b.id === row.barangId);
-  return found?.metodeValuasi === 'FEFO';
+  return metodeValuasiGlobal === 'FEFO';
 }
 
-function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[] }) {
+function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, metodeValuasiGlobal }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; metodeValuasiGlobal?: string }) {
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
   const updateRow = useCallback(
@@ -370,8 +371,9 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
 
   const totalQty = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
   const jumlahBarang = rows.length;
-  // Update #4 (Q5): kolom Kedaluwarsa hanya tampil bila ada minimal satu baris FEFO.
-  const hasFefoRow = rows.some((r) => isFefoRow(r, barangOptions));
+  // Kolom Kedaluwarsa hanya tampil bila metode valuasi global FEFO dan
+  // ada minimal satu baris berisi barang (audit manufaktur 2026-10-01).
+  const hasFefoRow = rows.some((r) => isFefoRow(r, metodeValuasiGlobal));
 
   return (
     <div className="space-y-3">
@@ -409,10 +411,10 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
                 </TableCell>
                 {hasFefoRow && (
                   <TableCell>
-                    {isFefoRow(row, barangOptions) ? (
+                    {isFefoRow(row, metodeValuasiGlobal) ? (
                       <Input type="date" className="h-8 text-xs" value={row.tanggalKedaluwarsa} onChange={(e) => updateRow(row.id, 'tanggalKedaluwarsa', e.target.value)} />
                     ) : (
-                      <span className="text-xs text-muted-foreground" title="Barang non-FEFO tidak memerlukan kedaluwarsa">
+                      <span className="text-xs text-muted-foreground" title="Baris tanpa barang tidak memerlukan kedaluwarsa">
                         —
                       </span>
                     )}
@@ -643,6 +645,27 @@ function PenerimaanCreateForm() {
   const { options: unpostedInvoiceOptions, loading: invoiceOptionsLoading, error: invoiceOptionsError, retry: retryInvoiceOptions } = useUnpostedInvoiceOptions(fSupplierId || null);
   const [poLoading, setPoLoading] = useState(false);
 
+  // ── Metode valuasi GLOBAL (audit manufaktur 2026-10-01): dasar keputusan
+  // input kedaluwarsa FEFO per baris penerimaan — konsisten dengan engine
+  // stok backend yang memakai satu metode global (dulu: cek legacy
+  // per-barang di barang-dropdown yang tidak pernah dipakai backend). ──
+  const [metodeValuasiGlobal, setMetodeValuasiGlobal] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+    api
+      .get<{ key: string; value: string }>('/master/app-setting/METODE_VALUASI')
+      .then((r) => {
+        if (active) setMetodeValuasiGlobal(r.value);
+      })
+      .catch(() => {
+        /* gagal muat → undefined: kolom kedaluwarsa tersembunyi (perilaku lama);
+           validasi eksekusi backend tetap sebagai garis pertahanan terakhir */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
   const draft = useFormDraft<PenerimaanBarangDraftData>(draftKey(userId, 'purchasing', 'penerimaan-barang', 'create'));
@@ -760,9 +783,10 @@ function PenerimaanCreateForm() {
     const detailError = stockLineError(fDetail);
     if (detailError) errs.detail = detailError;
     else {
-      // Update #4 (Q5): tanggal kedaluwarsa WAJIB untuk barang FEFO
-      // (backend menolak eksekusi FEFO tanpa expiry — cegah sebelum kirim).
-      const fefoMissing = fDetail.filter((r) => r.barangId).find((r) => isFefoRow(r, barangOptions) && !r.tanggalKedaluwarsa);
+      // Audit manufaktur (2026-10-01): tanggal kedaluwarsa WAJIB untuk semua
+      // baris bila metode valuasi global FEFO (backend menolak eksekusi FEFO
+      // tanpa expiry — cegah sebelum kirim).
+      const fefoMissing = fDetail.filter((r) => r.barangId).find((r) => isFefoRow(r, metodeValuasiGlobal) && !r.tanggalKedaluwarsa);
       if (fefoMissing) errs.detail = 'Isi tanggal kedaluwarsa untuk barang FEFO';
     }
     if (Object.keys(errs).length) {
@@ -886,7 +910,7 @@ function PenerimaanCreateForm() {
             <Label className="text-xs font-medium">
               Detail Barang <span className="text-destructive">*</span>
             </Label>
-            <DetailTableSimple rows={fDetail} setRows={setFDetail} barangOptions={barangOptions} satuanOptions={satuanOptions} />
+            <DetailTableSimple rows={fDetail} setRows={setFDetail} barangOptions={barangOptions} satuanOptions={satuanOptions} metodeValuasiGlobal={metodeValuasiGlobal} />
             {formErrors.detail && <p className="text-xs text-destructive mt-1">{formErrors.detail}</p>}
           </div>
           <Separator />

@@ -8,6 +8,7 @@ import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -387,6 +388,14 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
       toast.error('Tanggal, barang, qty, dan diajukan oleh wajib diisi');
       return;
     }
+    // Audit manufaktur (2026-10-01): qty wajib bilangan bulat >= 1.
+    // Dulu "0"/"-5" lolos cek falsy (!formQty) → backend menerima → dokumen
+    // sampah DIAJUKAN tertinggal (admin: direct_complete gagal senyap).
+    const qtyNum = Number(formQty);
+    if (!Number.isInteger(qtyNum) || qtyNum < 1) {
+      toast.error('Qty harus berupa bilangan bulat minimal 1');
+      return;
+    }
     setSubmitting(true);
     try {
       if (isEdit && editId) {
@@ -396,7 +405,8 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
           qty: Number(formQty),
           diajukanOleh: formDiajukanOleh,
           keterangan: formKeterangan || null,
-          // Update #4 (Q1): link SO ikut dikirim (null di-ignore backend; id baru = ganti SO).
+          // Audit manufaktur (2026-10-01): null kini benar-benar MELEPAS link SO
+          // (backend memakai sentinel _UNSET); id baru = ganti SO.
           salesOrderId: formSalesOrderId || null
         };
         await api.put<PermintaanBarangResponse>(`/persediaan/permintaan/${editId}`, payload);
@@ -408,7 +418,7 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
           qty: Number(formQty),
           diajukanOleh: formDiajukanOleh,
           keterangan: formKeterangan || null,
-          // Update #4 (Q1): link opsional ke Sales Order.
+          // Link opsional ke Sales Order (null = tanpa link).
           salesOrderId: formSalesOrderId || null
         };
         await api.post<PermintaanBarangResponse>('/persediaan/permintaan', payload);
@@ -460,7 +470,7 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
                   <Label>
                     Qty <span className="text-destructive">*</span>
                   </Label>
-                  <Input type="number" placeholder="0" value={formQty} onChange={(e) => setFormQty(e.target.value)} />
+                  <Input type="number" placeholder="0" min={1} step={1} value={formQty} onChange={(e) => setFormQty(e.target.value)} />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -468,7 +478,7 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
                   <Label>
                     Diajukan Oleh <span className="text-destructive">*</span>
                   </Label>
-                  <Input placeholder="Nama penganjur" value={formDiajukanOleh} onChange={(e) => setFormDiajukanOleh(e.target.value)} />
+                  <Input placeholder="Nama pengaju" value={formDiajukanOleh} onChange={(e) => setFormDiajukanOleh(e.target.value)} />
                 </div>
               </div>
               <div className="space-y-2">
@@ -613,6 +623,13 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
       toast.error('Semua field wajib diisi');
       return;
     }
+    // Audit manufaktur (2026-10-01): qty wajib bilangan bulat >= 1 (dulu
+    // "0"/negatif lolos cek falsy dan tertinggal sebagai dokumen sampah).
+    const qtyNum = Number(formQty);
+    if (!Number.isInteger(qtyNum) || qtyNum < 1) {
+      toast.error('Qty harus berupa bilangan bulat minimal 1');
+      return;
+    }
     // Phase 3: proactive check — barang non-stock tidak boleh dipakai pemindahan stok
     const selectedBarang = barangOptions.find((b) => b.id === formBarangId);
     if (selectedBarang && !isStockItemBarang(selectedBarang)) {
@@ -722,7 +739,7 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
                   <Label>
                     Qty <span className="text-destructive">*</span>
                   </Label>
-                  <Input type="number" placeholder="0" value={formQty} onChange={(e) => setFormQty(e.target.value)} />
+                  <Input type="number" placeholder="0" min={1} step={1} value={formQty} onChange={(e) => setFormQty(e.target.value)} />
                 </div>
               </div>
               {isEdit && (
@@ -774,6 +791,12 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
   const [formBiayaSatuan, setFormBiayaSatuan] = useState('');
   const [formAlasan, setFormAlasan] = useState('');
   const [formExpiry, setFormExpiry] = useState('');
+  // Audit manufaktur (2026-10-01): penyesuaian adalah satu-satunya dokumen
+  // persediaan yang mengubah NILAI persediaan — tanpa jurnal, buku besar GL
+  // (114001/114002/114004) akan drift dari subledger kartu stok. Default ON
+  // mengikuti intent asli model DB (penyesuaian_stok.auto_post_jurnal
+  // default True); akuntan bisa mematikan bila ingin kontrol jurnal manual.
+  const [formAutoJurnal, setFormAutoJurnal] = useState(true);
 
   // ── Draft otomatis (mode create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -830,7 +853,32 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
   const [loadError, setLoadError] = useState('');
   const [barangRetry, setBarangRetry] = useState(0);
   const selectedBarang = barangDetail?.id === formBarangId ? barangDetail : null;
-  const showExpiry = needsAdjustmentExpiry(formTipe, selectedBarang?.metodeValuasi);
+
+  // ── Metode valuasi GLOBAL (audit manufaktur 2026-10-01) ──
+  // Engine stok backend memakai SATU metode global (Setting Akun →
+  // METODE_VALUASI); kolom legacy per-barang (barang.metode_valuasi, yang
+  // seluruhnya masih "AVERAGE") tidak lagi dipakai. Keputusan tampilnya
+  // field kedaluwarsa & banner FEFO kini mengikuti metode global agar
+  // konsisten dengan validasi approve di backend (dulu: jika global
+  // FEFO tapi barang legacy AVERAGE, field tersembunyi → approve pasti
+  // gagal "wajib mengisi tanggal_kedaluwarsa" dan user tidak bisa mengisi).
+  const [metodeValuasiGlobal, setMetodeValuasiGlobal] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+    api
+      .get<{ key: string; value: string }>('/master/app-setting/METODE_VALUASI')
+      .then((r) => {
+        if (active) setMetodeValuasiGlobal(r.value);
+      })
+      .catch(() => {
+        /* gagal muat → biarkan undefined: field expiry tersembunyi (perilaku lama);
+           validasi backend tetap sebagai garis pertahanan terakhir */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const showExpiry = needsAdjustmentExpiry(formTipe, metodeValuasiGlobal);
 
   useEffect(() => {
     let active = true;
@@ -895,6 +943,7 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
         setFormAlasan(item.alasan || '');
         setFormExpiry(item.tanggalKedaluwarsa || '');
         setOriginalExpiry(item.tanggalKedaluwarsa || null);
+        setFormAutoJurnal(item.autoPostJurnal !== false);
       } catch (err) {
         setLoadError(err instanceof ApiError ? err.detail : 'Gagal memuat data penyesuaian');
       } finally {
@@ -907,6 +956,13 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
   const handleSubmit = async () => {
     if (!formTanggal || !formBarangId || !formGudangId || !formTipe || !formQty) {
       toast.error('Tanggal, barang, gudang, tipe, dan qty wajib diisi');
+      return;
+    }
+    // Audit manufaktur (2026-10-01): qty wajib bilangan bulat >= 1 (dulu
+    // "0"/negatif lolos cek falsy dan tertinggal sebagai dokumen sampah).
+    const qtyNum = Number(formQty);
+    if (!Number.isInteger(qtyNum) || qtyNum < 1) {
+      toast.error('Qty harus berupa bilangan bulat minimal 1');
       return;
     }
     // Phase 3: proactive check — barang non-stock tidak boleh dipakai penyesuaian stok
@@ -933,7 +989,8 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
           tipe: formTipe as TipePenyesuaian,
           qty: Number(formQty),
           biayaSatuan: formTipe === 'KURANG' ? undefined : formBiayaSatuan ? Number(formBiayaSatuan) : undefined,
-          alasan: formAlasan || null
+          alasan: formAlasan || null,
+          autoPostJurnal: formAutoJurnal
         };
         const saved = await api.put<PenyesuaianStokResponse>(`/persediaan/penyesuaian-stok/${editId}`, payload);
         if (showExpiry && saved.tanggalKedaluwarsa !== formExpiry) throw new Error('Tanggal kedaluwarsa belum tersimpan oleh server. Hubungi administrator sebelum menyetujui penyesuaian.');
@@ -947,7 +1004,8 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
           tipe: formTipe as TipePenyesuaian,
           qty: Number(formQty),
           biayaSatuan: formTipe === 'KURANG' ? undefined : formBiayaSatuan ? Number(formBiayaSatuan) : undefined,
-          alasan: formAlasan || null
+          alasan: formAlasan || null,
+          autoPostJurnal: formAutoJurnal
         };
         const saved = await api.post<PenyesuaianStokResponse>('/persediaan/penyesuaian-stok', payload);
         draft.clearDraft();
@@ -1036,7 +1094,7 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
                   <Label>
                     Qty <span className="text-destructive">*</span>
                   </Label>
-                  <Input type="number" placeholder="0" value={formQty} onChange={(e) => setFormQty(e.target.value)} />
+                  <Input type="number" placeholder="0" min={1} step={1} value={formQty} onChange={(e) => setFormQty(e.target.value)} />
                 </div>
                 <div className="space-y-2">
                   <Label>Biaya Satuan</Label>
@@ -1047,7 +1105,7 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
                   <Input type="text" value={formTipe === 'KURANG' ? 'Dihitung saat diposting' : formatRp(formTotal)} readOnly className="bg-muted" />
                 </div>
               </div>
-              {formBarangId && !selectedBarang && !barangError && <p role="status">Memuat metode valuasi barang...</p>}
+              {formBarangId && !selectedBarang && !barangError && <p role="status">Memuat data barang...</p>}
               {barangError && (
                 <div role="alert" className="text-sm text-destructive">
                   {barangError}{' '}
@@ -1056,7 +1114,7 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
                   </Button>
                 </div>
               )}
-              {selectedBarang?.metodeValuasi === 'FEFO' && <p className="rounded border border-blue-200 bg-blue-50 p-3 text-sm">Barang FEFO. {formTipe === 'TAMBAH' ? 'Isi tanggal kedaluwarsa untuk stok yang ditambahkan.' : 'Pengeluaran mengikuti layer persediaan dari backend.'}</p>}
+              {metodeValuasiGlobal === 'FEFO' && <p className="rounded border border-blue-200 bg-blue-50 p-3 text-sm">Metode valuasi global FEFO aktif. {formTipe === 'TAMBAH' ? 'Isi tanggal kedaluwarsa untuk stok yang ditambahkan.' : 'Pengeluaran mengikuti layer persediaan dari backend.'}</p>}
               {showExpiry && (
                 <div className="space-y-2">
                   <Label htmlFor="adj-expiry">
@@ -1074,6 +1132,15 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
               <div className="space-y-2">
                 <Label>Alasan</Label>
                 <Textarea placeholder="Alasan penyesuaian..." rows={3} value={formAlasan} onChange={(e) => setFormAlasan(e.target.value)} />
+              </div>
+              <div className="flex items-start space-x-3 rounded-md border p-3">
+                <Switch id="adj-auto-jurnal" checked={formAutoJurnal} onCheckedChange={setFormAutoJurnal} className="mt-0.5" />
+                <div className="space-y-0.5">
+                  <Label htmlFor="adj-auto-jurnal" className="cursor-pointer">
+                    Otomatis post jurnal
+                  </Label>
+                  <p className="text-xs text-muted-foreground">Saat disetujui, jurnal otomatis dibuat: TAMBAH = D Persediaan / K Selisih Persediaan; KURANG = D Selisih Persediaan / K Persediaan (akun persediaan mengikuti jenis barang). Matikan bila tim akuntansi ingin mencatat jurnal manual.</p>
+                </div>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
                 {!isEdit && (
