@@ -11,12 +11,14 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Package, Search, RefreshCw, Scale, Layers, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, Loader2, Info, AlertTriangle } from 'lucide-react';
+import { Package, Search, RefreshCw, Scale, Layers, ChevronDown, ChevronLeft, ChevronRight, AlertCircle, Loader2, Info, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
 import type { StokKartuEntryResponse, StokKartuSummaryResponse, MetodeValuasiOption, BarangDropdown, GudangResponse, StokRekonsiliasiResponse } from '@/types/api';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { downloadExcelFile } from '@/lib/excel';
+import { exportDateStamp } from '@/components/erp/excel-import-dialog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -106,6 +108,9 @@ export default function StokKartuTab() {
   const [rekonLoading, setRekonLoading] = useState(false);
   const [rekonData, setRekonData] = useState<StokRekonsiliasiResponse | null>(null);
 
+  // ── Update #5: Export stok per gudang ──
+  const [exportingStok, setExportingStok] = useState(false);
+
   // ── Fetch dropdowns ──
   useEffect(() => {
     const fetchDropdowns = async () => {
@@ -175,6 +180,20 @@ export default function StokKartuTab() {
     setSkip(0);
     fetchEntries();
     fetchSummary();
+  };
+
+  // ── Update #5: Export stok per barang+gudang ──
+  const handleExportStok = async () => {
+    setExportingStok(true);
+    try {
+      const endpoint = `/persediaan/stok/export${selectedGudang ? `?gudang_id=${encodeURIComponent(selectedGudang)}` : ''}`;
+      await downloadExcelFile(endpoint, `stok-${exportDateStamp()}.xlsx`);
+      toast.success('Data stok berhasil diunduh');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Gagal mengekspor data stok');
+    } finally {
+      setExportingStok(false);
+    }
   };
 
   // ── Handle rekonsiliasi ──
@@ -267,6 +286,12 @@ export default function StokKartuTab() {
             <Button onClick={handleSearch} disabled={!selectedBarang} className="gap-2">
               <Search className="h-4 w-4" />
               Lihat Kartu Stok
+            </Button>
+
+            {/* Update #5: Export stok per barang + gudang */}
+            <Button variant="outline" onClick={handleExportStok} disabled={exportingStok} className="gap-2">
+              {exportingStok ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Export Stok
             </Button>
           </div>
         </CardContent>

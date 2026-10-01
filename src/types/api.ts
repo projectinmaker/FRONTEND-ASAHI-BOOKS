@@ -1413,6 +1413,8 @@ export interface SalesInvoiceDetailCreate {
 export interface SalesInvoiceDetailResponse extends SalesInvoiceDetailCreate {
   id: string;
   barang: BarangSimple | null;
+  /** Update #5: nama satuan per baris (dari backend, untuk kolom Satuan di print) */
+  satuan?: string | null;
 }
 
 export interface SalesInvoiceCreate {
@@ -1496,6 +1498,8 @@ export interface SalesReturDetailCreate {
 export interface SalesReturDetailResponse extends SalesReturDetailCreate {
   id: string;
   barang: BarangSimple | null;
+  /** Update #5: nama satuan per baris (dari backend, untuk kolom Satuan di print) */
+  satuan?: string | null;
 }
 
 export interface SalesReturCreate {
@@ -1715,6 +1719,8 @@ export interface PurchaseInvoiceDetailResponse extends PurchaseInvoiceDetailCrea
   satuan?: SatuanSimple | null;
   id: string;
   barang: BarangSimple | null;
+  /** Update #5: nama satuan per baris sebagai string (dari backend, untuk kolom Satuan di print) */
+  satuanNama?: string | null;
 }
 
 export interface PurchaseInvoiceCreate {
@@ -1790,6 +1796,8 @@ export interface PurchaseReturDetailCreate {
 export interface PurchaseReturDetailResponse extends PurchaseReturDetailCreate {
   id: string;
   barang: BarangSimple | null;
+  /** Update #5: nama satuan per baris (dari backend, untuk kolom Satuan di print) */
+  satuan?: string | null;
 }
 
 export interface PurchaseReturCreate {
@@ -3051,6 +3059,10 @@ export interface PelunasanCreate {
   noNukti: string;
   alokasi: PelunasanAlokasiCreate[];
   catatan?: string;
+  /** Update #5: penalti/denda (≥ 0); totalNilai backend = Σ alokasi + penalti */
+  penalti?: string;
+  /** Wajib bila penalti > 0 (akun AKTIF leaf, bukan kas/bank/AR/AP) */
+  akunPenaltiId?: string | null;
 }
 
 export interface PelunasanAlokasiResponse {
@@ -3070,6 +3082,9 @@ export interface PelunasanResponse {
   jurnalUmumId: string | null;
   pihakId: string | null;
   alokasi: PelunasanAlokasiResponse[];
+  /** Update #5 */
+  penalti?: string;
+  akunPenaltiId?: string | null;
 }
 
 export interface InvoiceSaldoResponse {
@@ -3108,6 +3123,31 @@ export interface InvoicePaymentHistoryItem {
 export interface InvoiceSaldoDetailResponse extends InvoiceSaldoResponse {
   asOfDate: string;
   pembayaran: InvoicePaymentHistoryItem[];
+}
+
+// ── Import & Export Excel (Update #5) ────────────────────────────────────
+
+/** Item GET /master/coa-dropdown */
+export interface CoaDropdownItem {
+  id: string;
+  kode: string;
+  nama: string;
+  header: string;
+  tingkat: string;
+  status: string;
+}
+
+export interface ImportRowError {
+  baris: number;
+  pesan: string;
+}
+
+/** Response POST /master/{entity}/import */
+export interface ImportResult {
+  totalBaris: number;
+  sukses: number;
+  gagal: number;
+  errors: ImportRowError[];
 }
 
 // ── Stok Rekonsiliasi (Tahap 4) ─────────────────────────────────────────

@@ -250,7 +250,9 @@ function mapInvoiceData(d: SalesInvoiceResponse): InvoiceData {
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
-      diskon: Number(r.diskon) || 0
+      diskon: Number(r.diskon) || 0,
+      // Update #5: nama satuan per baris dari backend (SalesInvoiceDetailResponse.satuan).
+      satuan: r.satuan ?? null
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,
@@ -303,7 +305,7 @@ export function InvoiceCetakTab({ id }: { id: string }) {
   }, []);
 
   return (
-    <FormTabShell title={`Cetak Faktur Penjualan${data ? ` — ${data.nomor}` : ''}`}>
+    <FormTabShell title={`Cetak Invoice Penjualan${data ? ` — ${data.nomor}` : ''}`}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={handlePrint} disabled={loading || !!error}>
@@ -345,7 +347,9 @@ function mapReturData(d: SalesReturResponse): ReturData {
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
-      diskon: 0
+      diskon: 0,
+      // Update #5: nama satuan per baris dari backend (SalesReturDetailResponse.satuan).
+      satuan: r.satuan ?? null
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,

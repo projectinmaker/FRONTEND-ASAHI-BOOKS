@@ -10,7 +10,7 @@ export interface DetailRow {
   harga: number;
   qty: number;
   diskon: number;
-  satuan?: string; // for pengiriman & pesanan (tanpa harga)
+  satuan?: string | null; // nama satuan per baris — kolom "Satuan" di semua cetakan (Update #5)
 }
 
 export interface BiayaTambahan {
@@ -181,30 +181,32 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: De
   );
 }
 
-// ─── Helper: Detail Table with price columns (Invoice / Retur) ────────────
+// ─── Helper: Detail Table with price columns (Invoice / Retur / Penawaran) ───
+// Update #5: + kolom No urut (40px), label qty → "Qty", + kolom Satuan terpisah.
 
 function DetailTableWithPrice({ detail }: { detail: DetailRow[] }) {
   return (
     <table style={tableStyle}>
       <thead>
         <tr>
+          <th style={{ ...headerCellStyle, width: '40px' }}>No</th>
           <th style={headerCellStyle}>Nama Barang</th>
-          <th style={{ ...headerCellStyle, width: '60px' }}>Kts</th>
-          <th style={{ ...headerCellStyle, width: '110px' }}>@Harga</th>
-          <th style={{ ...headerCellStyle, width: '80px' }}>Diskon (%)</th>
-          <th style={{ ...headerCellStyle, width: '130px' }}>Total Harga</th>
+          <th style={{ ...headerCellStyle, width: '50px' }}>Qty</th>
+          <th style={{ ...headerCellStyle, width: '90px' }}>Satuan</th>
+          <th style={{ ...headerCellStyle, width: '100px' }}>@Harga</th>
+          <th style={{ ...headerCellStyle, width: '70px' }}>Diskon (%)</th>
+          <th style={{ ...headerCellStyle, width: '110px' }}>Total Harga</th>
         </tr>
       </thead>
       <tbody>
-        {detail.map((row) => {
+        {detail.map((row, i) => {
           const totalHarga = row.qty * row.harga;
           return (
             <tr key={row.id}>
-              <td style={cellStyle}>
-                {row.barang}
-                {row.satuan ? ` (${row.satuan})` : ''}
-              </td>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
+              <td style={cellStyle}>{row.barang}</td>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(row.harga)}</td>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{row.diskon || 0}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(totalHarga)}</td>
@@ -287,14 +289,16 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
         <table style={tableStyle}>
           <thead>
             <tr>
+              <th style={{ ...headerCellStyle, width: '40px' }}>No</th>
               <th style={headerCellStyle}>Nama Barang</th>
-              <th style={{ ...headerCellStyle, width: '80px' }}>Kts</th>
+              <th style={{ ...headerCellStyle, width: '80px' }}>Qty</th>
               <th style={{ ...headerCellStyle, width: '100px' }}>Satuan</th>
             </tr>
           </thead>
           <tbody>
-            {data.detail.map((row) => (
+            {data.detail.map((row, i) => (
               <tr key={row.id}>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
                 <td style={cellStyle}>{row.barang}</td>
                 <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
                 <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
@@ -385,14 +389,16 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
         <table style={tableStyle}>
           <thead>
             <tr>
+              <th style={{ ...headerCellStyle, width: '40px' }}>No</th>
               <th style={headerCellStyle}>Nama Barang</th>
-              <th style={{ ...headerCellStyle, width: '80px' }}>Kts</th>
+              <th style={{ ...headerCellStyle, width: '80px' }}>Qty</th>
               <th style={{ ...headerCellStyle, width: '100px' }}>Satuan</th>
             </tr>
           </thead>
           <tbody>
-            {data.detail.map((row) => (
+            {data.detail.map((row, i) => (
               <tr key={row.id}>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
                 <td style={cellStyle}>{row.barang}</td>
                 <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
                 <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
@@ -454,7 +460,7 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// 3. FAKTUR PENJUALAN (INVOICE)
+// 3. INVOICE PENJUALAN (Update #5 — rename judul print)
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
@@ -476,7 +482,7 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
             <div>{COMPANY_INFO.address}</div>
           </div>
         </div>
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Faktur Penjualan</div>
+        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Invoice Penjualan</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -660,7 +666,7 @@ export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
         </div>
       </div>
 
-      {/* ── Detail Table (dengan harga; satuan tampil di dalam kolom Nama Barang) ── */}
+      {/* ── Detail Table (dengan harga; kolom Satuan terpisah — Update #5) ── */}
       <div className="mb-4">
         <DetailTableWithPrice detail={data.detail} />
       </div>

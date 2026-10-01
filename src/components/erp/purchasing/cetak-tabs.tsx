@@ -232,7 +232,10 @@ function mapInvoicePembelianData(d: PurchaseInvoiceResponse): InvoicePembelianDa
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
-      diskon: Number(r.diskon) || 0
+      diskon: Number(r.diskon) || 0,
+      // Update #5: nama satuan per baris (PurchaseInvoiceDetailResponse.satuanNama;
+      // fallback nested satuan objek Phase D).
+      satuan: r.satuanNama ?? r.satuan?.nama ?? null
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,
@@ -274,7 +277,7 @@ export function InvoicePembelianCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Faktur-Pembelian-${data.nomor || id}.pdf`);
+      await generatePDF(elementId, `Invoice-Pembelian-${data.nomor || id}.pdf`);
     } finally {
       setDownloading(false);
     }
@@ -285,7 +288,7 @@ export function InvoicePembelianCetakTab({ id }: { id: string }) {
   }, []);
 
   return (
-    <FormTabShell title={`Cetak Faktur Pembelian${data ? ` — ${data.nomor}` : ''}`}>
+    <FormTabShell title={`Cetak Invoice Pembelian${data ? ` — ${data.nomor}` : ''}`}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={handlePrint} disabled={loading || !!error}>
@@ -326,7 +329,9 @@ function mapReturPembelianData(d: PurchaseReturResponse): ReturPembelianData {
       id: r.id,
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
-      qty: Number(r.qty) || 0
+      qty: Number(r.qty) || 0,
+      // Update #5: nama satuan per baris dari backend (PurchaseReturDetailResponse.satuan).
+      satuan: r.satuan ?? null
     })),
     keterangan: d.keterangan || '',
     ppn: Number(d.ppn) || 0

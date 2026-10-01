@@ -601,7 +601,7 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-1.5">
-                Penjualan (Faktur)
+                Penjualan (Invoice)
                 {data.trenPenjualan.labelNote && (
                   <span title={data.trenPenjualan.labelNote} className="text-muted-foreground cursor-help">
                     <Info className="h-3.5 w-3.5" />
@@ -628,7 +628,7 @@ export default function Dashboard() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-1.5">
-                Penjualan (Faktur)
+                Penjualan (Invoice)
                 {data?.trenPenjualan.labelNote && (
                   <span title={data.trenPenjualan.labelNote} className="text-muted-foreground cursor-help">
                     <Info className="h-3.5 w-3.5" />
@@ -668,15 +668,15 @@ export default function Dashboard() {
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <Package className="h-4 w-4" />
-                Faktur Jatuh Tempo
+                Invoice Jatuh Tempo
               </CardTitle>
-              <CardDescription>Daftar faktur yang perlu segera ditindaklanjuti</CardDescription>
+              <CardDescription>Daftar invoice yang perlu segera ditindaklanjuti</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No. Faktur</TableHead>
+                    <TableHead>No. Invoice</TableHead>
                     <TableHead>Pelanggan</TableHead>
                     <TableHead className="text-right">Sisa</TableHead>
                     <TableHead>Jatuh Tempo</TableHead>
@@ -687,7 +687,7 @@ export default function Dashboard() {
                   {data.fakturJatuhTempo.items.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                        Tidak ada faktur jatuh tempo
+                        Tidak ada invoice jatuh tempo
                       </TableCell>
                     </TableRow>
                   ) : (

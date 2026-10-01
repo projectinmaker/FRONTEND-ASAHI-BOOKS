@@ -19,13 +19,15 @@ import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Package, AlertTriangle, DollarSign, Plus, Search, ArrowRightLeft, Warehouse, Tags, ClipboardList, CheckCircle, Loader2, Undo2, ChevronLeft, ChevronRight, FolderTree, FileSpreadsheet, Pencil, PackageX, SearchX } from 'lucide-react';
+import { Package, AlertTriangle, DollarSign, Plus, Search, ArrowRightLeft, Warehouse, Tags, ClipboardList, CheckCircle, Loader2, Undo2, ChevronLeft, ChevronRight, FolderTree, FileSpreadsheet, Pencil, PackageX, SearchX, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { formatRp } from '@/lib/pdf-utils';
 import type { PenyesuaianStokResponse, PenyesuaianStokCreate, PenyesuaianStokUpdate, PemindahanBarangResponse, PemindahanBarangCreate, PemindahanBarangUpdate, PermintaanBarangResponse, PermintaanBarangCreate, PermintaanBarangUpdate, BarangDropdown, GudangResponse, BarangResponse, KategoriBarangResponse, TipePenyesuaian, ProsesPemindahan, SalesOrderResponse, SalesOrderSisaResponse } from '@/types/api';
 import StokKartuTab from '@/components/erp/inventory/stok-kartu';
 import BarangForm from '@/components/erp/inventory/barang-form';
+import { ExcelImportDialog, exportDateStamp } from '@/components/erp/excel-import-dialog';
+import { downloadExcelFile } from '@/lib/excel';
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { needsAdjustmentExpiry, adjustmentExpiryPayload } from '@/lib/phase-a';
@@ -1953,6 +1955,10 @@ function BarangJasaTab({ refreshKey }: { refreshKey?: number }) {
   const [search, setSearch] = useState('');
   const [skip, setSkip] = useState(0);
 
+  // Update #5: Export & Import Excel
+  const [exporting, setExporting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
@@ -2008,6 +2014,20 @@ function BarangJasaTab({ refreshKey }: { refreshKey?: number }) {
     return 'Tersedia';
   };
 
+  // ── Update #5: Export & Import Excel ──
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const endpoint = `/master/barang/export${debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''}`;
+      await downloadExcelFile(endpoint, `barang-${exportDateStamp()}.xlsx`);
+      toast.success('Data barang berhasil diunduh');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Gagal mengekspor data barang');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // ── Tahap 1: badge akun persediaan untuk list barang ──
   const renderAkunPersediaan = (item: BarangResponse) => {
     if (item.jenisBarang === 'JASA') {
@@ -2040,15 +2060,24 @@ function BarangJasaTab({ refreshKey }: { refreshKey?: number }) {
         <SummaryCard icon={AlertTriangle} label="Stok Menipis" value={summaryLoading ? '—' : valuationSummary ? `${valuationSummary.low_stock.count} item` : '—'} iconBg="bg-amber-50" iconColor="text-amber-600" loading={summaryLoading} />
       </div>
 
-      {/* Search + Tambah Barang button (lokasi baru) */}
+      {/* Search + toolbar (lokasi baru) */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Cari kode atau nama barang..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <Button size="sm" className="gap-2" onClick={() => openFormTab({ title: 'Tambah Barang', module: 'inventory', subPage: 'barang-jasa', formKey: 'barang-create' })}>
-          <Plus className="h-4 w-4" /> Tambah Barang
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-2" onClick={handleExport} disabled={exporting}>
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            Export Excel
+          </Button>
+          <Button size="sm" variant="outline" className="gap-2" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4" /> Import Excel
+          </Button>
+          <Button size="sm" className="gap-2" onClick={() => openFormTab({ title: 'Tambah Barang', module: 'inventory', subPage: 'barang-jasa', formKey: 'barang-create' })}>
+            <Plus className="h-4 w-4" /> Tambah Barang
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -2128,6 +2157,22 @@ function BarangJasaTab({ refreshKey }: { refreshKey?: number }) {
 
       {/* Pagination */}
       {!loading && !error && total > 0 && <Pagination skip={skip} total={total} onNext={() => setSkip((s) => s + PAGE_SIZE)} onPrev={() => setSkip((s) => Math.max(0, s - PAGE_SIZE))} />}
+
+      {/* Update #5: dialog Import Excel */}
+      <ExcelImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        title="Import Barang"
+        description="Unduh template, isi data barang (kategori & satuan diisi dengan nama), lalu unggah file Excel (.xlsx)."
+        templateEndpoint="/master/barang/import-template"
+        importEndpoint="/master/barang/import"
+        onImported={() => {
+          // Refresh in-place: dialog hidup di dalam tab list, jadi panggil fetch
+          // langsung (refreshListTab hanya efektif bila disertai pergantian tab).
+          fetchData();
+          fetchSummary();
+        }}
+      />
     </>
   );
 }

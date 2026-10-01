@@ -363,7 +363,7 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
             <TableRow className="bg-muted/50">
               <TableHead className="w-[100px]">Kode Barang</TableHead>
               <TableHead className="min-w-[200px]">Nama Barang</TableHead>
-              <TableHead className="w-[80px] text-right">Kts</TableHead>
+              <TableHead className="w-[80px] text-right">Qty</TableHead>
               <TableHead className="w-[120px]">Satuan</TableHead>
               <TableHead className="w-[40px]" />
             </TableRow>
@@ -1244,7 +1244,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     <FormTabShell title="Buat Invoice Penjualan">
       <Card className="max-w-5xl">
         <CardContent className="p-6 space-y-4">
-          <p className="text-sm text-muted-foreground">Isi data faktur penjualan baru</p>
+          <p className="text-sm text-muted-foreground">Isi data invoice penjualan baru</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">
@@ -2849,7 +2849,7 @@ function InvoiceTab({ pelangganOptions, syaratBayarOptions, barangOptions, sales
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-base">Daftar Invoice</CardTitle>
-              <CardDescription>Daftar seluruh faktur penjualan</CardDescription>
+              <CardDescription>Daftar seluruh invoice penjualan</CardDescription>
             </div>
             <Button
               size="sm"

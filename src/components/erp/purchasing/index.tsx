@@ -381,7 +381,7 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
             <TableRow className="bg-muted/50">
               <TableHead className="w-[100px]">Kode Barang</TableHead>
               <TableHead className="min-w-[200px]">Nama Barang</TableHead>
-              <TableHead className="w-[80px] text-right">Kts</TableHead>
+              <TableHead className="w-[80px] text-right">Qty</TableHead>
               <TableHead className="w-[120px]">Satuan</TableHead>
               {hasFefoRow && <TableHead className="w-[140px]">Kedaluwarsa</TableHead>}
               <TableHead className="w-[40px]" />
@@ -1270,7 +1270,7 @@ function InvoiceCreateForm() {
       if (sisa.supplierId) setFSupplierId(sisa.supplierId);
       const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
       if (rows.length === 0) {
-        toast.info('Semua baris PO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk PO ini.' });
+        toast.info('Semua baris PO sudah dibuatkan invoice sepenuhnya', { description: 'Tidak ada sisa qty yang perlu dibuatkan invoice untuk PO ini.' });
         setFDetail([]);
         return;
       }
@@ -1458,7 +1458,7 @@ function InvoiceCreateForm() {
               </div>
             </div>
           )}
-          <p className="text-sm text-muted-foreground">Isi data faktur pembelian baru</p>
+          <p className="text-sm text-muted-foreground">Isi data invoice pembelian baru</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">
@@ -3084,7 +3084,7 @@ function InvoiceTab({ supplierOptions, barangOptions, purchaseOrderOptions, refr
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-base">Daftar Invoice Pembelian</CardTitle>
-              <CardDescription>Daftar seluruh faktur pembelian</CardDescription>
+              <CardDescription>Daftar seluruh invoice pembelian</CardDescription>
             </div>
             <Button
               size="sm"

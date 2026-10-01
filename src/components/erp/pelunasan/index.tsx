@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, Fragment, type ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,12 +17,13 @@ import { useAuthStore } from '@/store/auth-store';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
-import { HandCoins, Loader2, Search, AlertCircle, CheckCircle2, Info, Save, X } from 'lucide-react';
+import { HandCoins, Loader2, Search, AlertCircle, CheckCircle2, Info, Save, X, History, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 import { api, ApiError } from '@/lib/api';
 import { pelunasanApi } from '@/lib/pelunasan-api';
-import type { JenisPelunasan, StatusPembayaran, InvoiceSaldoResponse, PelunasanCreate, KasBankAkunResponse, PelangganDropdown, SupplierDropdown } from '@/types/api';
+import { downloadExcelFile } from '@/lib/excel';
+import type { JenisPelunasan, StatusPembayaran, InvoiceSaldoResponse, InvoiceSaldoDetailResponse, PelunasanCreate, KasBankAkunResponse, PelangganDropdown, SupplierDropdown, CoaDropdownItem } from '@/types/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -89,6 +90,23 @@ function Pagination({ skip, total, onNext, onPrev }: { skip: number; total: numb
   );
 }
 
+// ─── Riwayat pembayaran: shared UI (Update #5) ─────────────────────────────────
+
+function RiwayatStat({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-md border bg-background p-2.5">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <div className="mt-0.5 font-mono text-sm font-medium">{children}</div>
+    </div>
+  );
+}
+
+/** Status workflow dokumen pembayaran (DRAFT/PENDING/…/SELESAI) — teks berwarna. */
+function RiwayatStatusText({ status }: { status: string }) {
+  const cls = status === 'DRAFT' ? 'text-amber-700' : status === 'SELESAI' || status === 'POSTED' ? 'text-emerald-700' : 'text-muted-foreground';
+  return <span className={`text-xs font-medium ${cls}`}>{status}</span>;
+}
+
 // ─── Helper: parse decimal string from backend ────────────────────────────────
 
 function parseNum(v: string | number | null | undefined): number {
@@ -122,6 +140,9 @@ interface PelunasanDraftData {
   kasBankId: string;
   noNukti: string;
   catatan: string;
+  /** Update #5: penalti (display terformat) + akun penalti */
+  penaltiDisplay?: string;
+  akunPenaltiId?: string;
   alokasi: { invoiceId: string; nilaiDisplay: string }[];
 }
 
@@ -165,6 +186,22 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   const [catatan, setCatatan] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // ── Penalti + akun penalti (Update #5) ──
+  const [penaltiDisplay, setPenaltiDisplay] = useState('');
+  const [akunPenaltiId, setAkunPenaltiId] = useState('');
+  const [coaOptions, setCoaOptions] = useState<CoaDropdownItem[]>([]);
+  const [coaLoading, setCoaLoading] = useState(false);
+  const coaFetchedRef = useRef(false);
+
+  // ── Riwayat pembayaran per invoice (panel expand, satu baris terbuka) ──
+  const [riwayatInvoiceId, setRiwayatInvoiceId] = useState<string | null>(null);
+  const [riwayatData, setRiwayatData] = useState<InvoiceSaldoDetailResponse | null>(null);
+  const [riwayatLoading, setRiwayatLoading] = useState(false);
+  const riwayatSeqRef = useRef(0);
+
+  // ── Export Excel (Update #5) ──
+  const [exporting, setExporting] = useState(false);
 
   // ── Fetch pihak + kas-bank dropdowns ──
   const fetchDropdowns = useCallback(async () => {
@@ -214,6 +251,13 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     void fetchTagihan();
   }, [fetchTagihan, refreshKey]);
 
+  // ── Riwayat: tutup panel bila filter/halaman tagihan berubah ──
+  useEffect(() => {
+    riwayatSeqRef.current++;
+    setRiwayatInvoiceId(null);
+    setRiwayatData(null);
+  }, [pihakFilter, statusFilter, asOf, skip]);
+
   // ── Selection handlers ──
   const toggleSelect = useCallback((inv: InvoiceSaldoResponse) => {
     setSelected((prev) => {
@@ -253,9 +297,69 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     setErrors({});
   }, []);
 
+  // ── Riwayat pembayaran per invoice: toggle expand (satu baris terbuka) ──
+  const toggleRiwayat = useCallback(
+    async (inv: InvoiceSaldoResponse) => {
+      if (riwayatInvoiceId === inv.invoiceId) {
+        riwayatSeqRef.current++;
+        setRiwayatInvoiceId(null);
+        setRiwayatData(null);
+        return;
+      }
+      const seq = ++riwayatSeqRef.current;
+      setRiwayatInvoiceId(inv.invoiceId);
+      setRiwayatData(null);
+      setRiwayatLoading(true);
+      try {
+        const res = await pelunasanApi.getInvoiceSaldo(jenis, inv.invoiceId, asOf || undefined);
+        if (seq !== riwayatSeqRef.current) return; // permintaan kedaluwarsa (baris lain dibuka)
+        setRiwayatData(res);
+      } catch (err) {
+        if (seq !== riwayatSeqRef.current) return;
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat riwayat pembayaran');
+        setRiwayatInvoiceId(null);
+      } finally {
+        if (seq === riwayatSeqRef.current) setRiwayatLoading(false);
+      }
+    },
+    [riwayatInvoiceId, jenis, asOf]
+  );
+
   // ── Total allocation ──
   const selectedList = useMemo(() => Object.values(selected), [selected]);
   const totalAllocation = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.nilaiDisplay)), 0), [selectedList]);
+
+  // ── Penalti (Update #5): subtotal alokasi + penalti = total pembayaran ──
+  const penaltiNum = useMemo(() => parseNum(parseRupiahInput(penaltiDisplay)), [penaltiDisplay]);
+  const penaltiMissingAkun = penaltiNum > 0 && !akunPenaltiId;
+  const totalPembayaran = totalAllocation + penaltiNum;
+
+  // Akun penalti: piutang → utamakan akun PENDAPATAN; hutang → utamakan akun BEBAN.
+  // Prefilter kosong → fallback seluruh akun AKTIF bertingkat DETAIL.
+  const akunPenaltiOptions = useMemo(() => {
+    const base = coaOptions.filter((c) => c.status === 'AKTIF' && c.tingkat === 'DETAIL');
+    const preferred = base.filter((c) => (isPiutang ? c.header === 'PENDAPATAN' : (c.header || '').includes('BEBAN')));
+    return preferred.length > 0 ? preferred : base;
+  }, [coaOptions, isPiutang]);
+
+  const akunPenaltiOptionsFmt = useMemo(() => akunPenaltiOptions.map((c) => ({ id: c.id, label: `${c.kode} — ${c.nama}` })), [akunPenaltiOptions]);
+
+  // ── Muat daftar akun (COA) saat form alokasi pertama kali dibutuhkan ──
+  useEffect(() => {
+    if (selectedList.length === 0 || coaFetchedRef.current) return;
+    coaFetchedRef.current = true;
+    setCoaLoading(true);
+    api
+      .get<CoaDropdownItem[]>('/master/coa-dropdown')
+      .then((res) => {
+        setCoaOptions(Array.isArray(res) ? res : []);
+      })
+      .catch((err) => {
+        coaFetchedRef.current = false; // izinkan percobaan ulang saat form dibuka lagi
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat daftar akun (COA)');
+      })
+      .finally(() => setCoaLoading(false));
+  }, [selectedList.length]);
 
   // ── Draft otomatis (form alokasi pelunasan; dipulihkan saat kembali ke halaman ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -273,6 +377,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     if (d.kasBankId) setKasBankId(d.kasBankId);
     if (d.noNukti) setNoNukti(d.noNukti);
     if (d.catatan) setCatatan(d.catatan);
+    if (d.penaltiDisplay) setPenaltiDisplay(d.penaltiDisplay);
+    if (d.akunPenaltiId) setAkunPenaltiId(d.akunPenaltiId);
   }, []);
 
   // Tahap 2 — alokasi invoice dipulihkan saat daftar tagihan selesai dimuat
@@ -313,9 +419,11 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       kasBankId,
       noNukti,
       catatan,
+      penaltiDisplay,
+      akunPenaltiId,
       alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay }))
     });
-  }, [tanggal, kasBankId, noNukti, catatan, selected]);
+  }, [tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selected]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
@@ -325,6 +433,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     setCatatan('');
     setTanggal(todayStr());
     setKasBankId('');
+    setPenaltiDisplay('');
+    setAkunPenaltiId('');
     setErrors({});
   }, []);
 
@@ -362,9 +472,12 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     }
     if (hasInvalid) e.alokasi = 'Semua nilai pembayaran harus lebih dari 0';
     if (!e.alokasi && hasOver) e.alokasi = 'Nilai pembayaran tidak boleh melebihi sisa tagihan';
+    // Update #5 — penalti
+    if (penaltiNum < 0) e.penalti = 'Penalti tidak boleh negatif';
+    if (penaltiNum > 0 && !akunPenaltiId) e.penalti = 'Akun penalti wajib dipilih bila penalti > 0';
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel]);
+  }, [tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId]);
 
   // ── Submit draft ──
   const handleSubmit = useCallback(async () => {
@@ -380,7 +493,10 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
         alokasi: selectedList.map((r) => ({
           invoiceId: r.invoice.invoiceId,
           nilai: parseRupiahInput(r.nilaiDisplay)
-        }))
+        })),
+        // Update #5 — penalti di level header; totalNilai (Σ alokasi + penalti) dihitung backend.
+        penalti: parseRupiahInput(penaltiDisplay),
+        akunPenaltiId: akunPenaltiId || null
       };
       const res = await pelunasanApi.create(jenis, payload);
       toast.success(`Draft pembayaran ${res.noBukti} dibuat`, {
@@ -393,6 +509,10 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       clearSelection();
       setNoNukti('');
       setCatatan('');
+      setPenaltiDisplay('');
+      setAkunPenaltiId('');
+      setRiwayatInvoiceId(null);
+      setRiwayatData(null);
       setTanggal(todayStr());
       setKasBankId('');
       void fetchTagihan();
@@ -401,7 +521,25 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     } finally {
       setSubmitting(false);
     }
-  }, [validate, selectedPihakId, tanggal, kasBankId, noNukti, catatan, selectedList, jenis, clearSelection, fetchTagihan]);
+  }, [validate, selectedPihakId, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, clearSelection, fetchTagihan]);
+
+  // ── Export Excel daftar tagihan (Update #5) — ikut filter aktif ──
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (pihakFilter) params.set('pihakId', pihakFilter);
+      if (statusFilter) params.set('statusPembayaran', statusFilter);
+      if (asOf) params.set('asOf', asOf);
+      const qs = params.toString();
+      await downloadExcelFile(`/pelunasan/tagihan/${jenis}/export${qs ? `?${qs}` : ''}`, `tagihan-${jenis}-${asOf || todayStr()}.xlsx`);
+      toast.success('File Excel tagihan diunduh');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Gagal mengunduh file Excel');
+    } finally {
+      setExporting(false);
+    }
+  }, [jenis, pihakFilter, statusFilter, asOf]);
 
   // ── Selection summary ──
   const totalSisaSelected = useMemo(() => selectedList.reduce((s, r) => s + parseNum(r.invoice.sisaTagihan), 0), [selectedList]);
@@ -432,6 +570,81 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     [pihakOptions]
   );
 
+  // ── Panel riwayat pembayaran (dirender di bawah baris tagihan yang terbuka) ──
+  const renderRiwayatPanel = (inv: InvoiceSaldoResponse) => {
+    if (riwayatLoading) {
+      return (
+        <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Memuat riwayat pembayaran…
+        </div>
+      );
+    }
+    if (!riwayatData) return null;
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Riwayat Pembayaran — {inv.noDokumen}</p>
+          <p className="text-[11px] text-muted-foreground">Per {formatDate(riwayatData.asOfDate)}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <RiwayatStat label="Nilai Tagihan">{formatRp(parseNum(riwayatData.nilaiTagihan))}</RiwayatStat>
+          <RiwayatStat label="Total Bayar">{formatRp(parseNum(riwayatData.totalBayar))}</RiwayatStat>
+          <RiwayatStat label="Total Retur">{formatRp(parseNum(riwayatData.totalRetur))}</RiwayatStat>
+          <RiwayatStat label="Sisa Tagihan">
+            <span className="font-bold">{formatRp(parseNum(riwayatData.sisaTagihan))}</span>
+          </RiwayatStat>
+          <RiwayatStat label="Status">
+            <StatusPembayaranBadge status={riwayatData.statusPembayaran} />
+          </RiwayatStat>
+        </div>
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead>No Bukti</TableHead>
+                <TableHead className="w-[110px]">Tanggal</TableHead>
+                <TableHead className="text-right w-[140px]">Nilai</TableHead>
+                <TableHead className="w-[130px]">Status</TableHead>
+                <TableHead className="w-[100px] text-center">Dihitung</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {riwayatData.pembayaran.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="h-10 text-center text-xs text-muted-foreground">
+                    Belum ada pembayaran tercatat untuk invoice ini
+                  </TableCell>
+                </TableRow>
+              ) : (
+                riwayatData.pembayaran.map((p) => (
+                  <TableRow key={p.paymentId}>
+                    <TableCell className="font-mono text-xs font-medium">{p.noBukti}</TableCell>
+                    <TableCell className="text-xs">{formatDate(p.tanggal)}</TableCell>
+                    <TableCell className="text-right font-mono text-xs">{formatRp(parseNum(p.nilai))}</TableCell>
+                    <TableCell>
+                      <RiwayatStatusText status={p.status} />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {p.dihitung ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> Ya
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Info className="h-3.5 w-3.5" aria-hidden="true" /> Tidak
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Filter card */}
@@ -442,7 +655,13 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
               <CardTitle className="text-base">Daftar Tagihan {isPiutang ? 'Piutang' : 'Hutang'}</CardTitle>
               <CardDescription>Pilih {pihakLabel.toLowerCase()} dan filter tagihan untuk dilunasi</CardDescription>
             </div>
-            <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel={isPiutang ? 'Pelunasan Piutang' : 'Pelunasan Hutang'} />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={exporting} className="h-9">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <FileSpreadsheet className="h-4 w-4 mr-1.5" />}
+                Export Excel
+              </Button>
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel={isPiutang ? 'Pelunasan Piutang' : 'Pelunasan Hutang'} />
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -520,14 +739,15 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                     <TableHead className="text-right w-[130px]">Total Bayar</TableHead>
                     <TableHead className="text-right w-[130px]">Sisa Tagihan</TableHead>
                     <TableHead className="w-[120px] text-center">Status Bayar</TableHead>
+                    <TableHead className="w-16 text-center">Riwayat</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={8} />
+                    <SkeletonRows cols={9} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-0 p-0">
+                      <TableCell colSpan={9} className="h-0 p-0">
                         <EmptyState icon={HandCoins} title={`Tidak ada tagihan ${isPiutang ? 'piutang' : 'hutang'}`} description={pihakFilter ? `${pihakLabel} ini tidak memiliki tagihan dengan filter saat ini.` : `Pilih ${pihakLabel.toLowerCase()} untuk menampilkan tagihan, atau klik "Semua ${pihakLabel}".`} />
                       </TableCell>
                     </TableRow>
@@ -536,21 +756,36 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                       const isSel = !!selected[inv.invoiceId];
                       const sisa = parseNum(inv.sisaTagihan);
                       const canPay = sisa > 0;
+                      const riwayatOpen = riwayatInvoiceId === inv.invoiceId;
                       return (
-                        <TableRow key={inv.invoiceId} className={isSel ? 'bg-muted/40' : ''}>
-                          <TableCell className="text-center">
-                            <Checkbox checked={isSel} disabled={!canPay} onCheckedChange={() => toggleSelect(inv)} aria-label={`Pilih invoice ${inv.noDokumen}`} />
-                          </TableCell>
-                          <TableCell className="font-mono text-xs font-medium">{inv.noDokumen}</TableCell>
-                          <TableCell className="text-xs">{formatDate(inv.tanggal)}</TableCell>
-                          <TableCell className="text-xs">{inv.jatuhTempo ? formatDate(inv.jatuhTempo) : '-'}</TableCell>
-                          <TableCell className="text-right font-mono text-xs">{formatRp(parseNum(inv.nilaiTagihan))}</TableCell>
-                          <TableCell className="text-right font-mono text-xs">{formatRp(parseNum(inv.totalBayar))}</TableCell>
-                          <TableCell className="text-right font-mono text-xs font-semibold">{formatRp(sisa)}</TableCell>
-                          <TableCell className="text-center">
-                            <StatusPembayaranBadge status={inv.statusPembayaran} />
-                          </TableCell>
-                        </TableRow>
+                        <Fragment key={inv.invoiceId}>
+                          <TableRow className={isSel ? 'bg-muted/40' : ''}>
+                            <TableCell className="text-center">
+                              <Checkbox checked={isSel} disabled={!canPay} onCheckedChange={() => toggleSelect(inv)} aria-label={`Pilih invoice ${inv.noDokumen}`} />
+                            </TableCell>
+                            <TableCell className="font-mono text-xs font-medium">{inv.noDokumen}</TableCell>
+                            <TableCell className="text-xs">{formatDate(inv.tanggal)}</TableCell>
+                            <TableCell className="text-xs">{inv.jatuhTempo ? formatDate(inv.jatuhTempo) : '-'}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{formatRp(parseNum(inv.nilaiTagihan))}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{formatRp(parseNum(inv.totalBayar))}</TableCell>
+                            <TableCell className="text-right font-mono text-xs font-semibold">{formatRp(sisa)}</TableCell>
+                            <TableCell className="text-center">
+                              <StatusPembayaranBadge status={inv.statusPembayaran} />
+                            </TableCell>
+                            <TableCell className="p-1">
+                              <Button type="button" variant="ghost" size="icon" className={`h-8 w-8 ${riwayatOpen ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:text-emerald-700' : 'text-muted-foreground'}`} onClick={() => void toggleRiwayat(inv)} aria-label={`Riwayat pembayaran invoice ${inv.noDokumen}`} aria-expanded={riwayatOpen} title="Riwayat pembayaran">
+                                <History className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                          {riwayatOpen && (
+                            <TableRow className="bg-muted/20 hover:bg-muted/20">
+                              <TableCell colSpan={9} className="p-3">
+                                {renderRiwayatPanel(inv)}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
                       );
                     })
                   )}
@@ -625,6 +860,30 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
               </div>
             </div>
 
+            {/* Penalti (Update #5) — opsional; akun wajib bila penalti > 0 */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="penalti-input" className="text-xs font-medium">
+                  Penalti <span className="font-normal text-muted-foreground">(denda, opsional)</span>
+                </Label>
+                <Input id="penalti-input" type="text" inputMode="numeric" placeholder="0" value={penaltiDisplay} onChange={(e) => setPenaltiDisplay(sanitizeRupiahInput(e.target.value))} className="text-right font-mono h-9 text-sm" />
+                <p className="text-[11px] text-muted-foreground">Bila diisi, nilainya ditambahkan ke Total Pembayaran dan wajib memilih akun {isPiutang ? 'pendapatan' : 'beban'}.</p>
+              </div>
+              {penaltiNum > 0 && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">
+                    Akun Penalti <span className="text-destructive">*</span>
+                  </Label>
+                  <SearchableDropdown value={akunPenaltiId} onValueChange={setAkunPenaltiId} options={akunPenaltiOptionsFmt} loading={coaLoading} placeholder={`Pilih akun ${isPiutang ? 'pendapatan' : 'beban'}`} searchPlaceholder="Cari kode / nama akun..." emptyText="Akun tidak ditemukan." allOption={{ id: '', label: '— Tanpa akun —' }} />
+                  {penaltiMissingAkun && (
+                    <p className="flex items-center gap-1 text-xs text-destructive">
+                      <AlertCircle className="h-3.5 w-3.5" /> Akun penalti wajib dipilih sebelum menyimpan draft
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {errors.pihak && (
               <div className="text-xs text-destructive flex items-center gap-1">
                 <AlertCircle className="h-3.5 w-3.5" /> {errors.pihak}
@@ -652,6 +911,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                       const sisa = parseNum(row.invoice.sisaTagihan);
                       const n = parseNum(parseRupiahInput(row.nilaiDisplay));
                       const over = n > sisa + 0.01;
+                      const sisaSetelah = sisa - n;
                       return (
                         <TableRow key={row.invoice.invoiceId}>
                           <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
@@ -659,6 +919,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                           <TableCell className="text-right font-mono text-xs">{formatRp(sisa)}</TableCell>
                           <TableCell className="text-right">
                             <Input type="text" inputMode="numeric" placeholder="0" value={row.nilaiDisplay} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${over ? 'border-destructive' : ''}`} />
+                            {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">Melebihi sisa tagihan</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">Lunas</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
                           </TableCell>
                           <TableCell className="p-1">
                             <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => removeAllocation(row.invoice.invoiceId)} title="Hapus dari alokasi">
@@ -674,11 +935,22 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
               {errors.alokasi && <p className="text-xs text-destructive">{errors.alokasi}</p>}
             </div>
 
-            {/* Total */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 pt-1">
-              <div className="text-sm">
-                <span className="text-muted-foreground">Total Pembayaran: </span>
-                <span className="font-mono font-bold text-base">{formatRp(totalAllocation)}</span>
+            {/* Ringkasan total (Update #5: subtotal alokasi + penalti) */}
+            <div className="flex justify-end">
+              <div className="w-full max-w-xs space-y-1.5 rounded-md border bg-muted/30 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Subtotal Alokasi</span>
+                  <span className="font-mono">{formatRp(totalAllocation)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Penalti</span>
+                  <span className="font-mono">{formatRp(penaltiNum)}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Total Pembayaran</span>
+                  <span className="font-mono text-base font-bold">{formatRp(totalPembayaran)}</span>
+                </div>
               </div>
             </div>
 
@@ -687,7 +959,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
               <Button variant="outline" onClick={clearSelection} disabled={submitting}>
                 Batal
               </Button>
-              <Button onClick={handleSubmit} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Button onClick={handleSubmit} disabled={submitting || penaltiMissingAkun} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}
                 Simpan Draft
               </Button>

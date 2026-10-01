@@ -214,7 +214,7 @@ export function TukarFakturPDFTemplate({ data }: { data: TukarFakturPDFData }) {
             <tr>
               <th style={{ ...headerCellStyle, width: '40px' }}>No</th>
               <th style={headerCellStyle}>Nama Barang</th>
-              <th style={{ ...headerCellStyle, width: '80px' }}>Kts</th>
+              <th style={{ ...headerCellStyle, width: '80px' }}>Qty</th>
               <th style={{ ...headerCellStyle, width: '100px' }}>Satuan</th>
             </tr>
           </thead>
