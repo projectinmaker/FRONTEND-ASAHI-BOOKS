@@ -71,6 +71,9 @@ export default function AssetReconciliationPage() {
         </div>
       </div>
 
+      {/* M-09: penjelasan selisih wajar akibat tanggal penyusutan end-of-month */}
+      <p className="text-xs text-muted-foreground">Catatan: jurnal penyusutan dicatat server pada tanggal akhir bulan (penyusutan divalidasi sekuensial per bulan), sehingga register aset vs GL dapat menunjukkan selisih yang wajar bila periode laporan belum mencakup akhir bulan berjalan.</p>
+
       {/* Summary cards */}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

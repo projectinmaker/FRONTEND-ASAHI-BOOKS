@@ -13,7 +13,7 @@ import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
-import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse } from '@/types/api';
+import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse, LaporanAkunItem } from '@/types/api';
 import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
@@ -292,6 +292,23 @@ function LabaRugiReport() {
     fetchData();
   }, []);
 
+  // ── M-02 (Update #7): section & total baru dari backend ──
+  // `pendapatanLain` = akun pendapatan report_group OTHER_INCOME (bunga, pendapatan
+  // non-operasional) yang dipisah dari pendapatan usaha; `labaUsaha` = laba kotor −
+  // beban operasional (sebelum pendapatan lain-lain). Semua field opsional (backend
+  // lama tidak mengirim) dan dibaca dengan fallback kunci snake_case mentah bila
+  // respons tidak memakai alias camelCase. Semua nilai total dibungkus Number()
+  // karena backend mengirim Decimal sebagai string.
+  const pendapatanLainItems = (data?.pendapatanLain ?? data?.pendapatan_lain ?? []).map((it) => {
+    const raw = it as LaporanAkunItem & { kode_akun?: string; nama_akun?: string };
+    return { kodeAkun: raw.kodeAkun ?? raw.kode_akun ?? '—', namaAkun: raw.namaAkun ?? raw.nama_akun ?? '—', total: raw.total };
+  });
+  const totalPendapatanLainRaw = data?.totalPendapatanLain ?? data?.total_pendapatan_lain ?? null;
+  const totalPendapatanLain = totalPendapatanLainRaw != null ? Number(totalPendapatanLainRaw) : pendapatanLainItems.reduce((s, it) => s + Number(it.total ?? 0), 0);
+  const labaUsahaRaw = data?.labaUsaha ?? data?.laba_usaha ?? null;
+  // Backend lama tidak mengirim laba_usaha → fallback laba kotor − beban (identik laba bersih lama).
+  const labaUsaha = labaUsahaRaw != null ? Number(labaUsahaRaw) : Number(data?.labaKotor ?? 0) - Number(data?.totalBeban ?? 0);
+
   return (
     <div className="space-y-4">
       <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
@@ -340,7 +357,7 @@ function LabaRugiReport() {
                         <TableCell className="text-right">{formatRp(item.total)}</TableCell>
                       </TableRow>
                     ))}
-                    <TotalRow label="Total Pendapatan" value={data.totalPendapatan} colSpan={3} />
+                    <TotalRow label="Total Pendapatan" value={Number(data.totalPendapatan)} colSpan={3} />
 
                     {/* HPP */}
                     <TableRow className="bg-muted/30">
@@ -363,14 +380,14 @@ function LabaRugiReport() {
                         <TableCell className="text-right">{formatRp(item.total)}</TableCell>
                       </TableRow>
                     ))}
-                    <TotalRow label="Total HPP" value={data.totalHpp} colSpan={3} />
+                    <TotalRow label="Total HPP" value={Number(data.totalHpp)} colSpan={3} />
 
                     {/* LABA KOTOR */}
                     <TableRow className="bg-primary/5">
                       <TableCell colSpan={3} className="text-right font-bold">
                         Laba Kotor
                       </TableCell>
-                      <TableCell className="text-right font-bold">{formatRp(data.labaKotor)}</TableCell>
+                      <TableCell className="text-right font-bold">{formatRp(Number(data.labaKotor))}</TableCell>
                     </TableRow>
 
                     {/* BEBAN */}
@@ -394,14 +411,42 @@ function LabaRugiReport() {
                         <TableCell className="text-right">{formatRp(item.total)}</TableCell>
                       </TableRow>
                     ))}
-                    <TotalRow label="Total Beban" value={data.totalBeban} colSpan={3} />
+                    <TotalRow label="Total Beban" value={Number(data.totalBeban)} colSpan={3} />
+
+                    {/* LABA USAHA (M-02) — highlight, di atas pendapatan lain-lain */}
+                    <TableRow className="bg-primary/5">
+                      <TableCell colSpan={3} className="text-right font-bold">
+                        Laba Usaha
+                      </TableCell>
+                      <TableCell className="text-right font-bold">{formatRp(labaUsaha)}</TableCell>
+                    </TableRow>
+
+                    {/* PENDAPATAN LAIN-LAIN (M-02) — hanya bila backend mengirim section ini */}
+                    {pendapatanLainItems.length > 0 && (
+                      <>
+                        <TableRow className="bg-muted/30">
+                          <TableCell colSpan={4} className="font-semibold text-xs uppercase tracking-wide">
+                            Pendapatan Lain-lain
+                          </TableCell>
+                        </TableRow>
+                        {pendapatanLainItems.map((item, idx) => (
+                          <TableRow key={`pl-${idx}`}>
+                            <TableCell className="text-muted-foreground text-xs">{idx + 1}</TableCell>
+                            <TableCell className="font-mono text-xs">{item.kodeAkun}</TableCell>
+                            <TableCell className="pl-6">{item.namaAkun}</TableCell>
+                            <TableCell className="text-right">{formatRp(item.total)}</TableCell>
+                          </TableRow>
+                        ))}
+                        <TotalRow label="Total Pendapatan Lain-lain" value={totalPendapatanLain} colSpan={3} />
+                      </>
+                    )}
 
                     {/* LABA BERSIH */}
                     <TableRow className="bg-primary/10">
                       <TableCell colSpan={3} className="text-right font-bold text-base">
                         Laba (Rugi) Bersih
                       </TableCell>
-                      <TableCell className="text-right font-bold text-base">{formatRp(data.labaBersih)}</TableCell>
+                      <TableCell className="text-right font-bold text-base">{formatRp(Number(data.labaBersih))}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -519,7 +564,8 @@ function NeracaReport() {
                       <TableCell colSpan={3} className="text-right font-bold text-base">
                         Total Kewajiban + Ekuitas
                       </TableCell>
-                      <TableCell className="text-right font-bold text-base">{formatRp(data.totalKewajiban + data.totalEkuitas)}</TableCell>
+                      {/* B-02: total API dikirim sebagai string Decimal — bungkus Number() agar tidak konkatenasi */}
+                      <TableCell className="text-right font-bold text-base">{formatRp(Number(data.totalKewajiban) + Number(data.totalEkuitas))}</TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
@@ -1198,10 +1244,12 @@ function RekapKasBankReport() {
     fetchData();
   }, []);
 
-  const totalSaldoAwal = data ? data.akun.reduce((s, a) => s + a.saldoAwal, 0) : 0;
-  const totalMasuk = data ? data.akun.reduce((s, a) => s + a.totalMasuk, 0) : 0;
-  const totalKeluar = data ? data.akun.reduce((s, a) => s + a.totalKeluar, 0) : 0;
-  const totalSaldoAkhir = data ? data.akun.reduce((s, a) => s + a.saldoAkhir, 0) : 0;
+  // B-03: field API (saldoAwal/totalMasuk/totalKeluar/saldoAkhir) dikirim sebagai string
+  // Decimal — reduce tanpa Number() menyebabkan konkatenasi string pada baris Total.
+  const totalSaldoAwal = data ? data.akun.reduce((s, a) => s + Number(a.saldoAwal), 0) : 0;
+  const totalMasuk = data ? data.akun.reduce((s, a) => s + Number(a.totalMasuk), 0) : 0;
+  const totalKeluar = data ? data.akun.reduce((s, a) => s + Number(a.totalKeluar), 0) : 0;
+  const totalSaldoAkhir = data ? data.akun.reduce((s, a) => s + Number(a.saldoAkhir), 0) : 0;
 
   return (
     <div className="space-y-4">
@@ -1310,7 +1358,8 @@ function NeracaSaldoReport() {
     fetchData();
   }, []);
 
-  const isBalanced = data ? data.selisih === 0 : true;
+  // Selisih dikirim backend sebagai string Decimal — koersi agar cek balance tidak selalu false.
+  const isBalanced = data ? Number(data.selisih) === 0 : true;
 
   return (
     <div className="space-y-4">

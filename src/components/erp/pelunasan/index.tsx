@@ -151,6 +151,9 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   const pihakLabel = isPiutang ? 'Pelanggan' : 'Supplier';
   const docLabel = isPiutang ? 'Invoice Penjualan' : 'Invoice Pembelian';
   const flowLabel = isPiutang ? 'Penerimaan Pelunasan' : 'Pembayaran Pelunasan';
+  // m-13: Administrator — dokumen kas/bank pelunasan otomatis final (direct_complete)
+  // saat dibuat; non-admin tetap lewat workflow submit → approve → post.
+  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMINISTRATOR');
 
   // ── Pihak dropdown options (pelanggan / supplier) ──
   const [pihakOptions, setPihakOptions] = useState<(PelangganDropdown | SupplierDropdown)[]>([]);
@@ -161,8 +164,10 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   const [kasBankLoading, setKasBankLoading] = useState(true);
 
   // ── Filter state ──
+  // M-06: "Semua" kini eksplisit 'SEMUA' — tanpa param, backend default hanya
+  // menampilkan tagihan dengan sisa > 0 (invoice LUNAS hilang dari daftar).
   const [pihakFilter, setPihakFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusPembayaran | ''>('');
+  const [statusFilter, setStatusFilter] = useState<StatusPembayaran | 'SEMUA'>('SEMUA');
   const [asOf, setAsOf] = useState('');
 
   // ── Tagihan data ──
@@ -231,7 +236,9 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     try {
       const res = await pelunasanApi.getTagihan(jenis, {
         pihakId: pihakFilter || undefined,
-        statusPembayaran: statusFilter || undefined,
+        // 'SEMUA' dikirim eksplisit (param type lib belum punya literal 'SEMUA';
+        // backend menambahkannya agar tanpa filter LUNAS ikut tampil).
+        statusPembayaran: (statusFilter || undefined) as StatusPembayaran | undefined,
         asOf: asOf || undefined,
         skip,
         limit: PAGE_SIZE
@@ -500,7 +507,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       };
       const res = await pelunasanApi.create(jenis, payload);
       toast.success(`Draft pembayaran ${res.noBukti} dibuat`, {
-        description: 'Lakukan workflow submit → approve → post untuk menyelesaikan.',
+        // m-13: admin — direct_complete (tanpa langkah manual); non-admin — workflow manual.
+        description: isAdmin ? 'Sebagai Administrator, dokumen langsung diproses & diposting otomatis — tidak perlu langkah manual.' : 'Lakukan workflow submit → approve → post untuk menyelesaikan.',
         duration: 8000
       });
       // Clear form + selection + refresh tagihan
@@ -687,9 +695,9 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
             <div className="w-full sm:w-48">
               <Label className="text-xs text-muted-foreground">Status Pembayaran</Label>
               <Select
-                value={statusFilter || 'ALL'}
+                value={statusFilter === 'SEMUA' ? 'ALL' : statusFilter}
                 onValueChange={(v) => {
-                  setStatusFilter(v === 'ALL' ? '' : (v as StatusPembayaran));
+                  setStatusFilter(v === 'ALL' ? 'SEMUA' : (v as StatusPembayaran));
                   setSkip(0);
                 }}>
                 <SelectTrigger className="mt-1 h-9 text-sm">
@@ -827,7 +835,16 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
             <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 p-3">
               <Info className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
               <p className="text-xs text-emerald-700">
-                Draft pembayaran akan dibuat dengan status <strong>DRAFT</strong>. Untuk menyelesaikan pelunasan, lakukan workflow: <strong>Submit → Approve → Post</strong> melalui kolom Workflow pada daftar dokumen atau modul <strong>Antrean Persetujuan</strong>.
+                {/* m-13: teks disesuaikan per role — admin auto-final (direct_complete), non-admin workflow manual */}
+                {isAdmin ? (
+                  <>
+                    Sebagai <strong>Administrator</strong>, dokumen pembayaran akan langsung diproses &amp; diposting otomatis setelah dibuat (submit → approve → post berjalan dalam satu transaksi) — tidak ada langkah persetujuan manual yang perlu dilakukan.
+                  </>
+                ) : (
+                  <>
+                    Draft pembayaran akan dibuat dengan status <strong>DRAFT</strong>. Untuk menyelesaikan pelunasan, lakukan workflow: <strong>Submit → Approve → Post</strong> melalui kolom Workflow pada daftar dokumen atau modul <strong>Antrean Persetujuan</strong>.
+                  </>
+                )}
               </p>
             </div>
 
@@ -978,7 +995,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
               </div>
               <div>
                 <p className="text-sm font-medium">Belum ada invoice dipilih</p>
-                <p className="text-xs text-muted-foreground mt-1">Centang invoice pada tabel di atas untuk mulai membuat alokasi pembayaran. Setelah draft dibuat, lakukan workflow submit → approve → post untuk menyelesaikan pelunasan.</p>
+                <p className="text-xs text-muted-foreground mt-1">Centang invoice pada tabel di atas untuk mulai membuat alokasi pembayaran. {isAdmin ? 'Sebagai Administrator, dokumen langsung diproses & diposting otomatis setelah dibuat.' : 'Setelah draft dibuat, lakukan workflow submit → approve → post untuk menyelesaikan pelunasan.'}</p>
               </div>
             </div>
           </CardContent>

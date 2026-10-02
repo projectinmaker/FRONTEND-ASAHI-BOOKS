@@ -23,7 +23,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Package, AlertTriangle, DollarSign, Plus, Search, ArrowRightLeft, Warehouse, Tags, ClipboardList, CheckCircle, Loader2, Undo2, ChevronLeft, ChevronRight, FolderTree, FileSpreadsheet, Pencil, PackageX, SearchX, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
-import { formatRp } from '@/lib/pdf-utils';
+import { formatRp, todayStr } from '@/lib/pdf-utils';
 import type { PenyesuaianStokResponse, PenyesuaianStokCreate, PenyesuaianStokUpdate, PemindahanBarangResponse, PemindahanBarangCreate, PemindahanBarangUpdate, PermintaanBarangResponse, PermintaanBarangCreate, PermintaanBarangUpdate, BarangDropdown, GudangResponse, BarangResponse, KategoriBarangResponse, TipePenyesuaian, ProsesPemindahan, SalesOrderResponse, SalesOrderSisaResponse } from '@/types/api';
 import StokKartuTab from '@/components/erp/inventory/stok-kartu';
 import BarangForm from '@/components/erp/inventory/barang-form';
@@ -205,7 +205,8 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
   const [loading, setLoading] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
 
-  const [formTanggal, setFormTanggal] = useState('');
+  // m-06: default tanggal = hari ini (lokal browser) — konsisten dengan form lain di app
+  const [formTanggal, setFormTanggal] = useState(todayStr());
   // === Update #4 (Q1): link opsional ke Sales Order + filter barang SO ===
   const [salesOrderOptions, setSalesOrderOptions] = useState<{ id: string; noPesanan: string }[]>([]);
   const [formSalesOrderId, setFormSalesOrderId] = useState('');
@@ -325,7 +326,7 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
     draft.clearDraft();
-    setFormTanggal('');
+    setFormTanggal(todayStr());
     setFormSalesOrderId('');
     setSoSisaMap({});
     setSoBarangIds(new Set());
@@ -519,7 +520,8 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
   const [loading, setLoading] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
 
-  const [formTanggal, setFormTanggal] = useState('');
+  // m-06: default tanggal = hari ini (lokal browser) — konsisten dengan form lain di app
+  const [formTanggal, setFormTanggal] = useState(todayStr());
   const [formProses, setFormProses] = useState('');
   const [formDariGudangId, setFormDariGudangId] = useState('');
   const [formKeGudangId, setFormKeGudangId] = useState('');
@@ -563,7 +565,7 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
     draft.clearDraft();
-    setFormTanggal('');
+    setFormTanggal(todayStr());
     setFormProses('');
     setFormDariGudangId('');
     setFormKeGudangId('');
@@ -783,7 +785,8 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
   const [loading, setLoading] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
 
-  const [formTanggal, setFormTanggal] = useState('');
+  // m-06: default tanggal = hari ini (lokal browser) — konsisten dengan form lain di app
+  const [formTanggal, setFormTanggal] = useState(todayStr());
   const [formBarangId, setFormBarangId] = useState('');
   const [formGudangId, setFormGudangId] = useState('');
   const [formTipe, setFormTipe] = useState('');
@@ -835,7 +838,7 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
     draft.clearDraft();
-    setFormTanggal('');
+    setFormTanggal(todayStr());
     setFormBarangId('');
     setFormGudangId('');
     setFormTipe('');

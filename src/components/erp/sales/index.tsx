@@ -2271,7 +2271,13 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.customerPoNumber || '-'}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{d.fulfillmentStatus || '-'}</Badge>
+                          {/* M-05: fulfillment_status diisi backend (OPEN/PARTIAL/FULFILLED/CLOSED) — tampilkan label Indonesia */}
+                          {(() => {
+                            const fs = d.fulfillmentStatus;
+                            if (!fs) return <Badge variant="outline">-</Badge>;
+                            const map: Record<string, string> = { OPEN: 'Terbuka', PARTIAL: 'Sebagian', FULFILLED: 'Terpenuhi', CLOSED: 'Ditutup' };
+                            return <Badge variant="outline">{map[fs] || fs}</Badge>;
+                          })()}
                         </TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
@@ -3259,7 +3265,9 @@ function ReturTab({ pelangganOptions, barangOptions, invoiceOptions, refreshKey 
                     data.map((d) => (
                       <TableRow key={d.id}>
                         <TableCell className="font-mono text-xs font-medium">{d.noRetur}</TableCell>
-                        <TableCell className="font-mono text-xs">{d.salesInvoice?.noPesanan || '-'}</TableCell>
+                        {/* M-04: SalesReturResponse.salesInvoice adalah SalesInvoiceSimpleResponse
+                            (backend: { id, no_invoice }) — noPesanan adalah field Sales Order, bukan invoice. */}
+                        <TableCell className="font-mono text-xs">{d.salesInvoice?.noInvoice || '-'}</TableCell>
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
                         <TableCell className="text-right font-mono text-xs font-medium">{formatRp(Number(d.grandTotal))}</TableCell>

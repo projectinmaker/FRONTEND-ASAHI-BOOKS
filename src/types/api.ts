@@ -1553,7 +1553,8 @@ export interface SalesReturResponse {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
-  salesInvoice: SalesOrderSimple | null;
+  /** Backend: SalesInvoiceSimpleResponse { id, no_invoice } — bukan Sales Order. */
+  salesInvoice: { id: string; noInvoice: string } | null;
   pelanggan: PelangganSimple | null;
   pengiriman: { id: string; noSuratJalan: string } | null;
   gudang: GudangSimple | null;
@@ -2354,6 +2355,9 @@ export interface LabaRugiWidget {
   labaKotor: number;
   beban: number;
   labaBersih: number;
+  // === Update #7 / M-02: laba usaha (laba kotor − beban operasional, sebelum
+  // pendapatan lain-lain). Opsional — backend lama tidak mengirim.
+  labaUsaha?: number | string;
 }
 
 export interface CashflowWidget {
@@ -2465,11 +2469,21 @@ export interface LabaRugiLaporanResponse {
   pendapatan: LaporanAkunItem[];
   hpp: LaporanAkunItem[];
   beban: LaporanAkunItem[];
+  // === Update #7 / M-02: section pendapatan lain-lain (akun report_group OTHER_INCOME,
+  // mis. bunga/pendapatan non-operasional) dipisah dari pendapatan usaha, plus total
+  // laba usaha (laba kotor − beban). Opsional — backend lama tidak mengirim.
+  // Variasi snake_case disediakan sebagai fallback bila respons tidak memakai alias camelCase.
+  pendapatanLain?: LaporanAkunItem[];
+  pendapatan_lain?: LaporanAkunItem[];
   totalPendapatan: number;
   totalHpp: number;
   totalBeban: number;
+  totalPendapatanLain?: number | string;
+  total_pendapatan_lain?: number | string;
   labaKotor: number;
   labaBersih: number;
+  labaUsaha?: number | string;
+  laba_usaha?: number | string;
 }
 
 export interface NeracaLaporanResponse {

@@ -101,7 +101,9 @@ export default function RekonsiliasiPersediaanPage({ refreshKey }: { refreshKey?
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">As Of</Label>
               <div className="h-9 px-3 flex items-center rounded-md border bg-muted/30 text-sm text-muted-foreground">{asOf} (hari ini, Asia/Jakarta)</div>
-              <p className="text-[11px] text-muted-foreground hidden sm:block">Backend hanya support tanggal hari ini. Jangan tawarkan filter tanggal historis.</p>
+              {/* DEV-NOTE (m-11): backend hanya mendukung as_of = hari ini (Asia/Jakarta);
+                  jangan tawarkan filter tanggal historis pada UI ini. Info ini untuk
+                  developer saja — tidak ditampilkan ke pengguna. */}
             </div>
             <div className="flex items-center gap-2 h-9 pb-1.5">
               <Checkbox id="only-mismatch" checked={onlyMismatch} onCheckedChange={(v) => setOnlyMismatch(v === true)} />

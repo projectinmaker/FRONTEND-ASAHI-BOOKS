@@ -19,6 +19,29 @@ const todayIso = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// Default "Dari" = awal tahun berjalan (YTD) agar tombol Check langsung bisa dipakai
+// tanpa memilih tanggal (m-12: sebelumnya kosong → Check selalu disabled).
+const firstDayOfYear = () => `${new Date().getFullYear()}-01-01`;
+
+// Format tanggal lokal id-ID (bukan raw ISO) — konsisten dengan halaman Laporan lain.
+// Backend mengirim dateFrom/dateTo sebagai datetime berzona (mis. "2026-01-01T00:00:00+07:00"),
+// sehingga tanggal di-parse per komponen agar tidak bergeser oleh timezone browser.
+function formatDateID(d: string | null | undefined): string {
+  if (!d) return '—';
+  try {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d).trim());
+    const date = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(d);
+    if (Number.isNaN(date.getTime())) return d;
+    return date.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+  } catch {
+    return d;
+  }
+}
+
 function num(v: number | string): number {
   return typeof v === 'string' ? Number(v) : v;
 }
@@ -114,7 +137,7 @@ function GrniReconciliation() {
 
 // ── Cash Flow vs Balance Sheet ──────────────────────────────────────────────
 function CashflowVsBsReconciliation() {
-  const [dari, setDari] = useState('');
+  const [dari, setDari] = useState(firstDayOfYear());
   const [sampai, setSampai] = useState(todayIso());
   const [data, setData] = useState<CashflowVsBsReconciliationResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -166,7 +189,7 @@ function CashflowVsBsReconciliation() {
               <StatusBadge match={data.match} />
             </div>
             <div className="rounded-lg border p-3 space-y-1">
-              <InfoRow label="Periode" value={`${data.periode.dateFrom} — ${data.periode.dateTo}`} />
+              <InfoRow label="Periode" value={`${formatDateID(data.periode.dateFrom)} — ${formatDateID(data.periode.dateTo)}`} />
               <InfoRow label="Cash Flow Ending" value={formatRp(num(data.cashFlowEnding))} isCurrency />
               <InfoRow label="Balance Sheet Cash" value={formatRp(num(data.balanceSheetCash))} isCurrency />
               <InfoRow label="Selisih" value={<span className={data.match ? 'text-emerald-600' : 'text-destructive'}>{formatRp(num(data.selisih))}</span>} isCurrency />
@@ -186,7 +209,7 @@ function CashflowVsBsReconciliation() {
 
 // ── Equity vs Balance Sheet ────────────────────────────────────────────────
 function EquityVsBsReconciliation() {
-  const [dari, setDari] = useState('');
+  const [dari, setDari] = useState(firstDayOfYear());
   const [sampai, setSampai] = useState(todayIso());
   const [data, setData] = useState<EquityVsBsReconciliationResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -238,7 +261,7 @@ function EquityVsBsReconciliation() {
               <StatusBadge match={data.match} />
             </div>
             <div className="rounded-lg border p-3 space-y-1">
-              <InfoRow label="Periode" value={`${data.periode.dateFrom} — ${data.periode.dateTo}`} />
+              <InfoRow label="Periode" value={`${formatDateID(data.periode.dateFrom)} — ${formatDateID(data.periode.dateTo)}`} />
               <InfoRow label="Equity Closing (dari Perubahan Modal)" value={formatRp(num(data.equityClosing))} isCurrency />
               <InfoRow label="Balance Sheet Equity" value={formatRp(num(data.balanceSheetEquity))} isCurrency />
               <InfoRow label="Selisih" value={<span className={data.match ? 'text-emerald-600' : 'text-destructive'}>{formatRp(num(data.selisih))}</span>} isCurrency />

@@ -60,7 +60,11 @@ export function hasSubCentPrecision(input: string | number): boolean {
 export function formatNumberIDR(val: string | number | null | undefined, opts?: { maxFractionDigits?: number }): string {
   const n = typeof val === 'number' ? val : parseFloat(String(val ?? ''));
   if (!Number.isFinite(n)) return '0';
-  return n.toLocaleString('id-ID', {
+  // Normalisasi negative zero: Number("-0.00") menghasilkan -0, dan
+  // (-0).toLocaleString() → "-0" (tampil "Rp -0" pada akun bersaldo nol).
+  // -0 === 0 adalah true, assignment ini menggantinya dengan +0.
+  const normalized = n === 0 ? 0 : n;
+  return normalized.toLocaleString('id-ID', {
     maximumFractionDigits: opts?.maxFractionDigits ?? 2
   });
 }

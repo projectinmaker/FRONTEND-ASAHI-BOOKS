@@ -900,7 +900,7 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <Label className="text-sm font-medium">Saldo Awal</Label>
-                    <p className="mt-1 text-xs text-muted-foreground">Sisi debit/kredit mengikuti saldo normal akun. Selisih total otomatis dipampangkan ke akun “Selisih Saldo Awal” (Modal).</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Sisi debit/kredit mengikuti saldo normal akun. Selisih total otomatis ditampilkan ke akun “Selisih Saldo Awal” (Modal).</p>
                   </div>
                   {saldoNormalDisplay && (
                     <Badge variant="outline" className={saldoNormalDisplay === 'DEBIT' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700'}>

@@ -436,6 +436,27 @@ function DaftarAsetCreateForm() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  // m-08: saat kategori dipilih, prefill 3 dropdown akun dari mapping kategori
+  // (akunAset / akunAkumulasi / akunBeban). Prefill hanya bila mapping ada
+  // (non-empty); nilai yang sudah dipilih manual tidak ditimpa dengan kosong,
+  // dan user tetap bisa mengubah akun setelahnya.
+  const handleKategoriChange = useCallback(
+    (v: string) => {
+      setForm((prev) => {
+        const kategori = kategoriOptions.find((k) => k.id === v);
+        if (!kategori) return { ...prev, kategoriAsetId: v };
+        return {
+          ...prev,
+          kategoriAsetId: v,
+          akunAsetId: kategori.akunAsetId || prev.akunAsetId,
+          akunAkumulasiId: kategori.akunAkumulasiId || prev.akunAkumulasiId,
+          akunBebanId: kategori.akunBebanId || prev.akunBebanId
+        };
+      });
+    },
+    [kategoriOptions]
+  );
+
   useEffect(() => {
     (async () => {
       setLoadingDropdowns(true);
@@ -548,7 +569,7 @@ function DaftarAsetCreateForm() {
               <Label>Kategori Aset</Label>
               <SearchableDropdown
                 value={form.kategoriAsetId}
-                onValueChange={(v) => updateForm('kategoriAsetId', v)}
+                onValueChange={handleKategoriChange}
                 options={kategoriOptions.map((k) => ({
                   id: k.id,
                   label: k.kode + ' — ' + k.nama
@@ -1174,7 +1195,7 @@ function PenyusutanAsetList({ kategoriOptions, loadingDropdowns, refreshKey }: {
                   <TableHead className="whitespace-nowrap">Kategori</TableHead>
                   <TableHead className="whitespace-nowrap">Tgl Mulai</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Nilai Perolehan</TableHead>
-                  <TableHead className="whitespace-nowrap text-right">Umur (thn)</TableHead>
+                  <TableHead className="whitespace-nowrap text-right">Umur (bln)</TableHead>
                   <TableHead className="whitespace-nowrap">Metode</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Penyusutan/Bulan</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Akumulasi</TableHead>
@@ -1463,7 +1484,7 @@ function FixedAssetsList({ subPage: propsSubPage, refreshKey }: { subPage?: stri
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Aset Tetap</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Modul Aset Tetap</h1>
         <p className="text-muted-foreground">Kelola daftar asset perusahaan</p>
       </div>
 

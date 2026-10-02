@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,9 +54,14 @@ function StatusBadge({ status }: { status: string }) {
 
 // ─── Skeleton rows ──────────────────────────────────────────────────────
 
+// M-07: skeleton rows selalu dibungkus <TableBody> — tanpa ini, komponen
+// yang dirender di bawah div/CardContent (bukan dalam <Table>) menghasilkan
+// <tr> langsung di dalam <div> → React error "div cannot contain nested tr".
+// Call-site yang memakai <Table> tinggal meletakkannya sebagai anak <Table>
+// (bersama <TableHeader>), TIDAK perlu (dan tidak boleh) dibungkus TableBody lagi.
 function TableSkeleton({ cols = 8, rows = 5 }: { cols?: number; rows?: number }) {
   return (
-    <>
+    <TableBody>
       {Array.from({ length: rows }).map((_, r) => (
         <TableRow key={r}>
           {Array.from({ length: cols }).map((_, c) => (
@@ -66,7 +71,7 @@ function TableSkeleton({ cols = 8, rows = 5 }: { cols?: number; rows?: number })
           ))}
         </TableRow>
       ))}
-    </>
+    </TableBody>
   );
 }
 
@@ -408,6 +413,22 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
 
   const title = detail ? `Rekonsiliasi #${detail.kasBank?.nama || rekonsiliasiId.slice(0, 8)}` : 'Detail Rekonsiliasi Bank';
 
+  // m-02: sisa selisih setelah penyesuaian (untuk DRAFT) — formula balance
+  // backend: saldo_buku + penyesuaian_net = saldo_bank + memo_net, dengan
+  // signed = jumlah (DEBIT) / −jumlah (KREDIT) → sisa = selisih + memo_net − penyesuaian_net.
+  const sisaSelisih = useMemo(() => {
+    if (!detail) return null;
+    const selisihAwal = Number(detail.selisih) || 0;
+    let penyesuaianNet = 0;
+    let memoNet = 0;
+    for (const line of detail.details || []) {
+      const signed = (Number(line.jumlah) || 0) * (line.sisi === 'DEBIT' ? 1 : -1);
+      if (line.tipe === 'PENYESUAIAN') penyesuaianNet += signed;
+      else memoNet += signed;
+    }
+    return selisihAwal + memoNet - penyesuaianNet;
+  }, [detail]);
+
   return (
     <FormTabShell title={title}>
       <div className="space-y-4">
@@ -440,7 +461,10 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
                 ))}
               </div>
               <Separator className="my-4" />
-              <TableSkeleton cols={7} rows={3} />
+              {/* M-07: TableSkeleton membawa <TableBody> sendiri → bungkus <Table> agar struktur tabel valid */}
+              <Table>
+                <TableSkeleton cols={7} rows={3} />
+              </Table>
             </CardContent>
           </Card>
         ) : detail ? (
@@ -475,8 +499,17 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
                     <p className="text-sm font-mono font-semibold mt-0.5">{fmtRp(detail.saldoBuku)}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground">Selisih</p>
+                    <p className="text-xs font-medium text-muted-foreground">Selisih awal (bank − buku)</p>
                     <p className={cn('text-sm font-mono font-semibold mt-0.5', detail.selisih !== 0 ? (detail.selisih > 0 ? 'text-amber-600' : 'text-red-600') : 'text-emerald-600')}>{fmtRp(detail.selisih)}</p>
+                    {/* m-02: indikasi keseimbangan setelah penyesuaian (SELESAI) / sisa selisih live (DRAFT) */}
+                    {detail.status === 'SELESAI' ? (
+                      <p className="text-xs text-emerald-600 font-medium mt-1">Selisih tersisa setelah penyesuaian: Rp 0 (seimbang)</p>
+                    ) : (detail.details || []).length > 0 && sisaSelisih !== null ? (
+                      <p className={cn('text-xs mt-1', Math.abs(sisaSelisih) < 0.01 ? 'text-emerald-600 font-medium' : sisaSelisih > 0 ? 'text-amber-600' : 'text-red-600')}>
+                        Selisih tersisa setelah penyesuaian: {fmtRp(sisaSelisih)}
+                        {Math.abs(sisaSelisih) < 0.01 ? ' (seimbang)' : ''}
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <p className="text-xs font-medium text-muted-foreground">Keterangan</p>
@@ -966,62 +999,68 @@ function RekonsiliasiBankListContent({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="text-center">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {error && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      <div className="space-y-2">
-                        <p className="text-destructive text-sm font-medium">{error}</p>
-                        <Button variant="outline" size="sm" onClick={fetchList}>
-                          Coba Lagi
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!error && loading && <TableSkeleton cols={8} rows={PAGE_SIZE} />}
-                {!error && !loading && data.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
-                      Belum ada data rekonsiliasi bank.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {!error &&
-                  !loading &&
-                  data.map((item, idx) => (
-                    <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetailTab(item)}>
-                      <TableCell className="text-center text-muted-foreground">{skip + idx + 1}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-medium text-sm">{item.kasBank?.nama || '-'}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {item.kasBank?.jenis || ''} {item.kasBank?.kode ? `· ${item.kasBank.kode}` : ''}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm">{formatDate(item.tanggalAkhir)}</TableCell>
-                      <TableCell className="text-right text-sm font-mono">{fmtRp(item.saldoBank)}</TableCell>
-                      <TableCell className="text-right text-sm font-mono">{fmtRp(item.saldoBuku)}</TableCell>
-                      <TableCell className={cn('text-right text-sm font-mono font-medium', item.selisih !== 0 ? (item.selisih > 0 ? 'text-amber-600' : 'text-red-600') : 'text-emerald-600')}>{fmtRp(item.selisih)}</TableCell>
-                      <TableCell className="text-center">
-                        <StatusBadge status={item.status} />
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDetailTab(item)} title="Lihat Detail">
-                            <Eye className="h-4 w-4" />
+              {/* M-07: saat loading, TableSkeleton membawa <TableBody> sendiri —
+                  render sebagai pengganti TableBody (bukan di dalamnya) agar
+                  tidak ada <tbody> bersarang. */}
+              {!error && loading ? (
+                <TableSkeleton cols={8} rows={PAGE_SIZE} />
+              ) : (
+                <TableBody>
+                  {error && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <div className="space-y-2">
+                          <p className="text-destructive text-sm font-medium">{error}</p>
+                          <Button variant="outline" size="sm" onClick={fetchList}>
+                            Coba Lagi
                           </Button>
-                          {(item.status === 'DRAFT' || item.status === 'SELESAI') && (
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => confirmVoid(item)} title="Batalkan">
-                              <Ban className="h-4 w-4" />
-                            </Button>
-                          )}
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
-              </TableBody>
+                  )}
+                  {!error && !loading && data.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                        Belum ada data rekonsiliasi bank.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {!error &&
+                    !loading &&
+                    data.map((item, idx) => (
+                      <TableRow key={item.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openDetailTab(item)}>
+                        <TableCell className="text-center text-muted-foreground">{skip + idx + 1}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="font-medium text-sm">{item.kasBank?.nama || '-'}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {item.kasBank?.jenis || ''} {item.kasBank?.kode ? `· ${item.kasBank.kode}` : ''}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">{formatDate(item.tanggalAkhir)}</TableCell>
+                        <TableCell className="text-right text-sm font-mono">{fmtRp(item.saldoBank)}</TableCell>
+                        <TableCell className="text-right text-sm font-mono">{fmtRp(item.saldoBuku)}</TableCell>
+                        <TableCell className={cn('text-right text-sm font-mono font-medium', item.selisih !== 0 ? (item.selisih > 0 ? 'text-amber-600' : 'text-red-600') : 'text-emerald-600')}>{fmtRp(item.selisih)}</TableCell>
+                        <TableCell className="text-center">
+                          <StatusBadge status={item.status} />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openDetailTab(item)} title="Lihat Detail">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            {(item.status === 'DRAFT' || item.status === 'SELESAI') && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => confirmVoid(item)} title="Batalkan">
+                                <Ban className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              )}
             </Table>
           </div>
         </CardContent>

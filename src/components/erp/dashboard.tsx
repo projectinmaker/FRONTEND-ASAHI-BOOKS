@@ -514,6 +514,13 @@ export default function Dashboard() {
                   <span className="text-muted-foreground">Beban</span>
                   <span className="font-mono">{formatRp(data.labaRugi.beban)}</span>
                 </div>
+                {/* M-02 (Update #7): laba usaha — hanya bila backend mengirim field-nya */}
+                {data.labaRugi.labaUsaha !== undefined && data.labaRugi.labaUsaha !== null && (
+                  <div className="flex justify-between text-sm font-medium border-t pt-1">
+                    <span>Laba Usaha</span>
+                    <span className="font-mono">{formatRp(data.labaRugi.labaUsaha)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-base font-bold border-t pt-2">
                   <span>Laba Bersih</span>
                   <span className={`font-mono ${data.labaRugi.labaBersih >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRp(data.labaRugi.labaBersih)}</span>
