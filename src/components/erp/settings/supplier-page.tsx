@@ -14,6 +14,7 @@ import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Link2
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
+import { ExcelTools } from './excel-tools';
 import { Badge } from '@/components/ui/badge';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -570,20 +571,23 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
           <h2 className="text-lg font-semibold">Supplier</h2>
           <p className="text-sm text-muted-foreground">{loading ? 'Memuat data...' : `${linkedCount} supplier terhubung akun hutang${data.some((d) => d.isLinked && !d.coaId) ? ` · ${data.filter((d) => d.isLinked && !d.coaId).length} belum punya akun hutang` : ''}`}</p>
         </div>
-        <Button
-          size="sm"
-          className="gap-2"
-          onClick={() =>
-            openFormTab({
-              title: 'Tambah Supplier',
-              module: 'settings',
-              subPage: 'supplier',
-              formKey: 'supplier-create'
-            })
-          }>
-          <Plus className="h-4 w-4" />
-          Tambah Supplier
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExcelTools entity="supplier" onImported={fetchData} />
+          <Button
+            size="sm"
+            className="gap-2"
+            onClick={() =>
+              openFormTab({
+                title: 'Tambah Supplier',
+                module: 'settings',
+                subPage: 'supplier',
+                formKey: 'supplier-create'
+              })
+            }>
+            <Plus className="h-4 w-4" />
+            Tambah Supplier
+          </Button>
+        </div>
       </div>
 
       {/* ── Search bar ── */}

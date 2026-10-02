@@ -14,6 +14,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
+import { ExcelTools } from './excel-tools';
 
 import { api, ApiError } from '@/lib/api';
 import { getOrganizationOptions, type OrganizationOption } from '@/lib/master-data';
@@ -409,9 +410,12 @@ function GudangListContent({ refreshKey }: { refreshKey?: number }) {
           <h2 className="text-lg font-semibold">Gudang</h2>
           <p className="text-sm text-muted-foreground">{loading ? 'Memuat data...' : `${total} gudang`}</p>
         </div>
-        <Button size="sm" className="gap-2" onClick={() => openFormTab({ title: 'Tambah Gudang', module: 'settings', subPage: 'gudang', formKey: 'gudang-create' })}>
-          <Plus className="h-4 w-4" /> Tambah Gudang
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExcelTools entity="gudang" onImported={fetchData} />
+          <Button size="sm" className="gap-2" onClick={() => openFormTab({ title: 'Tambah Gudang', module: 'settings', subPage: 'gudang', formKey: 'gudang-create' })}>
+            <Plus className="h-4 w-4" /> Tambah Gudang
+          </Button>
+        </div>
       </div>
 
       <Card>

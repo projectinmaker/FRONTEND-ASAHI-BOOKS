@@ -179,3 +179,70 @@ export interface PaginatedResponse<T> {
   skip: number;
   limit: number;
 }
+
+// ── File download & multipart upload (Export/Import Excel) ────────────
+
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = getToken();
+  const headers: Record<string, string> = { ...extra };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
+
+async function throwApiError(res: Response): Promise<never> {
+  if (res.status === 401) {
+    setToken(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('asahi_erp_user');
+      window.dispatchEvent(new CustomEvent('auth:logout'));
+    }
+  }
+  const errorBody = await res.json().catch(() => ({ detail: res.statusText }));
+  const backendDetail = errorBody.detail || errorBody.message;
+  throw new ApiError(res.status, getErrorMessage(res.status, backendDetail));
+}
+
+/**
+ * Unduh file biner (Export Excel) — GET dengan Bearer, simpan via anchor
+ * .download; nama file diambil dari Content-Disposition bila tersedia.
+ */
+export async function downloadFile(endpoint: string, fallbackName: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(buildUrl(endpoint), { headers: authHeaders() });
+  } catch {
+    throw new ApiError(0, 'Tidak terhubung ke server');
+  }
+  if (!res.ok) await throwApiError(res);
+  const blob = await res.blob();
+  const disposition = res.headers.get('content-disposition') || '';
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  const filename = match?.[1]?.trim() || fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return filename;
+}
+
+/**
+ * Upload multipart (Import Excel) — POST FormData; Content-Type diatur
+ * browser (boundary), Idempotency-Key dibuat per permintaan.
+ */
+export async function postForm<T>(endpoint: string, form: FormData): Promise<T> {
+  const headers = authHeaders();
+  headers['Idempotency-Key'] = crypto.randomUUID();
+  let res: Response;
+  try {
+    res = await fetch(buildUrl(endpoint), { method: 'POST', headers, body: form });
+  } catch {
+    throw new ApiError(0, 'Tidak terhubung ke server');
+  }
+  if (!res.ok) await throwApiError(res);
+  if (res.status === 204) return undefined as T;
+  return res.json();
+}

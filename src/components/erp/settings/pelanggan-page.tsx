@@ -15,6 +15,7 @@ import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Link2
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
+import { ExcelTools } from './excel-tools';
 import { Badge } from '@/components/ui/badge';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -752,20 +753,23 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
           <h2 className="text-lg font-semibold">Pelanggan</h2>
           <p className="text-sm text-muted-foreground">{loading ? 'Memuat data...' : `${linkedCount} pelanggan terhubung akun piutang${data.some((d) => d.isLinked && !d.coaId) ? ` · ${data.filter((d) => d.isLinked && !d.coaId).length} belum punya akun piutang` : ''}`}</p>
         </div>
-        <Button
-          size="sm"
-          className="gap-2"
-          onClick={() =>
-            openFormTab({
-              title: 'Tambah Pelanggan',
-              module: 'settings',
-              subPage: 'pelanggan',
-              formKey: 'pelanggan-create'
-            })
-          }>
-          <Plus className="h-4 w-4" />
-          Tambah Pelanggan
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ExcelTools entity="pelanggan" onImported={fetchData} />
+          <Button
+            size="sm"
+            className="gap-2"
+            onClick={() =>
+              openFormTab({
+                title: 'Tambah Pelanggan',
+                module: 'settings',
+                subPage: 'pelanggan',
+                formKey: 'pelanggan-create'
+              })
+            }>
+            <Plus className="h-4 w-4" />
+            Tambah Pelanggan
+          </Button>
+        </div>
       </div>
 
       {/* ── Search bar ── */}
