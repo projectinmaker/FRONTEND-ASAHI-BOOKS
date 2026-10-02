@@ -2228,14 +2228,17 @@ function BarangJasaTab({ refreshKey }: { refreshKey?: number }) {
       {/* Pagination */}
       {!loading && !error && total > 0 && <Pagination skip={skip} total={total} onNext={() => setSkip((s) => s + PAGE_SIZE)} onPrev={() => setSkip((s) => Math.max(0, s - PAGE_SIZE))} />}
 
-      {/* Update #5: dialog Import Excel */}
+      {/* Update #5: dialog Import Excel — Update #12: nama file template
+          template-import-barang.xlsx + dukungan kolom Stok (stok awal)
+          & Gudang (opsional, wajib bila Stok > 0 dan ada > 1 gudang aktif) */}
       <ExcelImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
         title="Import Barang"
-        description="Unduh template, isi data barang (kategori & satuan diisi dengan nama), lalu unggah file Excel (.xlsx)."
+        description="Unduh template, isi data barang (kategori, satuan & gudang diisi dengan nama), opsional stok awal, lalu unggah file Excel (.xlsx). Stok awal dicatat sebagai Penyesuaian Stok otomatis."
         templateEndpoint="/master/barang/import-template"
         importEndpoint="/master/barang/import"
+        templateFilename="template-import-barang.xlsx"
         onImported={() => {
           // Refresh in-place: dialog hidup di dalam tab list, jadi panggil fetch
           // langsung (refreshListTab hanya efektif bila disertai pergantian tab).

@@ -30,6 +30,13 @@ interface ExcelImportDialogProps {
   templateEndpoint: string;
   /** Endpoint POST import (multipart field "file"), mis. '/master/barang/import' */
   importEndpoint: string;
+  /**
+   * Nama file fallback template (Update #12) — dipakai bila header
+   * Content-Disposition tidak terbaca (mis. request lintas origin tanpa
+   * expose_headers). Backend sudah mengirim nama file yang sama, jadi hasil
+   * identik mana pun yang dipakai. Contoh: 'template-import-barang.xlsx'.
+   */
+  templateFilename?: string;
   /** Dipanggil setelah import sukses minimal 1 baris (untuk refresh list) */
   onImported?: () => void;
 }
@@ -45,7 +52,7 @@ export function exportDateStamp(): string {
 
 // ─── Component ─────────────────────────────────────────────────────────────
 
-export function ExcelImportDialog({ open, onOpenChange, title, description, templateEndpoint, importEndpoint, onImported }: ExcelImportDialogProps) {
+export function ExcelImportDialog({ open, onOpenChange, title, description, templateEndpoint, importEndpoint, templateFilename = 'template-import.xlsx', onImported }: ExcelImportDialogProps) {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -66,7 +73,7 @@ export function ExcelImportDialog({ open, onOpenChange, title, description, temp
   const handleDownloadTemplate = async () => {
     setDownloading(true);
     try {
-      await downloadExcelFile(templateEndpoint, 'template-import.xlsx');
+      await downloadExcelFile(templateEndpoint, templateFilename);
       toast.success('Template berhasil diunduh');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Gagal mengunduh template');
