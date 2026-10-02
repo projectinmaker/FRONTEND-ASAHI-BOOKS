@@ -1463,7 +1463,7 @@ function FixedAssetsList({ subPage: propsSubPage, refreshKey }: { subPage?: stri
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Modul Aset Tetap</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Aset Tetap</h1>
         <p className="text-muted-foreground">Kelola daftar asset perusahaan</p>
       </div>
 
