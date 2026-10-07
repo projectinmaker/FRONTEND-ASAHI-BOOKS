@@ -1,6 +1,8 @@
 'use client';
 
-import { COMPANY_INFO, formatNumber, formatDate, terbilang } from '@/lib/pdf-utils';
+import { formatNumber, formatDate, terbilang } from '@/lib/pdf-utils';
+// Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
+import { CompanyBrand } from '@/components/erp/company-brand';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -70,12 +72,6 @@ const cellStyle: React.CSSProperties = {
   padding: '4px 8px'
 };
 
-// ─── Helper: Logo Placeholder ────────────────────────────────────────────────
-
-function LogoPlaceholder() {
-  return <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-xs font-bold shrink-0">LOGO</div>;
-}
-
 // ─── Helper: Settlement Badge (Phase 1.B) ─────────────────────────────────────
 // Kalau dokumen kas/bank punya alokasi invoice (settlement), tampilkan badge
 // di header PDF supaya user tahu dokumen ini adalah pelunasan AR/AP.
@@ -125,13 +121,7 @@ export function TransferBankPDFTemplate({ data, elementId = 'pdf-content' }: { d
     <div id={elementId} className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-start gap-4">
-          <LogoPlaceholder />
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{COMPANY_INFO.name}</div>
-            <div>{COMPANY_INFO.address}</div>
-          </div>
-        </div>
+        <CompanyBrand />
         <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Bukti Transfer Bank</div>
       </div>
 
@@ -208,13 +198,7 @@ export function PembayaranKasPDFTemplate({ data, elementId = 'pdf-content' }: { 
     <div id={elementId} className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-start gap-4">
-          <LogoPlaceholder />
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{COMPANY_INFO.name}</div>
-            <div>{COMPANY_INFO.address}</div>
-          </div>
-        </div>
+        <CompanyBrand />
         <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
           Bukti Pengeluaran Kas
           {isAPSettlement && <SettlementBadge kind="ap" />}
@@ -300,13 +284,7 @@ export function PenerimaanKasPDFTemplate({ data, elementId = 'pdf-content' }: { 
     <div id={elementId} className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-start gap-4">
-          <LogoPlaceholder />
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{COMPANY_INFO.name}</div>
-            <div>{COMPANY_INFO.address}</div>
-          </div>
-        </div>
+        <CompanyBrand />
         <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
           Bukti Penerimaan Kas
           {isARSettlement && <SettlementBadge kind="ar" />}

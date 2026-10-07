@@ -3619,3 +3619,26 @@ export interface DeletedDocumentLogListResponse {
   skip: number;
   limit: number;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROFIL PERUSAHAAN (header cetak/PDF) — update ASAHI
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface CompanyProfileResponse {
+  id: string;
+  namaPerusahaan: string;
+  alamat: string;
+  telepon: string | null;
+  email: string | null;
+  /** Logo sebagai data URL (data:image/...;base64,...) — langsung dipakai <img>. */
+  logo: string | null;
+  updatedAt: string | null;
+}
+
+export interface CompanyProfileUpdate {
+  namaPerusahaan: string;
+  alamat: string;
+  telepon?: string | null;
+  email?: string | null;
+  logo?: string | null;
+}

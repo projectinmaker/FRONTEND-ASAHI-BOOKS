@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import { Printer, Download, AlertCircle } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
-import { generatePDF } from '@/lib/pdf-utils';
+import { generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { PesananPDFTemplate, PengirimanPDFTemplate, InvoicePDFTemplate, ReturPDFTemplate, type PesananData, type PengirimanData, type InvoiceData, type ReturData, type DetailRow, type BiayaTambahan } from '@/components/erp/sales/pdf-templates';
 import type { SalesOrderResponse, SalesInvoiceResponse, SalesReturResponse, PengirimanBarangResponse } from '@/types/api';
@@ -194,7 +194,9 @@ export function PengirimanCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Surat-Jalan-${data.nomor || id}.pdf`);
+      // Update ASAHI: nomor pola baru "KB ASI/2026/001" mengandung spasi & '/'
+      // → sanitasi agar valid sebagai nama file.
+      await generatePDF(elementId, `Surat-Jalan-${fileSafeNo(data.nomor || id)}.pdf`);
     } finally {
       setDownloading(false);
     }
@@ -298,7 +300,8 @@ export function InvoiceCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Invoice-${data.nomor || id}.pdf`);
+      // Update ASAHI: nomor pola baru "INV ASI/2026/001" → sanitasi nama file.
+      await generatePDF(elementId, `Invoice-${fileSafeNo(data.nomor || id)}.pdf`);
     } finally {
       setDownloading(false);
     }
@@ -390,7 +393,8 @@ export function ReturCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Retur-${data.nomor || id}.pdf`);
+      // Update ASAHI: nomor pola baru "RET-J ASI/2026/001" → sanitasi nama file.
+      await generatePDF(elementId, `Retur-${fileSafeNo(data.nomor || id)}.pdf`);
     } finally {
       setDownloading(false);
     }

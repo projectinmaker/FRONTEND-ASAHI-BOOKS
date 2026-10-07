@@ -22,7 +22,9 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { FileCheck, Plus, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info } from 'lucide-react';
-import { formatRp, formatNumber, formatDate, todayStr, generatePDF, terbilang, COMPANY_INFO } from '@/lib/pdf-utils';
+import { formatRp, formatNumber, formatDate, todayStr, generatePDF, terbilang, fileSafeNo } from '@/lib/pdf-utils';
+// Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
+import { CompanyBrand } from '@/components/erp/company-brand';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
@@ -158,10 +160,6 @@ const headerCellStyle: React.CSSProperties = {
   textAlign: 'center' as const
 };
 
-function LogoPlaceholder() {
-  return <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-xs font-bold shrink-0">LOGO</div>;
-}
-
 function InfoCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex gap-1" style={{ fontSize: '11px' }}>
@@ -179,13 +177,7 @@ export function TukarFakturPDFTemplate({ data }: { data: TukarFakturPDFData }) {
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-start gap-4">
-          <LogoPlaceholder />
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{COMPANY_INFO.name}</div>
-            <div>{COMPANY_INFO.address}</div>
-          </div>
-        </div>
+        <CompanyBrand />
         <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Tukar Faktur / Tanda Terima</div>
       </div>
 
@@ -1048,7 +1040,7 @@ export function TukarFakturCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `TukarFaktur-${data.noTukarFaktur || id}.pdf`);
+      await generatePDF(elementId, `TukarFaktur-${fileSafeNo(data.noTukarFaktur || id)}.pdf`);
     } finally {
       setDownloading(false);
     }

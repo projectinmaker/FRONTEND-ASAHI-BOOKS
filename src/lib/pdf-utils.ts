@@ -73,12 +73,27 @@ export function terbilang(n: number): string {
   return words.charAt(0).toUpperCase() + words.slice(1) + ' Rupiah';
 }
 
-// ─── Company Info (static, will be configurable from Pengaturan later) ──────
+// ─── Company Info ───────────────────────────────────────────────────────────
+// DEPRECATED (update ASAHI): identitas perusahaan untuk cetak/PDF sekarang
+// dinamis dari Pengaturan → Profil Perusahaan (backend) — lihat
+// store/company-store.ts (useCompanyInfo) dan components/erp/company-brand.tsx.
+// Konstanta ini hanya fallback dan tidak lagi dipakai template cetak.
 
 export const COMPANY_INFO = {
   name: 'ASAHI Books',
   address: 'Jalan Simpangan No.18, RT.03/RW.06, Jatireja, Kec. Cikarang Tim., Kabupaten Bekasi, Jawa Barat 17530'
 };
+
+// ─── Filename Helper ─────────────────────────────────────────────────────────
+
+/**
+ * Sanitasi nomor dokumen untuk nama file PDF. Nomor pola baru mengandung
+ * spasi dan '/' (contoh: "INV ASI/2026/001") — '/' tidak valid di nama file.
+ * Hasil: "INV-ASI-2026-001".
+ */
+export function fileSafeNo(no: string): string {
+  return no.replace(/\s+/g, '-').replace(/\//g, '-');
+}
 
 // ─── PDF Generation Utility ────────────────────────────────────────────────
 

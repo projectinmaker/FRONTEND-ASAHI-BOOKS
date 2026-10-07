@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import { Printer, Download, AlertCircle } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
-import { generatePDF } from '@/lib/pdf-utils';
+import { generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { PembelianPDFTemplate, PenerimaanPDFTemplate, InvoicePembelianPDFTemplate, ReturPembelianPDFTemplate, type PembelianData, type PenerimaanData, type InvoicePembelianData, type ReturPembelianData, type PembelianDetailRow, type PenerimaanDetailRow, type ReturDetailRow, type BiayaTambahan } from '@/components/erp/purchasing/pdf-templates';
 import type { PurchaseOrderResponse, PurchaseInvoiceResponse, PurchaseReturResponse, PenerimaanBarangResponse } from '@/types/api';
@@ -186,7 +186,8 @@ export function PenerimaanCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Penerimaan-${data.nomor || id}.pdf`);
+      // Update ASAHI: nomor pola baru "PB ASI/2026/001" → sanitasi nama file.
+      await generatePDF(elementId, `Penerimaan-${fileSafeNo(data.nomor || id)}.pdf`);
     } finally {
       setDownloading(false);
     }
@@ -284,7 +285,8 @@ export function InvoicePembelianCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Invoice-Pembelian-${data.nomor || id}.pdf`);
+      // Update ASAHI: nomor pola baru "PINV ASI/2026/001" → sanitasi nama file.
+      await generatePDF(elementId, `Invoice-Pembelian-${fileSafeNo(data.nomor || id)}.pdf`);
     } finally {
       setDownloading(false);
     }
@@ -374,7 +376,8 @@ export function ReturPembelianCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Retur-Pembelian-${data.nomor || id}.pdf`);
+      // Update ASAHI: nomor pola baru "RET-B ASI/2026/001" → sanitasi nama file.
+      await generatePDF(elementId, `Retur-Pembelian-${fileSafeNo(data.nomor || id)}.pdf`);
     } finally {
       setDownloading(false);
     }

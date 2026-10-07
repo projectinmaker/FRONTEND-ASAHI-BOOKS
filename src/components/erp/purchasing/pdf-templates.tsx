@@ -1,6 +1,8 @@
 'use client';
 
-import { COMPANY_INFO, formatNumber, formatDate, terbilang } from '@/lib/pdf-utils';
+import { formatNumber, formatDate, terbilang } from '@/lib/pdf-utils';
+// Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
+import { CompanyBrand } from '@/components/erp/company-brand';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -107,12 +109,6 @@ const headerCellStyle: React.CSSProperties = {
   fontWeight: 'bold',
   textAlign: 'center' as const
 };
-
-// ─── Helper: Logo Placeholder ────────────────────────────────────────────────
-
-function LogoPlaceholder() {
-  return <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-xs font-bold shrink-0">LOGO</div>;
-}
 
 // ─── Helper: Info Cell (label-value pair) ────────────────────────────────────
 
@@ -331,13 +327,7 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-start gap-4">
-          <LogoPlaceholder />
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{COMPANY_INFO.name}</div>
-            <div>{COMPANY_INFO.address}</div>
-          </div>
-        </div>
+        <CompanyBrand />
         {/* Update ASAHI: judul cetak "Pesanan Pembelian" → "Purchase Order" */}
         <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Purchase Order</div>
       </div>
@@ -447,13 +437,7 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-start gap-4">
-          <LogoPlaceholder />
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{COMPANY_INFO.name}</div>
-            <div>{COMPANY_INFO.address}</div>
-          </div>
-        </div>
+        <CompanyBrand />
         <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Penerimaan Barang</div>
       </div>
 
@@ -548,13 +532,7 @@ export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianDa
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-start gap-4">
-          <LogoPlaceholder />
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{COMPANY_INFO.name}</div>
-            <div>{COMPANY_INFO.address}</div>
-          </div>
-        </div>
+        <CompanyBrand />
         <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Invoice Pembelian</div>
       </div>
 
@@ -640,13 +618,7 @@ export function ReturPembelianPDFTemplate({ data }: { data: ReturPembelianData }
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <div className="flex items-start gap-4">
-          <LogoPlaceholder />
-          <div>
-            <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{COMPANY_INFO.name}</div>
-            <div>{COMPANY_INFO.address}</div>
-          </div>
-        </div>
+        <CompanyBrand />
         <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Retur Pembelian</div>
       </div>
 

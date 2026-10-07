@@ -22,7 +22,7 @@ import { SearchableDropdown, type SearchableDropdownOption } from '@/components/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { FileText, Plus, Trash2, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info } from 'lucide-react';
-import { formatRp, formatDate, todayStr, generatePDF } from '@/lib/pdf-utils';
+import { formatRp, formatDate, todayStr, generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
@@ -1077,7 +1077,8 @@ export function PenawaranCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Penawaran-${data.nomor || id}.pdf`);
+      // Update ASAHI: nomor pola baru "PEN ASI/2026/001" → sanitasi nama file.
+      await generatePDF(elementId, `Penawaran-${fileSafeNo(data.nomor || id)}.pdf`);
     } finally {
       setDownloading(false);
     }

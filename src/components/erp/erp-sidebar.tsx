@@ -12,6 +12,8 @@ import { useERPStore, type ModuleId } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useAccessStore } from '@/store/access-store';
+// Update ASAHI: prefetch identitas perusahaan (logo + nama) untuk header cetak/PDF
+import { useCompanyStore } from '@/store/company-store';
 
 // ── Data definitions ──────────────────────────────────────────────────────────
 
@@ -178,6 +180,8 @@ const modules: NavModule[] = [
     label: 'Pengaturan',
     icon: Settings,
     subPages: [
+      // Update ASAHI: identitas perusahaan (logo + nama) untuk kop dokumen cetak/PDF
+      { id: 'profil-perusahaan', label: 'Profil Perusahaan', icon: Building2 },
       { id: 'coa', label: 'Akun Perkiraan', icon: Layers },
       { id: 'setting-akun', label: 'Setting Akun', icon: Settings2 },
       { id: 'pelanggan', label: 'Pelanggan', icon: UserPlus },
@@ -245,6 +249,7 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
   // Modul Laporan: seluruh subPageGroups digating satu kode (dicek sekali per modul).
   reports: {},
   settings: {
+    'profil-perusahaan': 'master.company_profile.view',
     coa: 'coa.akun.view',
     'setting-akun': 'coa.setting_akun.view',
     pelanggan: 'master.pelanggan.view',
@@ -289,6 +294,13 @@ export function ERPSidebar() {
   React.useEffect(() => {
     void fetchPermissions();
   }, [fetchPermissions]);
+
+  // Update ASAHI: muat profil perusahaan sekali saat shell termuat, supaya
+  // tab cetak/PDF yang dibuka kemudian sudah punya identitas siap pakai.
+  const ensureCompanyProfile = useCompanyStore((s) => s.ensureLoaded);
+  React.useEffect(() => {
+    ensureCompanyProfile();
+  }, [ensureCompanyProfile]);
 
   const can = React.useCallback((code: string) => isSuperAdmin || permissions.includes(code), [isSuperAdmin, permissions]);
 
