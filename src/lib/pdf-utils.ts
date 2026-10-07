@@ -104,7 +104,7 @@ export function fileSafeNo(no: string): string {
 // ("Purchase Order", "Sales Order", "Invoice Penjualan", dst.).
 // Ingin memperbesar? Naikkan angkanya (mis. 24). Memperkecil? Turunkan (mis. 16).
 // Satuan: pixel (px). Semua template cetak memakai konstanta ini.
-export const DOC_TITLE_FONT_SIZE = 20;
+export const DOC_TITLE_FONT_SIZE = 25;
 
 // ─── PDF Generation Utility ────────────────────────────────────────────────
 

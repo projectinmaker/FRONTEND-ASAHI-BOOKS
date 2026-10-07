@@ -138,9 +138,9 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 }
 
 // ─── Helper: SummaryTable (private, used by Invoice / Retur / Penawaran) ───
-// Update #4: TERBILANG menjadi baris terakhir di dalam tabel ringkasan —
-// tepat di bawah baris "Total" — sehingga jelas bahwa penyebutan terbilang
-// adalah untuk TOTAL (bukan Sub Total).
+// Update ASAHI #5: terbilang TIDAK lagi menjadi baris di dalam tabel ringkasan —
+// posisinya dikembalikan ke blok footer kiri template (seperti sebelumnya),
+// tetap menyebut TOTAL.
 
 function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[] }) {
   const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
@@ -174,12 +174,6 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: De
         <tr>
           <td style={{ ...cellStyle, fontWeight: 'bold' }}>Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{formatNumber(grandTotal)}</td>
-        </tr>
-        {/* Update #4: terbilang menyebut TOTAL — baris langsung di bawah Total. */}
-        <tr>
-          <td colSpan={2} style={{ ...cellStyle, fontStyle: 'italic' }}>
-            Terbilang (Total): {terbilang(grandTotal)}
-          </td>
         </tr>
       </tbody>
     </table>
@@ -461,7 +455,15 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
-  // Update #4: perhitungan total & terbilang dipindah ke SummaryTable.
+  // Update ASAHI #5: posisi terbilang dikembalikan ke blok footer kiri
+  // (seperti sebelum update #4) — tetap menyebut TOTAL.
+  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
+  const afterDiskon = subTotal - diskonAmt;
+  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
+  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
@@ -507,9 +509,12 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
       {/* ── Footer ── */}
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
-        {/* Update #4: terbilang dipindah ke DALAM tabel ringkasan — baris
-            langsung di bawah "Total" (menyebut Total, bukan Sub Total). */}
         <div>
+          {/* Update ASAHI #5: posisi terbilang seperti semula — blok italic di
+              footer kiri (di atas Keterangan), tetap menyebut TOTAL. */}
+          <div style={{ marginBottom: '6px' }}>
+            <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
+          </div>
           {data.keterangan && (
             <div style={{ marginBottom: '12px' }}>
               <strong>Keterangan:</strong>
@@ -546,7 +551,14 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function ReturPDFTemplate({ data }: { data: ReturData }) {
-  // Update #4: perhitungan total & terbilang dipindah ke SummaryTable.
+  // Update ASAHI #5: posisi terbilang dikembalikan ke blok footer kiri
+  // (seperti sebelum update #4) — tetap menyebut TOTAL.
+  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
+  const afterDiskon = subTotal - diskonAmt;
+  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const grandTotal = afterDiskon + ppnAmt;
+
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
@@ -580,6 +592,11 @@ export function ReturPDFTemplate({ data }: { data: ReturData }) {
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
         <div>
+          {/* Update ASAHI #5: posisi terbilang seperti semula — blok italic di
+              footer kiri (di atas Keterangan), tetap menyebut TOTAL. */}
+          <div style={{ marginBottom: '6px' }}>
+            <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
+          </div>
           {data.keterangan && (
             <div>
               <strong>Keterangan:</strong>
@@ -601,7 +618,15 @@ export function ReturPDFTemplate({ data }: { data: ReturData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
-  // Update #4: perhitungan total & terbilang dipindah ke SummaryTable.
+  // Update ASAHI #5: posisi terbilang dikembalikan ke blok footer kiri
+  // (seperti sebelum update #4) — tetap menyebut TOTAL.
+  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
+  const afterDiskon = subTotal - diskonAmt;
+  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
+  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
@@ -642,9 +667,12 @@ export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
       {/* ── Footer ── */}
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
-        {/* Update #4: terbilang dipindah ke DALAM tabel ringkasan — baris
-            langsung di bawah "Total" (menyebut Total, bukan Sub Total). */}
         <div>
+          {/* Update ASAHI #5: posisi terbilang seperti semula — blok italic di
+              footer kiri (di atas Keterangan), tetap menyebut TOTAL. */}
+          <div style={{ marginBottom: '6px' }}>
+            <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
+          </div>
           {data.keterangan && (
             <div style={{ marginBottom: '12px' }}>
               <strong>Keterangan:</strong>
