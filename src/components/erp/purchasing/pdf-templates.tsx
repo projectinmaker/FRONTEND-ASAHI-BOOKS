@@ -40,6 +40,9 @@ export interface PembelianData {
   tanggalKirim: string;
   kepada: string;
   alamat: string;
+  // === Update ASAHI (cetak PO): Kontak Person & No. Contact supplier ===
+  kontakPerson: string;
+  noContact: string;
   detail: PembelianDetailRow[];
   biayaTambahan: BiayaTambahan[];
   keterangan: string;
@@ -335,16 +338,20 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
             <div>{COMPANY_INFO.address}</div>
           </div>
         </div>
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Pesanan Pembelian</div>
+        {/* Update ASAHI: judul cetak "Pesanan Pembelian" → "Purchase Order" */}
+        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Purchase Order</div>
       </div>
 
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
+          {/* Update ASAHI: "Kepada" → "Nama Pemasok:" + Kontak Person & No. Contact */}
           <div style={{ marginBottom: '2px' }}>
-            <strong>Kepada</strong>
+            <strong>Nama Pemasok:</strong>
           </div>
           <div style={{ marginBottom: '2px' }}>{data.kepada}</div>
+          {data.kontakPerson ? <div style={{ marginBottom: '2px' }}>Kontak Person: {data.kontakPerson}</div> : null}
+          {data.noContact ? <div style={{ marginBottom: '2px' }}>No. Contact: {data.noContact}</div> : null}
           <div>{data.alamat}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>

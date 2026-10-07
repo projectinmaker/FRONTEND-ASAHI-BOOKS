@@ -45,6 +45,9 @@ function mapPembelianData(d: PurchaseOrderResponse): PembelianData {
     tanggalKirim: d.tanggalKirim || '',
     kepada: d.supplier?.nama || '',
     alamat: d.alamat || '',
+    // Update ASAHI (cetak PO): kontak supplier di bawah "Nama Pemasok"
+    kontakPerson: d.supplier?.kontakPerson || '',
+    noContact: d.supplier?.telepon || '',
     detail: (d.details || []).map<PembelianDetailRow>((r) => ({
       id: r.id,
       barang: r.barang?.nama || '',
@@ -93,7 +96,11 @@ export function PesananPembelianCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Pesanan-Pembelian-${data.nomor || id}.pdf`);
+      // Update ASAHI: judul "Purchase Order" + nomor baru "PO ASI/2026/001"
+      // mengandung '/' yang tidak valid untuk nama file → strip prefix PO dan
+      // ganti '/' dengan '-' (contoh: "Purchase-Order-ASI-2026-001.pdf").
+      const fileNomor = data.nomor ? data.nomor.replace(/^PO\s+/, '').replace(/\//g, '-') : '';
+      await generatePDF(elementId, `Purchase-Order-${fileNomor || id}.pdf`);
     } finally {
       setDownloading(false);
     }

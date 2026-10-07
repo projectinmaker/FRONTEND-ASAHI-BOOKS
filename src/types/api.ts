@@ -937,6 +937,9 @@ export interface SupplierSimple {
   id: string;
   kode: string;
   nama: string;
+  // === Update ASAHI (cetak PO): Kontak Person & Telepon supplier ===
+  kontakPerson?: string | null;
+  telepon?: string | null;
 }
 
 export interface SalesOrderSimple {

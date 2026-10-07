@@ -261,14 +261,16 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
             <div>{COMPANY_INFO.address}</div>
           </div>
         </div>
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Pesanan Penjualan</div>
+        {/* Update ASAHI: judul cetak "Pesanan Penjualan" → "Sales Order" */}
+        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Sales Order</div>
       </div>
 
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
+          {/* Update ASAHI: label "Kepada" → "Nama Customer:" */}
           <div style={{ marginBottom: '2px' }}>
-            <strong>Kepada</strong>
+            <strong>Nama Customer:</strong>
           </div>
           <div style={{ marginBottom: '2px' }}>{data.kepada}</div>
           <div>{data.alamatPenerima}</div>

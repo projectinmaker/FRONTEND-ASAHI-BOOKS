@@ -98,7 +98,11 @@ export function PesananCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      await generatePDF(elementId, `Pesanan-${data.nomor || id}.pdf`);
+      // Update ASAHI: judul "Sales Order" + nomor baru "SO ASI/2026/001"
+      // mengandung '/' yang tidak valid untuk nama file → strip prefix SO dan
+      // ganti '/' dengan '-' (contoh: "Sales-Order-ASI-2026-001.pdf").
+      const fileNomor = data.nomor ? data.nomor.replace(/^SO\s+/, '').replace(/\//g, '-') : '';
+      await generatePDF(elementId, `Sales-Order-${fileNomor || id}.pdf`);
     } finally {
       setDownloading(false);
     }
