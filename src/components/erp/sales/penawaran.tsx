@@ -30,6 +30,8 @@ import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 import { PenawaranPDFTemplate, type PenawaranData, type DetailRow, type BiayaTambahan } from '@/components/erp/sales/pdf-templates';
 import type { PenawaranResponse, PenawaranCreate, PenawaranDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+// Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
+import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -705,6 +707,15 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const [fDetail, setFDetail] = useState<PenawaranFormRow[]>([newFormRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<PenawaranBiayaRow[]>([]);
 
+  // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis
+  // dari master (tidak perlu input manual lagi; tetap bisa disunting). ──
+  const handlePelangganChange = (id: string) => {
+    setFPelangganId(id);
+    const master = findPartyMaster(pelangganOptions, id);
+    setFAlamatPengiriman(master?.alamat || '');
+    if (master?.syaratBayarId) setFSyaratBayarId(master.syaratBayarId);
+  };
+
   // ── Dropdown + (edit) data penawaran ──
   const [pelangganOptions, setPelangganOptions] = useState<PelangganDropdown[]>([]);
   const [syaratBayarOptions, setSyaratBayarOptions] = useState<SyaratBayarResponse[]>([]);
@@ -928,7 +939,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               </Label>
               <SearchableDropdown
                 value={fPelangganId}
-                onValueChange={setFPelangganId}
+                onValueChange={handlePelangganChange}
                 options={includeCurrent(
                   pelangganOptions.map((p) => ({ id: p.id, label: p.nama })),
                   fPelangganId,
@@ -970,7 +981,9 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-            <Input className="h-9 text-xs" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} placeholder="Opsional..." disabled={readOnly} />
+            {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+            <Textarea className="text-xs min-h-[48px]" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} disabled={readOnly} />
+            <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
           </div>
 
           <Separator />

@@ -57,10 +57,14 @@ function terbilangChunk(n: number): string {
   }
   if (n < 1000000000) {
     const r = Math.floor(n / 1000000);
-    return terbilangChunk(r) + ' Juta' + (n % 1000000 ? ' ' + terbilangChunk(n % 1000) : '');
+    // Update #4: perbaikan bug — sisa harus n % 1.000.000 (dulu n % 1000,
+    // sehingga 1.500.000 terbaca "Satu Juta" tanpa "Lima Ratus Ribu").
+    return terbilangChunk(r) + ' Juta' + (n % 1000000 ? ' ' + terbilangChunk(n % 1000000) : '');
   }
   if (n < 1000000000000) {
-    const r = Math.floor(n / 1000000);
+    // Update #4: perbaikan bug — pembagi harus 1 miliar (dulu 1 juta,
+    // sehingga 2.500.000.000 terbaca "Dua Ribu Lima Ratus Miliar").
+    const r = Math.floor(n / 1000000000);
     return terbilangChunk(r) + ' Miliar' + (n % 1000000000 ? ' ' + terbilangChunk(n % 1000000000) : '');
   }
   return String(n);
@@ -94,6 +98,13 @@ export const COMPANY_INFO = {
 export function fileSafeNo(no: string): string {
   return no.replace(/\s+/g, '-').replace(/\//g, '-');
 }
+
+// ─── Ukuran judul dokumen cetak (Update #4) ─────────────────────────────────
+// SATU TEMPAT untuk mengatur besar/kecil judul SEMUA dokumen cetak/PDF
+// ("Purchase Order", "Sales Order", "Invoice Penjualan", dst.).
+// Ingin memperbesar? Naikkan angkanya (mis. 24). Memperkecil? Turunkan (mis. 16).
+// Satuan: pixel (px). Semua template cetak memakai konstanta ini.
+export const DOC_TITLE_FONT_SIZE = 20;
 
 // ─── PDF Generation Utility ────────────────────────────────────────────────
 

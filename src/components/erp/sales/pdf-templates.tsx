@@ -1,6 +1,6 @@
 'use client';
 
-import { formatNumber, formatDate, terbilang } from '@/lib/pdf-utils';
+import { formatNumber, formatDate, terbilang, DOC_TITLE_FONT_SIZE } from '@/lib/pdf-utils';
 // Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
 import { CompanyBrand } from '@/components/erp/company-brand';
 
@@ -137,7 +137,10 @@ function InfoCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── Helper: SummaryTable (private, used by Invoice / Retur) ───────────────
+// ─── Helper: SummaryTable (private, used by Invoice / Retur / Penawaran) ───
+// Update #4: TERBILANG menjadi baris terakhir di dalam tabel ringkasan —
+// tepat di bawah baris "Total" — sehingga jelas bahwa penyebutan terbilang
+// adalah untuk TOTAL (bukan Sub Total).
 
 function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[] }) {
   const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
@@ -171,6 +174,12 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: De
         <tr>
           <td style={{ ...cellStyle, fontWeight: 'bold' }}>Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{formatNumber(grandTotal)}</td>
+        </tr>
+        {/* Update #4: terbilang menyebut TOTAL — baris langsung di bawah Total. */}
+        <tr>
+          <td colSpan={2} style={{ ...cellStyle, fontStyle: 'italic' }}>
+            Terbilang (Total): {terbilang(grandTotal)}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -251,8 +260,10 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        {/* Update ASAHI: judul cetak "Pesanan Penjualan" → "Sales Order" */}
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Sales Order</div>
+        {/* Update ASAHI: judul cetak "Pesanan Penjualan" → "Sales Order".
+            Ukuran font judul diatur di SATU tempat: DOC_TITLE_FONT_SIZE
+            (src/lib/pdf-utils.ts). */}
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Sales Order</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -349,7 +360,7 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Surat Jalan</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Surat Jalan</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -450,19 +461,13 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
-  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
-
+  // Update #4: perhitungan total & terbilang dipindah ke SummaryTable.
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Invoice Penjualan</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Invoice Penjualan</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -502,10 +507,9 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
       {/* ── Footer ── */}
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
+        {/* Update #4: terbilang dipindah ke DALAM tabel ringkasan — baris
+            langsung di bawah "Total" (menyebut Total, bukan Sub Total). */}
         <div>
-          <div style={{ marginBottom: '6px' }}>
-            <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
-          </div>
           {data.keterangan && (
             <div style={{ marginBottom: '12px' }}>
               <strong>Keterangan:</strong>
@@ -542,18 +546,13 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function ReturPDFTemplate({ data }: { data: ReturData }) {
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
-  const grandTotal = afterDiskon + ppnAmt;
-
+  // Update #4: perhitungan total & terbilang dipindah ke SummaryTable.
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Retur Penjualan</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Retur Penjualan</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -602,19 +601,13 @@ export function ReturPDFTemplate({ data }: { data: ReturData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
-  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
-
+  // Update #4: perhitungan total & terbilang dipindah ke SummaryTable.
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Penawaran</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Penawaran</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -649,10 +642,9 @@ export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
       {/* ── Footer ── */}
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
+        {/* Update #4: terbilang dipindah ke DALAM tabel ringkasan — baris
+            langsung di bawah "Total" (menyebut Total, bukan Sub Total). */}
         <div>
-          <div style={{ marginBottom: '6px' }}>
-            <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
-          </div>
           {data.keterangan && (
             <div style={{ marginBottom: '12px' }}>
               <strong>Keterangan:</strong>

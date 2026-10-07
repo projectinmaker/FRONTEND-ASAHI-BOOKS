@@ -1,6 +1,6 @@
 'use client';
 
-import { formatNumber, formatDate, terbilang } from '@/lib/pdf-utils';
+import { formatNumber, formatDate, terbilang, DOC_TITLE_FONT_SIZE } from '@/lib/pdf-utils';
 // Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
 import { CompanyBrand } from '@/components/erp/company-brand';
 
@@ -122,7 +122,7 @@ export function TransferBankPDFTemplate({ data, elementId = 'pdf-content' }: { d
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Bukti Transfer Bank</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Bukti Transfer Bank</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -199,7 +199,7 @@ export function PembayaranKasPDFTemplate({ data, elementId = 'pdf-content' }: { 
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>
           Bukti Pengeluaran Kas
           {isAPSettlement && <SettlementBadge kind="ap" />}
         </div>
@@ -285,7 +285,7 @@ export function PenerimaanKasPDFTemplate({ data, elementId = 'pdf-content' }: { 
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>
           Bukti Penerimaan Kas
           {isARSettlement && <SettlementBadge kind="ar" />}
         </div>

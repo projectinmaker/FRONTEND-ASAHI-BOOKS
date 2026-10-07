@@ -1,6 +1,6 @@
 'use client';
 
-import { formatNumber, formatDate, terbilang } from '@/lib/pdf-utils';
+import { formatNumber, formatDate, terbilang, DOC_TITLE_FONT_SIZE } from '@/lib/pdf-utils';
 // Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
 import { CompanyBrand } from '@/components/erp/company-brand';
 
@@ -179,6 +179,9 @@ function PODetailTableWithPrice({ detail, currency }: { detail: PembelianDetailR
 }
 
 // ─── Helper: Summary Table PO dengan mata uang (update ASAHI #3) ────────────
+// Update #4: TERBILANG menjadi baris terakhir di dalam tabel ringkasan —
+// tepat di bawah baris "Total" — sehingga jelas bahwa penyebutan terbilang
+// adalah untuk TOTAL (bukan Sub Total).
 
 function POSummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, currency }: { detail: PembelianDetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; currency?: string | null }) {
   const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
@@ -187,6 +190,7 @@ function POSummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, currency }: 
   const ppnAmt = ppn ? (afterDiskon * ppn) / 100 : 0;
   const biayaLain = biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
   const grandTotal = afterDiskon + ppnAmt + biayaLain;
+  const isIdr = !currency || currency === 'IDR';
 
   return (
     <table style={tableStyle}>
@@ -213,6 +217,15 @@ function POSummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, currency }: 
           <td style={{ ...cellStyle, fontWeight: 'bold' }}>Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{money(grandTotal, currency)}</td>
         </tr>
+        {/* Update #4: terbilang menyebut TOTAL — baris langsung di bawah Total.
+            Hanya untuk IDR (mata uang dasar) agar tidak salah baca nominal asing. */}
+        {isIdr && (
+          <tr>
+            <td colSpan={2} style={{ ...cellStyle, fontStyle: 'italic' }}>
+              Terbilang (Total): {terbilang(grandTotal)}
+            </td>
+          </tr>
+        )}
       </tbody>
     </table>
   );
@@ -253,6 +266,12 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: Pe
           <td style={{ ...cellStyle, fontWeight: 'bold' }}>Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{formatNumber(grandTotal)}</td>
         </tr>
+        {/* Update #4: terbilang menyebut TOTAL — baris langsung di bawah Total. */}
+        <tr>
+          <td colSpan={2} style={{ ...cellStyle, fontStyle: 'italic' }}>
+            Terbilang (Total): {terbilang(grandTotal)}
+          </td>
+        </tr>
       </tbody>
     </table>
   );
@@ -279,6 +298,12 @@ function ReturSummaryTable({ detail, ppn }: { detail: ReturDetailRow[]; ppn: num
         <tr>
           <td style={{ ...cellStyle, fontWeight: 'bold' }}>Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{formatNumber(grandTotal)}</td>
+        </tr>
+        {/* Update #4: terbilang menyebut TOTAL — baris langsung di bawah Total. */}
+        <tr>
+          <td colSpan={2} style={{ ...cellStyle, fontStyle: 'italic' }}>
+            Terbilang (Total): {terbilang(grandTotal)}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -414,21 +439,15 @@ function BiayaTambahanTable({ items }: { items: BiayaTambahan[] }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
-  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
-  const isIdr = !data.mataUang || data.mataUang === 'IDR';
-
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        {/* Update ASAHI: judul cetak "Pesanan Pembelian" → "Purchase Order" */}
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Purchase Order</div>
+        {/* Update ASAHI: judul cetak "Pesanan Pembelian" → "Purchase Order".
+            Ukuran font judul diatur di SATU tempat: DOC_TITLE_FONT_SIZE
+            (src/lib/pdf-utils.ts). */}
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Purchase Order</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -478,14 +497,9 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
       {/* ── Footer ── */}
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
+        {/* Update #4: terbilang dipindah ke DALAM tabel ringkasan — baris
+            langsung di bawah "Total" (menyebut Total, bukan Sub Total). */}
         <div>
-          {/* Terbilang hanya untuk IDR (mata uang dasar) — hindari salah baca
-              nominal untuk mata uang asing. */}
-          {isIdr && (
-            <div style={{ marginBottom: '6px' }}>
-              <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
-            </div>
-          )}
           {data.keterangan && (
             <div style={{ marginBottom: '12px' }}>
               <strong>Keterangan:</strong>
@@ -534,7 +548,7 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Penerimaan Barang</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Penerimaan Barang</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -617,19 +631,12 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianData }) {
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
-  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
-
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Invoice Pembelian</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Invoice Pembelian</div>
       </div>
 
       {/* ── Info Section ── */}
@@ -663,10 +670,9 @@ export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianDa
       {/* ── Footer ── */}
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
+        {/* Update #4: terbilang dipindah ke DALAM tabel ringkasan — baris
+            langsung di bawah "Total" (menyebut Total, bukan Sub Total). */}
         <div>
-          <div style={{ marginBottom: '6px' }}>
-            <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
-          </div>
           {data.keterangan && (
             <div style={{ marginBottom: '12px' }}>
               <strong>Keterangan:</strong>
@@ -715,7 +721,7 @@ export function ReturPembelianPDFTemplate({ data }: { data: ReturPembelianData }
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Retur Pembelian</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Retur Pembelian</div>
       </div>
 
       {/* ── Info Section ── */}

@@ -22,7 +22,7 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { FileCheck, Plus, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info } from 'lucide-react';
-import { formatRp, formatNumber, formatDate, todayStr, generatePDF, terbilang, fileSafeNo } from '@/lib/pdf-utils';
+import { formatRp, formatNumber, formatDate, todayStr, generatePDF, terbilang, fileSafeNo, DOC_TITLE_FONT_SIZE } from '@/lib/pdf-utils';
 // Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
 import { CompanyBrand } from '@/components/erp/company-brand';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
@@ -178,7 +178,7 @@ export function TukarFakturPDFTemplate({ data }: { data: TukarFakturPDFData }) {
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: '20px', fontWeight: 'bold' }}>Tukar Faktur / Tanda Terima</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Tukar Faktur / Tanda Terima</div>
       </div>
 
       {/* ── Info Section ── */}

@@ -20,7 +20,9 @@ import { Badge } from '@/components/ui/badge';
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderResponse, PurchaseOrderResponse, MataUangResponse, AlamatPengirimanResponse } from '@/types/api';
+import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderResponse, PurchaseOrderResponse, MataUangResponse, AlamatPengirimanResponse, PelangganDropdown, SupplierDropdown } from '@/types/api';
+// Update #4 — auto-fill field berkaitan master data saat pelanggan/supplier dipilih
+import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { ORDER_CURRENCY_OPTIONS, buildOrderUpdate, canEditOrder, formatOrderMoney, newOrderHeader, newOrderLine, orderEndpoint, orderHeaderFromResponse, orderLinesFromResponse, persistOrder, serializeOrderHeader, serializeOrderLines, type OrderHeader, type OrderHeaderKey, type OrderKind, type OrderLine, type OrderResponse } from '@/lib/order-documents';
 
 function includeCurrent(options: SearchableDropdownOption[], id?: string | null, label?: string | null) {
@@ -44,6 +46,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   const [original, setOriginal] = useState<OrderResponse | null>(null);
   const savedId = useRef(editId);
   const [parties, setParties] = useState<SearchableDropdownOption[]>([]);
+  // Update #4: baris master lengkap (alamat, kontak, syarat bayar, currency)
+  // dari dropdown — dipakai untuk auto-fill saat party dipilih.
+  const [partyRows, setPartyRows] = useState<(PelangganDropdown | SupplierDropdown)[]>([]);
   const [barang, setBarang] = useState<BarangDropdown[]>([]);
   const [units, setUnits] = useState<SatuanResponse[]>([]);
   const [terms, setTerms] = useState<SyaratBayarResponse[]>([]);
@@ -73,9 +78,10 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.get<{ id: string; nama: string }[]>(isSales ? '/master/pelanggan-dropdown' : '/master/supplier-dropdown'), api.get<BarangDropdown[]>('/master/barang-dropdown'), api.get<SatuanResponse[]>('/master/satuan'), api.get<SyaratBayarResponse[]>('/master/syarat-bayar'), editId ? api.get<OrderResponse>(`${orderEndpoint(kind)}/${editId}`) : Promise.resolve(null)])
+    Promise.all([api.get<(PelangganDropdown | SupplierDropdown)[]>(isSales ? '/master/pelanggan-dropdown' : '/master/supplier-dropdown'), api.get<BarangDropdown[]>('/master/barang-dropdown'), api.get<SatuanResponse[]>('/master/satuan'), api.get<SyaratBayarResponse[]>('/master/syarat-bayar'), editId ? api.get<OrderResponse>(`${orderEndpoint(kind)}/${editId}`) : Promise.resolve(null)])
       .then(([partyData, barangData, unitData, termData, order]) => {
         if (!active) return;
+        setPartyRows(partyData);
         setParties(partyData.map((party) => ({ id: party.id, label: party.nama })));
         setBarang(barangData);
         setUnits(unitData);
@@ -163,6 +169,31 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   };
 
   const setField = (key: OrderHeaderKey, value: string) => setHeader((prev) => ({ ...prev, [key]: value }));
+
+  // ── Update #4: auto-fill dari master data saat pelanggan/supplier dipilih ──
+  // Alamat selalu ditarik dari master (tidak perlu input manual lagi); syarat
+  // bayar ditarik bila party punya default; PO juga menarik mata uang default
+  // supplier (bila valid di daftar mata uang). Field tetap bisa disunting
+  // setelahnya untuk kasus khusus.
+  const handlePartyChange = (value: string) => {
+    setField(partyKey, value);
+    const master = findPartyMaster(partyRows, value);
+    setHeader((prev) => {
+      const next = { ...prev };
+      if (isSales) {
+        next.alamatPengiriman = master?.alamat || '';
+      } else {
+        next.alamat = master?.alamat || '';
+        const supplierCurrency = master && 'currency' in master ? master.currency : null;
+        if (supplierCurrency && supplierCurrency !== prev.currency && currencyOptions.some((option) => option.id === supplierCurrency)) {
+          next.currency = supplierCurrency;
+        }
+      }
+      if (master?.syaratBayarId) next.syaratBayarId = master.syaratBayarId;
+      return next;
+    });
+  };
+
   const updateLine = (key: string, field: keyof OrderLine, value: string) =>
     setLines((prev) =>
       prev.map((line) => {
@@ -315,7 +346,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>{isSales ? 'Pelanggan' : 'Supplier'} *</Label>
-                  <SearchableDropdown value={header[partyKey]} onValueChange={(value) => setField(partyKey, value)} options={includeCurrent(parties, currentPartyId, currentParty?.nama)} disabled={disabled} placeholder={isSales ? 'Pilih pelanggan' : 'Pilih supplier'} />
+                  {/* Update #4: pilih party → alamat/syarat bayar/currency ditarik otomatis dari master */}
+                  <SearchableDropdown value={header[partyKey]} onValueChange={handlePartyChange} options={includeCurrent(parties, currentPartyId, currentParty?.nama)} disabled={disabled} placeholder={isSales ? 'Pilih pelanggan' : 'Pilih supplier'} />
                 </div>
                 {input('tanggal', 'Tanggal *', 'date')}
                 <div className="space-y-1.5">
@@ -344,12 +376,22 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                     {input('ekspedisi', 'Ekspedisi')}
                     {input('tanggalPengiriman', 'Tanggal Pengiriman', 'date')}
                     {input('penjual', 'Penjual')}
-                    {input('alamatPengiriman', 'Alamat Pengiriman')}
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="order-alamatPengiriman">Alamat Pengiriman</Label>
+                      {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+                      <Textarea id="order-alamatPengiriman" rows={2} value={header.alamatPengiriman} onChange={(event) => setField('alamatPengiriman', event.target.value)} disabled={disabled} />
+                      <p className="text-xs text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
+                    </div>
                   </>
                 ) : (
                   <>
                     {input('tanggalKirim', 'Tanggal Kirim', 'date')}
-                    {input('alamat', 'Alamat')}
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label htmlFor="order-alamat">Alamat</Label>
+                      {/* Update #4: auto-fill dari master Supplier saat dipilih */}
+                      <Textarea id="order-alamat" rows={2} value={header.alamat} onChange={(event) => setField('alamat', event.target.value)} disabled={disabled} />
+                      <p className="text-xs text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
+                    </div>
                   </>
                 )}
               </div>

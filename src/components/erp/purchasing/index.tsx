@@ -33,6 +33,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FileText, Package, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, TrendingDown, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, CheckCircle2, Link2, Unlink, Undo2 } from 'lucide-react';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
+// Update #4 — auto-fill alamat & field terkait dari master saat supplier dipilih
+import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { toast } from 'sonner';
 import { PesananPembelianCetakTab, PenerimaanCetakTab, InvoicePembelianCetakTab, ReturPembelianCetakTab } from '@/components/erp/purchasing/cetak-tabs';
@@ -742,7 +744,13 @@ function PenerimaanCreateForm() {
           setFPurchaseInvoiceId('');
         }
         // Hanya timpa alamat bila PO punya alamat (jangan kosongkan isian user).
-        if (sisa.alamat) setFAlamat(sisa.alamat);
+        // Update #4: bila PO tidak punya alamat, tarik dari master supplier.
+        if (sisa.alamat) {
+          setFAlamat(sisa.alamat);
+        } else if (sisa.supplierId) {
+          const master = findPartyMaster(supplierOptions, sisa.supplierId);
+          if (master?.alamat) setFAlamat(master.alamat);
+        }
         const rows = (sisa.details || []).filter((d) => Number(d.sisaTerima) > 0);
         if (rows.length === 0) {
           toast.info('Semua baris PO sudah diterima sepenuhnya', { description: 'Tidak ada sisa qty yang perlu diterima untuk PO ini.' });
@@ -771,7 +779,7 @@ function PenerimaanCreateForm() {
         setPoLoading(false);
       }
     },
-    [fSupplierId]
+    [fSupplierId, supplierOptions]
   );
 
   const handleSubmit = async () => {
@@ -863,6 +871,9 @@ function PenerimaanCreateForm() {
                 onValueChange={(value) => {
                   setFSupplierId(value);
                   setFPurchaseInvoiceId('');
+                  // Update #4: alamat supplier ditarik otomatis dari master
+                  const master = findPartyMaster(supplierOptions, value);
+                  setFAlamat(master?.alamat || '');
                 }}
                 options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
                 placeholder="Pilih supplier..."
@@ -887,7 +898,8 @@ function PenerimaanCreateForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Alamat</Label>
-              <Input className="h-9 text-xs" value={fAlamat} onChange={(e) => setFAlamat(e.target.value)} />
+              <Textarea className="text-xs min-h-[48px]" value={fAlamat} onChange={(e) => setFAlamat(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Link ke Invoice Pembelian (opsional)</Label>
@@ -1092,6 +1104,9 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
                 onValueChange={(value) => {
                   setEditSupplierId(value);
                   setEditPurchaseInvoiceId('');
+                  // Update #4: alamat supplier ditarik otomatis dari master
+                  const master = findPartyMaster(supplierOptions, value);
+                  setEditAlamat(master?.alamat || '');
                 }}
                 options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
                 placeholder="Pilih supplier..."
@@ -1113,7 +1128,8 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Alamat</Label>
-              <Input className="h-9 text-xs" value={editAlamat} onChange={(e) => setEditAlamat(e.target.value)} />
+              <Textarea className="text-xs min-h-[48px]" value={editAlamat} onChange={(e) => setEditAlamat(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Link ke Invoice Pembelian (opsional)</Label>
@@ -1281,46 +1297,57 @@ function InvoiceCreateForm() {
   // Pilihan "Tanpa PO" (kosong) TIDAK menghapus baris — user tetap bisa manual.
   // Update #4 (Q2): response /sisa juga disimpan ke poSisaInfo untuk panel info
   // status penerimaan (read-only, tidak mengubah prefill baris sama sekali).
-  const handlePurchaseOrderChange = useCallback(async (poId: string) => {
-    setFPurchaseOrderId(poId);
-    if (!poId) {
-      setPoSisaInfo(null);
-      return;
-    }
-    setPoLoading(true);
-    try {
-      const sisa = await api.get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${poId}/sisa`);
-      setPoSisaInfo(sisa);
-      if (sisa.supplierId) setFSupplierId(sisa.supplierId);
-      const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
-      if (rows.length === 0) {
-        toast.info('Semua baris PO sudah dibuatkan invoice sepenuhnya', { description: 'Tidak ada sisa qty yang perlu dibuatkan invoice untuk PO ini.' });
-        setFDetail([]);
+  const handlePurchaseOrderChange = useCallback(
+    async (poId: string) => {
+      setFPurchaseOrderId(poId);
+      if (!poId) {
+        setPoSisaInfo(null);
         return;
       }
-      setFDetail(
-        rows.map((d) => ({
-          id: crypto.randomUUID(),
-          barangId: d.barangId,
-          kodeBarang: d.kodeBarang || '',
-          barangNama: d.namaBarang || '',
-          harga: String(d.harga ?? 0),
-          qty: String(d.sisaFaktur),
-          diskon: String(d.diskon ?? 0),
-          satuanId: d.satuanId || '',
-          satuanNama: d.satuanNama || '',
-          hargaPerolehan: '',
-          tanggalKedaluwarsa: '',
-          purchaseOrderDetailId: d.purchaseOrderDetailId
-        }))
-      );
-    } catch {
-      // Gagal memuat sisa PO — biarkan user isi baris manual
-      setPoSisaInfo(null);
-    } finally {
-      setPoLoading(false);
-    }
-  }, []);
+      setPoLoading(true);
+      try {
+        const sisa = await api.get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${poId}/sisa`);
+        setPoSisaInfo(sisa);
+        if (sisa.supplierId) setFSupplierId(sisa.supplierId);
+        // Update #4: alamat ditarik otomatis — dari PO, atau master supplier
+        // bila PO tidak menyimpan alamat.
+        if (sisa.alamat) {
+          setFAlamat(sisa.alamat);
+        } else if (sisa.supplierId) {
+          const master = findPartyMaster(supplierOptions, sisa.supplierId);
+          setFAlamat(master?.alamat || '');
+        }
+        const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+        if (rows.length === 0) {
+          toast.info('Semua baris PO sudah dibuatkan invoice sepenuhnya', { description: 'Tidak ada sisa qty yang perlu dibuatkan invoice untuk PO ini.' });
+          setFDetail([]);
+          return;
+        }
+        setFDetail(
+          rows.map((d) => ({
+            id: crypto.randomUUID(),
+            barangId: d.barangId,
+            kodeBarang: d.kodeBarang || '',
+            barangNama: d.namaBarang || '',
+            harga: String(d.harga ?? 0),
+            qty: String(d.sisaFaktur),
+            diskon: String(d.diskon ?? 0),
+            satuanId: d.satuanId || '',
+            satuanNama: d.satuanNama || '',
+            hargaPerolehan: '',
+            tanggalKedaluwarsa: '',
+            purchaseOrderDetailId: d.purchaseOrderDetailId
+          }))
+        );
+      } catch {
+        // Gagal memuat sisa PO — biarkan user isi baris manual
+        setPoSisaInfo(null);
+      } finally {
+        setPoLoading(false);
+      }
+    },
+    [supplierOptions]
+  );
 
   const formSubtotal = useMemo(
     () =>
@@ -1488,7 +1515,17 @@ function InvoiceCreateForm() {
               <Label className="text-xs font-medium">
                 Supplier <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fSupplierId} onValueChange={setFSupplierId} options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih supplier..." />
+              <SearchableDropdown
+                value={fSupplierId}
+                onValueChange={(value) => {
+                  setFSupplierId(value);
+                  // Update #4: alamat supplier ditarik otomatis dari master
+                  const master = findPartyMaster(supplierOptions, value);
+                  setFAlamat(master?.alamat || '');
+                }}
+                options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
+                placeholder="Pilih supplier..."
+              />
               {formErrors.supplierId && <p className="text-xs text-destructive mt-1">{formErrors.supplierId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -1509,7 +1546,8 @@ function InvoiceCreateForm() {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Alamat</Label>
-              <Input className="h-9 text-xs" value={fAlamat} onChange={(e) => setFAlamat(e.target.value)} />
+              <Textarea className="text-xs min-h-[48px]" value={fAlamat} onChange={(e) => setFAlamat(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
             </div>
           </div>
           <Separator />
@@ -1715,7 +1753,17 @@ function InvoiceEditForm({ editId }: { editId: string }) {
               <Label className="text-xs font-medium">
                 Supplier <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={editSupplierId} onValueChange={setEditSupplierId} options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih supplier..." />
+              <SearchableDropdown
+                value={editSupplierId}
+                onValueChange={(value) => {
+                  setEditSupplierId(value);
+                  // Update #4: alamat supplier ditarik otomatis dari master
+                  const master = findPartyMaster(supplierOptions, value);
+                  setEditAlamat(master?.alamat || '');
+                }}
+                options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
+                placeholder="Pilih supplier..."
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">
@@ -1731,7 +1779,8 @@ function InvoiceEditForm({ editId }: { editId: string }) {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Alamat</Label>
-              <Input className="h-9 text-xs" value={editAlamat} onChange={(e) => setEditAlamat(e.target.value)} />
+              <Textarea className="text-xs min-h-[48px]" value={editAlamat} onChange={(e) => setEditAlamat(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
             </div>
           </div>
           <Separator />
@@ -1795,14 +1844,19 @@ function ReturCreateForm() {
 
   // Saat invoice sumber termuat: auto-set PO (bila invoice ter-link PO) dan
   // supplier dari invoice. PO tetap bisa diganti manual setelahnya (tidak dipaksa).
+  // Update #4: alamat juga ditarik otomatis (dari invoice sumber / master supplier).
   const appliedSourceRef = useRef('');
   useEffect(() => {
     const invoice = source.invoice;
     if (!invoice || appliedSourceRef.current === invoice.id) return;
     appliedSourceRef.current = invoice.id;
     if (invoice.purchaseOrderId) setFPurchaseOrderId(invoice.purchaseOrderId);
-    if (invoice.supplierId) setFSupplierId(invoice.supplierId);
-  }, [source.invoice]);
+    if (invoice.supplierId) {
+      setFSupplierId(invoice.supplierId);
+      const master = findPartyMaster(supplierOptions, invoice.supplierId);
+      setFAlamat(invoice.alamat || master?.alamat || '');
+    }
+  }, [source.invoice, supplierOptions]);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1962,6 +2016,9 @@ function ReturCreateForm() {
                   setFSupplierId(value);
                   setFPurchaseInvoiceId('');
                   setQuantities({});
+                  // Update #4: alamat supplier ditarik otomatis dari master
+                  const master = findPartyMaster(supplierOptions, value);
+                  setFAlamat(master?.alamat || '');
                 }}
                 options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
                 placeholder="Pilih supplier..."
@@ -1982,7 +2039,8 @@ function ReturCreateForm() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Alamat</Label>
-              <Input className="h-9 text-xs" value={fAlamat} onChange={(e) => setFAlamat(e.target.value)} />
+              <Textarea className="text-xs min-h-[48px]" value={fAlamat} onChange={(e) => setFAlamat(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">PPN (%)</Label>
@@ -2187,6 +2245,9 @@ function ReturEditForm({ editId }: { editId: string }) {
                 onValueChange={(value) => {
                   setEditSupplierId(value);
                   setEditPurchaseInvoiceId('');
+                  // Update #4: alamat supplier ditarik otomatis dari master
+                  const master = findPartyMaster(supplierOptions, value);
+                  setEditAlamat(master?.alamat || '');
                 }}
                 options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
                 placeholder="Pilih supplier..."
@@ -2207,7 +2268,8 @@ function ReturEditForm({ editId }: { editId: string }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Alamat</Label>
-              <Input className="h-9 text-xs" value={editAlamat} onChange={(e) => setEditAlamat(e.target.value)} />
+              <Textarea className="text-xs min-h-[48px]" value={editAlamat} onChange={(e) => setEditAlamat(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">PPN (%)</Label>

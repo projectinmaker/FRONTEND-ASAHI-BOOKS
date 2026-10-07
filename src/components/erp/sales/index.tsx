@@ -25,6 +25,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2 } from 'lucide-react';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
+// Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
+import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
@@ -663,6 +665,18 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     }
   }, []);
 
+  // ── Update #4: pilih pelanggan → alamat ditarik otomatis dari master ──
+  // (dipakai saat pengiriman dibuat tanpa SO, atau pelanggan diganti manual;
+  // memilih SO tetap menimpa alamat dengan alamat SO-nya.)
+  const handlePelangganChange = useCallback(
+    (id: string) => {
+      setFPelangganId(id);
+      const master = findPartyMaster(pelangganOptions, id);
+      setFAlamatPengiriman(master?.alamat || '');
+    },
+    [pelangganOptions]
+  );
+
   const handleSubmit = useCallback(async () => {
     const errs: Record<string, string> = {};
     if (!fSalesOrderId) errs.salesOrderId = 'Sales Order wajib diisi';
@@ -736,7 +750,8 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fPelangganId} onValueChange={setFPelangganId} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+              {/* Update #4: pilih pelanggan → alamat ditarik otomatis dari master */}
+              <SearchableDropdown value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
           </div>
@@ -761,7 +776,9 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-              <Input className="h-9 text-xs" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
+              {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+              <Textarea className="text-xs min-h-[48px]" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
             </div>
           </div>
           <Separator />
@@ -855,6 +872,16 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
     };
   }, [editId]);
 
+  // ── Update #4: pilih pelanggan → alamat ditarik otomatis dari master ──
+  const handleEditPelangganChange = useCallback(
+    (id: string) => {
+      setEditPelangganId(id);
+      const master = findPartyMaster(pelangganOptions, id);
+      setEditAlamatPengiriman(master?.alamat || '');
+    },
+    [pelangganOptions]
+  );
+
   const handleEditSubmit = useCallback(async () => {
     if (!editPelangganId) {
       toast.error('Pelanggan wajib diisi');
@@ -922,7 +949,7 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                   <Label className="text-xs font-medium">
                     Pelanggan <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={editPelangganId} onValueChange={setEditPelangganId} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                  <SearchableDropdown value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -944,7 +971,9 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-                  <Input className="h-9 text-xs" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
+                  {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+                  <Textarea className="text-xs min-h-[48px]" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
+                  <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
                 </div>
               </div>
               <Separator />
@@ -1043,6 +1072,18 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       setSoRefInfo(null);
     }
   }, []);
+
+  // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis
+  // dari master (memilih SO setelahnya tetap menimpa dengan data SO). ──
+  const handlePelangganChange = useCallback(
+    (id: string) => {
+      setFPelangganId(id);
+      const master = findPartyMaster(pelangganOptions, id);
+      setFAlamatPengiriman(master?.alamat || '');
+      if (master?.syaratBayarId) setFSyaratBayarId(master.syaratBayarId);
+    },
+    [pelangganOptions]
+  );
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1250,7 +1291,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fPelangganId} onValueChange={setFPelangganId} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+              <SearchableDropdown value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -1290,7 +1331,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-              <Input className="h-9 text-xs" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
+              {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+              <Textarea className="text-xs min-h-[48px]" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
             </div>
           </div>
           <Separator />
@@ -1448,6 +1491,17 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     [loadSoRefInfo]
   );
 
+  // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis dari master ──
+  const handleEditPelangganChange = useCallback(
+    (id: string) => {
+      setEditPelangganId(id);
+      const master = findPartyMaster(pelangganOptions, id);
+      setEditAlamatPengiriman(master?.alamat || '');
+      if (master?.syaratBayarId) setEditSyaratBayarId(master.syaratBayarId);
+    },
+    [pelangganOptions]
+  );
+
   const handleEditSubmit = useCallback(async () => {
     if (!editPelangganId) {
       toast.error('Pelanggan wajib diisi');
@@ -1515,7 +1569,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                   <Label className="text-xs font-medium">
                     Pelanggan <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={editPelangganId} onValueChange={setEditPelangganId} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                  <SearchableDropdown value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">
@@ -1554,7 +1608,9 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-                  <Input className="h-9 text-xs" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
+                  {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+                  <Textarea className="text-xs min-h-[48px]" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
+                  <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
                 </div>
               </div>
               <Separator />
@@ -1621,6 +1677,20 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
   const [fPpn, setFPpn] = useState('11');
   const [fKeterangan, setFKeterangan] = useState('');
+
+  // ── Update #4: alamat pengembalian ditarik otomatis dari invoice sumber ──
+  // (alamat mengikuti invoice; isian manual user tetap dipertahankan —
+  // penimpaan hanya terjadi bila isian sebelumnya juga hasil auto-fill).
+  const autoFilledAlamatRef = useRef('');
+  useEffect(() => {
+    const invoice = source.invoice;
+    if (!invoice) return;
+    const next = invoice.alamatPengiriman || '';
+    if (next && (!fAlamatPengembalian || autoFilledAlamatRef.current === fAlamatPengembalian)) {
+      autoFilledAlamatRef.current = next;
+      setFAlamatPengembalian(next);
+    }
+  }, [source.invoice, fAlamatPengembalian]);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1808,7 +1878,8 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Alamat Pengembalian</Label>
-            <Input className="h-9 text-xs" value={fAlamatPengembalian} onChange={(e) => setFAlamatPengembalian(e.target.value)} />
+            <Textarea className="text-xs min-h-[48px]" value={fAlamatPengembalian} onChange={(e) => setFAlamatPengembalian(e.target.value)} />
+            <p className="text-[11px] text-muted-foreground">Otomatis ditarik dari invoice sumber — tetap bisa disunting bila perlu.</p>
           </div>
           <Separator />
           <div className="space-y-1.5">

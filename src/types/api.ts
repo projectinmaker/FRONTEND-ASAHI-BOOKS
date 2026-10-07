@@ -845,16 +845,31 @@ export interface WorkflowCapabilities {
   canApprove: boolean;
 }
 
+// === Update #4 — dropdown membawa data master untuk auto-fill form ===
+// Saat pelanggan/supplier dipilih di form transaksi (SO/PO/Invoice/Penawaran/
+// Pengiriman/Penerimaan), field alamat ditarik otomatis dari sini.
 export interface PelangganDropdown {
   id: string;
   kode: string;
   nama: string;
+  alamat?: string | null;
+  telepon?: string | null;
+  kontakPerson?: string | null;
+  email?: string | null;
+  syaratBayarId?: string | null;
 }
 
 export interface SupplierDropdown {
   id: string;
   kode: string;
   nama: string;
+  alamat?: string | null;
+  telepon?: string | null;
+  kontakPerson?: string | null;
+  email?: string | null;
+  syaratBayarId?: string | null;
+  /** Mata uang default supplier (mis. "USD") — dipakai form PO. */
+  currency?: string | null;
 }
 
 export interface BarangDropdown {
