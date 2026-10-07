@@ -461,7 +461,9 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
   // (seperti sebelum update #4) — tetap menyebut TOTAL.
   // Update ASAHI #6: rekening bank aktif dari Profil Perusahaan — tampil di
   // bawah Keterangan (nama bank + "Acc Nbr <nomor> (<mata uang>)").
-  const { rekeningBank } = useCompanyInfo();
+  // Update ASAHI #7: nama perusahaan penerima ditampilkan sebagai baris
+  // pertama blok rekening bank (di atas nama bank).
+  const { name: companyName, rekeningBank } = useCompanyInfo();
   const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
@@ -532,9 +534,12 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
           </div>
           {/* Update ASAHI #6: rekening bank perusahaan (Pengaturan → Profil
               Perusahaan) — di bawah Keterangan; tiap rekening dua baris:
-              nama bank lalu "Acc Nbr <nomor> (<mata uang>)". */}
+              nama bank lalu "Acc Nbr <nomor> (<mata uang>)".
+              Update ASAHI #7: baris pertama blok = nama perusahaan penerima
+              (dari Profil Perusahaan), di atas nama bank. */}
           {rekeningBank.length > 0 && (
             <div>
+              <div>{companyName}</div>
               {rekeningBank.map((rek) => (
                 <div key={rek.id} style={{ marginBottom: '4px' }}>
                   <div>{rek.namaBank}</div>
