@@ -3647,8 +3647,32 @@ export interface DeletedDocumentLogListResponse {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PROFIL PERUSAHAAN (header cetak/PDF) — update ASAHI
+// PROFIL PERUSAHAAN & REKENING BANK (header cetak/PDF) — update ASAHI
 // ═══════════════════════════════════════════════════════════════════════════
+
+export interface RekeningBankResponse {
+  id: string;
+  namaBank: string;
+  noRekening: string;
+  /** Kode mata uang (IDR/USD/...) — tampil sebagai "Acc Nbr <nomor> (<kode>)". */
+  mataUang: string;
+  isAktif: boolean;
+  updatedAt: string | null;
+}
+
+export interface RekeningBankCreate {
+  namaBank: string;
+  noRekening: string;
+  mataUang: string;
+  isAktif?: boolean;
+}
+
+export interface RekeningBankUpdate {
+  namaBank?: string;
+  noRekening?: string;
+  mataUang?: string;
+  isAktif?: boolean;
+}
 
 export interface CompanyProfileResponse {
   id: string;
@@ -3658,6 +3682,10 @@ export interface CompanyProfileResponse {
   email: string | null;
   /** Logo sebagai data URL (data:image/...;base64,...) — langsung dipakai <img>. */
   logo: string | null;
+  /** Update ASAHI #6: slogan — tampil khusus di header cetak Invoice Penjualan. */
+  slogan: string | null;
+  /** Update ASAHI #6: rekening bank AKTIF (embed dari backend). */
+  rekeningBank: RekeningBankResponse[];
   updatedAt: string | null;
 }
 
@@ -3667,6 +3695,8 @@ export interface CompanyProfileUpdate {
   telepon?: string | null;
   email?: string | null;
   logo?: string | null;
+  /** Update ASAHI #6: slogan opsional (null/kosong = invoice tanpa slogan). */
+  slogan?: string | null;
 }
 
 // ═════════════════════════════════════════════════════════════════════════

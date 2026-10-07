@@ -16,7 +16,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { api } from '@/lib/api';
-import type { CompanyProfileResponse } from '@/types/api';
+import type { CompanyProfileResponse, RekeningBankResponse } from '@/types/api';
 
 // Default = nilai lama yang dulu hardcoded di lib/pdf-utils (COMPANY_INFO),
 // dipakai saat profil belum termuat / endpoint gagal.
@@ -25,7 +25,11 @@ export const COMPANY_INFO_DEFAULT = {
   address: 'Jalan Simpangan No.18, RT.03/RW.06, Jatireja,\nKec. Cikarang Tim., Kabupaten Bekasi, Jawa Barat 17530',
   telepon: '' as string | null,
   email: '' as string | null,
-  logo: '' as string | null
+  logo: '' as string | null,
+  // Update ASAHI #6: slogan default (header Invoice Penjualan) — sama dengan
+  // seed migrasi backend, dipakai saat endpoint gagal (fail-open).
+  slogan: 'Machining, precision, part Jig & fixture Fabrication Mechanical & electrical Industrial supplies',
+  rekeningBank: [] as RekeningBankResponse[]
 };
 
 interface CompanyState {
@@ -76,6 +80,10 @@ export interface ResolvedCompanyInfo {
   telepon: string | null;
   email: string | null;
   logo: string | null;
+  /** Update ASAHI #6: slogan untuk header Invoice Penjualan (null = tanpa slogan). */
+  slogan: string | null;
+  /** Update ASAHI #6: rekening bank AKTIF untuk footer cetak Invoice Penjualan. */
+  rekeningBank: RekeningBankResponse[];
 }
 
 /**
@@ -96,6 +104,11 @@ export function useCompanyInfo(): ResolvedCompanyInfo {
     address: profile?.alamat || COMPANY_INFO_DEFAULT.address,
     telepon: profile?.telepon || null,
     email: profile?.email || null,
-    logo: profile?.logo || null
+    logo: profile?.logo || null,
+    // Update ASAHI #6: slogan & rekening bank — ``slogan`` memakai `!== undefined`
+    // (bukan ||) supaya nilai NULL yang sengaja dikosongkan user tidak
+    // dipaksa kembali ke default; rekening bank fail-open ke list kosong.
+    slogan: profile?.slogan !== undefined ? profile.slogan : COMPANY_INFO_DEFAULT.slogan,
+    rekeningBank: profile?.rekeningBank ?? COMPANY_INFO_DEFAULT.rekeningBank
   };
 }

@@ -24,12 +24,13 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Building2, Coins, Loader2, MapPin, Pencil, Plus, Save, Trash2, Upload } from 'lucide-react';
+import { Building2, Coins, Landmark, Loader2, MapPin, Pencil, Plus, Save, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { useCompanyStore } from '@/store/company-store';
-import type { CompanyProfileResponse, MataUangResponse, AlamatPengirimanResponse } from '@/types/api';
+import type { CompanyProfileResponse, MataUangResponse, AlamatPengirimanResponse, RekeningBankResponse } from '@/types/api';
 
 // Batas ukuran file logo (sesuai validasi backend MAX_LOGO_DATA_URL ±1.5 MB).
 const MAX_LOGO_BYTES = 1_500_000;
@@ -41,6 +42,8 @@ interface FormState {
   telepon: string;
   email: string;
   logo: string | null; // data URL
+  // Update ASAHI #6: slogan — tampil khusus di header cetak Invoice Penjualan
+  slogan: string;
 }
 
 interface CompanyProfilePageProps {
@@ -61,8 +64,17 @@ interface AlamatFormState {
   isAktif: boolean;
 }
 
+// Update ASAHI #6: form dialog rekening bank (cetak Invoice Penjualan)
+interface RekeningFormState {
+  id?: string;
+  namaBank: string;
+  noRekening: string;
+  mataUang: string;
+  isAktif: boolean;
+}
+
 interface PendingDelete {
-  kind: 'mata-uang' | 'alamat';
+  kind: 'mata-uang' | 'alamat' | 'rekening';
   id: string;
   label: string;
 }
@@ -70,7 +82,7 @@ interface PendingDelete {
 export default function CompanyProfilePage({ refreshKey }: CompanyProfilePageProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<FormState>({ namaPerusahaan: '', alamat: '', telepon: '', email: '', logo: null });
+  const [form, setForm] = useState<FormState>({ namaPerusahaan: '', alamat: '', telepon: '', email: '', logo: null, slogan: '' });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshStore = useCompanyStore((s) => s.fetch);
 
@@ -83,6 +95,12 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
   const [alamatLoading, setAlamatLoading] = useState(true);
   const [alamatDialog, setAlamatDialog] = useState<AlamatFormState | null>(null);
   const [alamatSaving, setAlamatSaving] = useState(false);
+
+  // ── Update ASAHI #6: rekening bank (cetak Invoice Penjualan) ──
+  const [rekeningBank, setRekeningBank] = useState<RekeningBankResponse[]>([]);
+  const [rekeningLoading, setRekeningLoading] = useState(true);
+  const [rekeningDialog, setRekeningDialog] = useState<RekeningFormState | null>(null);
+  const [rekeningSaving, setRekeningSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -95,7 +113,8 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
         alamat: res.alamat || '',
         telepon: res.telepon || '',
         email: res.email || '',
-        logo: res.logo || null
+        logo: res.logo || null,
+        slogan: res.slogan || ''
       });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat profil perusahaan');
@@ -131,10 +150,23 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
     }
   }, []);
 
+  // Update ASAHI #6: muat daftar rekening bank
+  const loadRekeningBank = useCallback(async () => {
+    setRekeningLoading(true);
+    try {
+      setRekeningBank(await api.get<RekeningBankResponse[]>('/master/rekening-bank'));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat daftar rekening bank');
+    } finally {
+      setRekeningLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadMataUang();
     void loadAlamatKirim();
-  }, [loadMataUang, loadAlamatKirim, refreshKey]);
+    void loadRekeningBank();
+  }, [loadMataUang, loadAlamatKirim, loadRekeningBank, refreshKey]);
 
   const saveMataUang = async () => {
     if (!mataUangDialog) return;
@@ -188,16 +220,61 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
     }
   };
 
+  // Update ASAHI #6: simpan rekening bank — refresh store agar cetakan
+  // Invoice Penjualan berikutnya langsung memakai daftar terbaru.
+  const saveRekeningBank = async () => {
+    if (!rekeningDialog) return;
+    const namaBank = rekeningDialog.namaBank.trim();
+    const noRekening = rekeningDialog.noRekening.trim();
+    if (!namaBank || !noRekening) {
+      toast.error('Nama bank dan nomor rekening wajib diisi');
+      return;
+    }
+    setRekeningSaving(true);
+    try {
+      if (rekeningDialog.id) {
+        await api.put<RekeningBankResponse>(`/master/rekening-bank/${rekeningDialog.id}`, {
+          namaBank,
+          noRekening,
+          mataUang: rekeningDialog.mataUang,
+          isAktif: rekeningDialog.isAktif
+        });
+        toast.success('Rekening bank diperbarui');
+      } else {
+        await api.post<RekeningBankResponse>('/master/rekening-bank', {
+          namaBank,
+          noRekening,
+          mataUang: rekeningDialog.mataUang,
+          isAktif: rekeningDialog.isAktif
+        });
+        toast.success('Rekening bank ditambahkan');
+      }
+      setRekeningDialog(null);
+      await loadRekeningBank();
+      await refreshStore(true);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.detail : 'Gagal menyimpan rekening bank');
+    } finally {
+      setRekeningSaving(false);
+    }
+  };
+
   const confirmDelete = async () => {
     if (!pendingDelete) return;
     setDeleting(true);
     try {
-      const endpoint = pendingDelete.kind === 'mata-uang' ? '/master/mata-uang' : '/master/alamat-pengiriman';
+      const endpoint = pendingDelete.kind === 'mata-uang' ? '/master/mata-uang' : pendingDelete.kind === 'alamat' ? '/master/alamat-pengiriman' : '/master/rekening-bank';
       await api.delete(`${endpoint}/${pendingDelete.id}`);
       toast.success(`${pendingDelete.label} dihapus`);
       setPendingDelete(null);
       if (pendingDelete.kind === 'mata-uang') await loadMataUang();
-      else await loadAlamatKirim();
+      else if (pendingDelete.kind === 'alamat') await loadAlamatKirim();
+      else {
+        await loadRekeningBank();
+        // Update ASAHI #6: sinkron store supaya cetakan invoice tidak memakai
+        // rekening yang sudah dihapus.
+        await refreshStore(true);
+      }
     } catch (err) {
       toast.error(err instanceof ApiError ? err.detail : 'Gagal menghapus');
     } finally {
@@ -243,7 +320,9 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
         alamat: form.alamat.trim(),
         telepon: form.telepon.trim() || null,
         email: form.email.trim() || null,
-        logo: form.logo
+        logo: form.logo,
+        // Update ASAHI #6: slogan — kosong = null (invoice tanpa slogan)
+        slogan: form.slogan.trim() || null
       });
       // Refresh store supaya header cetak/PDF langsung memakai identitas baru.
       await refreshStore(true);
@@ -332,6 +411,15 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
             </Label>
             <Textarea id="alamat" value={form.alamat} onChange={(e) => updateForm('alamat', e.target.value)} placeholder="Alamat lengkap perusahaan" rows={3} />
             <p className="text-xs text-muted-foreground">Bisa multi-baris — tekan Enter untuk memecah baris (contoh: enter setelah &ldquo;Jatireja&rdquo;) agar kop dokumen tidak kepanjangan.</p>
+          </div>
+
+          {/* ── Update ASAHI #6: Slogan (khusus Invoice Penjualan) ── */}
+          <div className="space-y-2">
+            <Label htmlFor="slogan">Slogan</Label>
+            <Textarea id="slogan" value={form.slogan} onChange={(e) => updateForm('slogan', e.target.value)} placeholder="Opsional — contoh: Machining, precision, part Jig &amp; fixture …" rows={2} maxLength={300} />
+            <p className="text-xs text-muted-foreground">
+              Tampil <em>khusus di Invoice Penjualan</em> — di bawah nama perusahaan (di samping logo). Kosongkan bila tidak ingin menampilkan slogan.
+            </p>
           </div>
 
           {/* ── Telepon & email ── */}
@@ -489,6 +577,70 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
         </CardContent>
       </Card>
 
+      {/* ══ Update ASAHI #6 — Rekening Bank (cetak Invoice Penjualan) ══ */}
+      <Card className="max-w-2xl">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Landmark className="size-5" /> Rekening Bank
+          </CardTitle>
+          <CardDescription>
+            Daftar rekening perusahaan untuk pembayaran — tampil di bawah <em>Keterangan</em> pada cetak Invoice Penjualan sebagai dua baris: nama bank lalu <em>Acc Nbr (mata uang)</em>. Hanya rekening <em>Aktif</em> yang dicetak; nonaktifkan (jangan hapus) bila ingin menyimpan datanya tanpa menampilkannya.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {rekeningLoading ? (
+            <Skeleton className="h-40 w-full" />
+          ) : (
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nama Bank</TableHead>
+                    <TableHead>No. Rekening</TableHead>
+                    <TableHead className="w-24">Mata Uang</TableHead>
+                    <TableHead className="w-24">Status</TableHead>
+                    <TableHead className="w-24 text-right">Aksi</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rekeningBank.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        Belum ada rekening bank.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    rekeningBank.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell className="font-medium">{row.namaBank}</TableCell>
+                        <TableCell className="font-mono">{row.noRekening}</TableCell>
+                        <TableCell className="font-mono">{row.mataUang}</TableCell>
+                        <TableCell>
+                          <Badge variant={row.isAktif ? 'secondary' : 'outline'}>{row.isAktif ? 'Aktif' : 'Nonaktif'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" aria-label={`Edit rekening ${row.namaBank}`} onClick={() => setRekeningDialog({ id: row.id, namaBank: row.namaBank, noRekening: row.noRekening, mataUang: row.mataUang, isAktif: row.isAktif })}>
+                              <Pencil className="size-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" aria-label={`Hapus rekening ${row.namaBank}`} onClick={() => setPendingDelete({ kind: 'rekening', id: row.id, label: `Rekening ${row.namaBank}` })}>
+                              <Trash2 className="size-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setRekeningDialog({ namaBank: '', noRekening: '', mataUang: 'IDR', isAktif: true })}>
+            <Plus className="size-4" /> Tambah Rekening Bank
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* ══ Dialog: tambah/edit mata uang ══ */}
       <Dialog open={!!mataUangDialog} onOpenChange={(open) => !open && setMataUangDialog(null)}>
         <DialogContent className="sm:max-w-md">
@@ -565,12 +717,70 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
         </DialogContent>
       </Dialog>
 
-      {/* ══ Konfirmasi hapus (mata uang / alamat pengiriman) ══ */}
+      {/* ══ Update ASAHI #6: Dialog tambah/edit rekening bank ══ */}
+      <Dialog open={!!rekeningDialog} onOpenChange={(open) => !open && setRekeningDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{rekeningDialog?.id ? 'Edit Rekening Bank' : 'Tambah Rekening Bank'}</DialogTitle>
+            <DialogDescription>
+              Contoh: nama bank <em>Bank BNI KCP Jababeka</em>, nomor <em>12345678910</em>, mata uang <em>IDR</em> — dicetak sebagai &ldquo;Acc Nbr 12345678910 (IDR)&rdquo; di Invoice Penjualan.
+            </DialogDescription>
+          </DialogHeader>
+          {rekeningDialog && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="rekening-nama-bank">Nama Bank *</Label>
+                <Input id="rekening-nama-bank" value={rekeningDialog.namaBank} maxLength={200} onChange={(e) => setRekeningDialog({ ...rekeningDialog, namaBank: e.target.value })} placeholder="Bank BNI KCP Jababeka" />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="rekening-nomor">Nomor Rekening *</Label>
+                  <Input id="rekening-nomor" value={rekeningDialog.noRekening} maxLength={100} onChange={(e) => setRekeningDialog({ ...rekeningDialog, noRekening: e.target.value })} placeholder="12345678910" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Mata Uang</Label>
+                  <Select value={rekeningDialog.mataUang} onValueChange={(value) => setRekeningDialog({ ...rekeningDialog, mataUang: value })}>
+                    <SelectTrigger className="w-full" aria-label="Mata uang rekening">
+                      <SelectValue placeholder="IDR" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mataUang
+                        .filter((m) => m.isAktif)
+                        .map((m) => (
+                          <SelectItem key={m.id} value={m.kode}>
+                            {m.kode}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox id="rekening-aktif" checked={rekeningDialog.isAktif} onCheckedChange={(checked) => setRekeningDialog({ ...rekeningDialog, isAktif: checked === true })} />
+                <Label htmlFor="rekening-aktif" className="cursor-pointer font-normal">
+                  Aktif (dicetak di Invoice Penjualan)
+                </Label>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRekeningDialog(null)}>
+              Batal
+            </Button>
+            <Button onClick={saveRekeningBank} disabled={rekeningSaving} className="gap-2">
+              {rekeningSaving && <Loader2 className="size-4 animate-spin" />}
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ══ Konfirmasi hapus (mata uang / alamat pengiriman / rekening bank) ══ */}
       <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Hapus {pendingDelete?.kind === 'mata-uang' ? 'Mata Uang' : 'Alamat Pengiriman'}?</AlertDialogTitle>
-            <AlertDialogDescription>{pendingDelete?.kind === 'mata-uang' ? `${pendingDelete.label} akan dihapus dari daftar. Bila masih dipakai dokumen pesanan, penghapusan ditolak sistem — nonaktifkan saja.` : `${pendingDelete?.label} akan dihapus dari daftar. PO yang sudah tersimpan tetap aman (cetakan memakai salinan alamat).`}</AlertDialogDescription>
+            <AlertDialogTitle>Hapus {pendingDelete?.kind === 'mata-uang' ? 'Mata Uang' : pendingDelete?.kind === 'rekening' ? 'Rekening Bank' : 'Alamat Pengiriman'}?</AlertDialogTitle>
+            <AlertDialogDescription>{pendingDelete?.kind === 'mata-uang' ? `${pendingDelete.label} akan dihapus dari daftar. Bila masih dipakai dokumen pesanan, penghapusan ditolak sistem — nonaktifkan saja.` : pendingDelete?.kind === 'rekening' ? `${pendingDelete?.label} akan dihapus dari daftar. Rekening yang sudah terlanjur dicetak pada invoice lama tidak berubah.` : `${pendingDelete?.label} akan dihapus dari daftar. PO yang sudah tersimpan tetap aman (cetakan memakai salinan alamat).`}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Batal</AlertDialogCancel>

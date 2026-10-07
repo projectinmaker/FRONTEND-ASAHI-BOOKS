@@ -3,6 +3,8 @@
 import { formatNumber, formatDate, terbilang, DOC_TITLE_FONT_SIZE } from '@/lib/pdf-utils';
 // Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
 import { CompanyBrand } from '@/components/erp/company-brand';
+// Update ASAHI #6: rekening bank perusahaan untuk footer Invoice Penjualan
+import { useCompanyInfo } from '@/store/company-store';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -457,6 +459,9 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
 export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
   // Update ASAHI #5: posisi terbilang dikembalikan ke blok footer kiri
   // (seperti sebelum update #4) — tetap menyebut TOTAL.
+  // Update ASAHI #6: rekening bank aktif dari Profil Perusahaan — tampil di
+  // bawah Keterangan (nama bank + "Acc Nbr <nomor> (<mata uang>)").
+  const { rekeningBank } = useCompanyInfo();
   const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
@@ -468,15 +473,19 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
-        <CompanyBrand />
+        {/* Update ASAHI #6: slogan perusahaan tampil KHUSUS di Invoice
+            Penjualan — di bawah nama perusahaan, di samping logo. */}
+        <CompanyBrand showSlogan />
         <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Invoice Penjualan</div>
       </div>
 
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
+          {/* Update ASAHI #6: label "Kepada" → "Tagihan ke" (khusus Invoice
+              Penjualan — dokumen lain tetap). */}
           <div style={{ marginBottom: '2px' }}>
-            <strong>Kepada</strong>
+            <strong>Tagihan ke</strong>
           </div>
           <div style={{ marginBottom: '2px' }}>{data.kepada}</div>
           <div>{data.alamatPenerima}</div>
@@ -515,10 +524,25 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
           <div style={{ marginBottom: '6px' }}>
             <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
           </div>
-          {data.keterangan && (
-            <div style={{ marginBottom: '12px' }}>
-              <strong>Keterangan:</strong>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{data.keterangan}</div>
+          {/* Update ASAHI #6: Keterangan SELALU tampil di bawah terbilang
+              (dulu hanya saat diisi) — sesuai susunan invoice yang diminta. */}
+          <div style={{ marginBottom: '12px' }}>
+            <strong>Keterangan:</strong>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{data.keterangan}</div>
+          </div>
+          {/* Update ASAHI #6: rekening bank perusahaan (Pengaturan → Profil
+              Perusahaan) — di bawah Keterangan; tiap rekening dua baris:
+              nama bank lalu "Acc Nbr <nomor> (<mata uang>)". */}
+          {rekeningBank.length > 0 && (
+            <div>
+              {rekeningBank.map((rek) => (
+                <div key={rek.id} style={{ marginBottom: '4px' }}>
+                  <div>{rek.namaBank}</div>
+                  <div>
+                    Acc Nbr {rek.noRekening} ({rek.mataUang})
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

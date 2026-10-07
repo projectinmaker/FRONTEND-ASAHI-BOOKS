@@ -31,15 +31,25 @@ export function CompanyLogo({ size = 80 }: { size?: number }) {
   );
 }
 
-/** Blok kiri header dokumen: logo + nama + alamat (+ telepon/email bila ada). */
-export function CompanyBrand() {
-  const { name, address, telepon, email } = useCompanyInfo();
+/** Blok kiri header dokumen: logo + nama + alamat (+ telepon/email bila ada).
+ *
+ * Update ASAHI #6: prop ``showSlogan`` — render slogan perusahaan (Profil
+ * Perusahaan) tepat di bawah nama perusahaan. Saat ini dipakai KHUSUS
+ * Invoice Penjualan; dokumen lain tidak meneruskan prop ini sehingga
+ * tampilannya tidak berubah.
+ */
+export function CompanyBrand({ showSlogan = false }: { showSlogan?: boolean }) {
+  const { name, address, telepon, email, slogan } = useCompanyInfo();
 
   return (
     <div className="flex items-start gap-4">
       <CompanyLogo />
       <div>
         <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{name}</div>
+        {/* Update ASAHI #6: slogan/tagline di bawah nama perusahaan —
+            khusus Invoice Penjualan (showSlogan). Italic + agak kecil agar
+            tidak mengganggu hierarki kop. */}
+        {showSlogan && slogan ? <div style={{ fontStyle: 'italic', fontSize: '10px', marginTop: '1px' }}>{slogan}</div> : null}
         {/* Update ASAHI #3: alamat mendukung multi-baris — baris baru di
             Pengaturan → Profil Perusahaan dihormati saat cetak/PDF
             (mis. enter setelah "Jatireja" agar kop tidak kepanjangan). */}
