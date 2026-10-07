@@ -22,7 +22,7 @@ import type { CompanyProfileResponse } from '@/types/api';
 // dipakai saat profil belum termuat / endpoint gagal.
 export const COMPANY_INFO_DEFAULT = {
   name: 'ASAHI Books',
-  address: 'Jalan Simpangan No.18, RT.03/RW.06, Jatireja, Kec. Cikarang Tim., Kabupaten Bekasi, Jawa Barat 17530',
+  address: 'Jalan Simpangan No.18, RT.03/RW.06, Jatireja,\nKec. Cikarang Tim., Kabupaten Bekasi, Jawa Barat 17530',
   telepon: '' as string | null,
   email: '' as string | null,
   logo: '' as string | null

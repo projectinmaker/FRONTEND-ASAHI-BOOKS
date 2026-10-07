@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
@@ -11,6 +11,7 @@ import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
@@ -19,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderResponse, PurchaseOrderResponse } from '@/types/api';
+import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderResponse, PurchaseOrderResponse, MataUangResponse, AlamatPengirimanResponse } from '@/types/api';
 import { ORDER_CURRENCY_OPTIONS, buildOrderUpdate, canEditOrder, formatOrderMoney, newOrderHeader, newOrderLine, orderEndpoint, orderHeaderFromResponse, orderLinesFromResponse, persistOrder, serializeOrderHeader, serializeOrderLines, type OrderHeader, type OrderHeaderKey, type OrderKind, type OrderLine, type OrderResponse } from '@/lib/order-documents';
 
 function includeCurrent(options: SearchableDropdownOption[], id?: string | null, label?: string | null) {
@@ -46,6 +47,10 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   const [barang, setBarang] = useState<BarangDropdown[]>([]);
   const [units, setUnits] = useState<SatuanResponse[]>([]);
   const [terms, setTerms] = useState<SyaratBayarResponse[]>([]);
+  // === Update ASAHI #3 — mata uang dinamis (Pengaturan → Profil Perusahaan)
+  // dan alamat pengiriman (gudang tujuan PO, wajib pilih satu). ===
+  const [currencyOptions, setCurrencyOptions] = useState<SearchableDropdownOption[]>(ORDER_CURRENCY_OPTIONS);
+  const [alamatKirim, setAlamatKirim] = useState<AlamatPengirimanResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -91,6 +96,34 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
       active = false;
     };
   }, [kind, editId, isSales, attempt]);
+
+  // ── Update ASAHI #3: muat daftar mata uang + alamat pengiriman ──
+  // Gagal memuat → tetap pakai fallback (ORDER_CURRENCY_OPTIONS / daftar kosong)
+  // agar form tidak macet.
+  useEffect(() => {
+    let active = true;
+    api
+      .get<MataUangResponse[]>('/master/mata-uang?aktif_only=true')
+      .then((rows) => {
+        if (active && rows.length) setCurrencyOptions(rows.map((row) => ({ id: row.kode, label: row.nama ? `${row.kode} — ${row.nama}` : row.kode })));
+      })
+      .catch(() => {
+        /* fallback: daftar statis bawaan */
+      });
+    if (!isSales) {
+      api
+        .get<AlamatPengirimanResponse[]>('/master/alamat-pengiriman?aktif_only=true')
+        .then((rows) => {
+          if (active) setAlamatKirim(rows);
+        })
+        .catch(() => {
+          /* daftar kosong — user bisa isi manual lewat Pengaturan */
+        });
+    }
+    return () => {
+      active = false;
+    };
+  }, [isSales]);
 
   // ── Draft otomatis: pulihkan sekali saat mount (hanya create + ada draft) ──
   const restoredRef = useRef(false);
@@ -157,6 +190,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
       setError('Tanggal, pelanggan/supplier, dan minimal satu barang wajib diisi.');
       return;
     }
+    // Update ASAHI #3: alamat pengiriman wajib dipilih SATU untuk PO.
+    if (!isSales && !header.alamatPengirimanId) {
+      setError('Alamat pengiriman wajib dipilih — centang satu gudang tujuan.');
+      return;
+    }
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -209,6 +247,23 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     if (!barangOptions.some((item) => item.id === line.barangId)) barangOptions.push({ id: line.barangId, label: line.barang?.nama || line.barangId });
     if (line.satuanId && !unitOptions.some((unit) => unit.id === line.satuanId)) unitOptions.push({ id: line.satuanId, label: line.satuan?.nama || line.satuanId });
   }
+  // Update ASAHI #3: opsi alamat pengiriman untuk PO — termasuk fallback
+  // histori (alamat yang sudah nonaktif tetap tampil saat edit PO lama).
+  const alamatKirimOptions = useMemo(() => {
+    if (isSales) return [] as { id: string; label: string; prefix: string }[];
+    const options = alamatKirim.map((row) => ({ id: row.id, label: row.nama, prefix: row.prefix }));
+    const currentId = header.alamatPengirimanId;
+    if (currentId && !options.some((option) => option.id === currentId)) {
+      const snapshot = original && !isSales ? (original as PurchaseOrderResponse).alamatPengiriman : null;
+      const snapshotLines = snapshot ? snapshot.split('\n').filter(Boolean) : [];
+      options.push({
+        id: currentId,
+        label: snapshotLines.length > 1 ? snapshotLines.slice(1).join(' — ') : snapshotLines[0] || currentId,
+        prefix: snapshotLines[0] || 'Tersimpan'
+      });
+    }
+    return options;
+  }, [isSales, alamatKirim, header.alamatPengirimanId, original]);
 
   return (
     <FormTabShell title={`${original ? (readOnly ? 'Detail' : 'Edit') : 'Buat'} ${title}`}>
@@ -279,7 +334,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                 </div>
                 <div className="space-y-1.5">
                   <Label>Currency</Label>
-                  <SearchableDropdown value={header.currency} onValueChange={(value) => setField('currency', value)} options={includeCurrent(ORDER_CURRENCY_OPTIONS, header.currency)} disabled={disabled} />
+                  {/* Update ASAHI #3: opsi mata uang dinamis dari Pengaturan → Profil Perusahaan */}
+                  <SearchableDropdown value={header.currency} onValueChange={(value) => setField('currency', value)} options={includeCurrent(currencyOptions, header.currency)} disabled={disabled} />
                 </div>
                 {isSales ? (
                   <>
@@ -297,6 +353,43 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                   </>
                 )}
               </div>
+
+              {/* ── Update ASAHI #3: Alamat Pengiriman (khusus PO) — wajib
+                  centang SATU gudang tujuan; mencek yang lain otomatis
+                  memindahkan pilihan (tidak bisa dua). PPIC opsional. ── */}
+              {!isSales && (
+                <div className="space-y-3 rounded-md border p-4">
+                  <div>
+                    <Label>Alamat Pengiriman (Gudang Tujuan) *</Label>
+                    <p className="text-xs text-muted-foreground">Wajib pilih satu — tampil di bawah tabel barang pada cetak Purchase Order. Daftar diatur di Pengaturan → Profil Perusahaan.</p>
+                  </div>
+                  {alamatKirimOptions.length === 0 ? (
+                    <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Belum ada alamat pengiriman. Tambahkan dulu di Pengaturan → Profil Perusahaan → Alamat Pengiriman.</p>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {alamatKirimOptions.map((option) => {
+                        const selected = header.alamatPengirimanId === option.id;
+                        return (
+                          <label key={option.id} className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}>
+                            <Checkbox aria-checked={selected} className="mt-0.5" checked={selected} onCheckedChange={(checked) => setField('alamatPengirimanId', checked ? option.id : '')} disabled={disabled} />
+                            <span className="space-y-0.5 text-sm leading-snug">
+                              <span className="block text-xs text-muted-foreground">{option.prefix}</span>
+                              <span className="font-medium">{option.label}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 pt-1">
+                    <Checkbox id="order-ppic" checked={header.ppic === 'true'} onCheckedChange={(checked) => setField('ppic', checked ? 'true' : 'false')} disabled={disabled} />
+                    <Label htmlFor="order-ppic" className="cursor-pointer font-normal">
+                      PPIC <span className="text-xs text-muted-foreground">(opsional — tampil di bawah alamat pengiriman saat cetak)</span>
+                    </Label>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-3">
                 <Label>Detail Barang *</Label>
                 <div className="overflow-x-auto rounded-md border">

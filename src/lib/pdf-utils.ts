@@ -81,7 +81,7 @@ export function terbilang(n: number): string {
 
 export const COMPANY_INFO = {
   name: 'ASAHI Books',
-  address: 'Jalan Simpangan No.18, RT.03/RW.06, Jatireja, Kec. Cikarang Tim., Kabupaten Bekasi, Jawa Barat 17530'
+  address: 'Jalan Simpangan No.18, RT.03/RW.06, Jatireja,\nKec. Cikarang Tim., Kabupaten Bekasi, Jawa Barat 17530'
 };
 
 // ─── Filename Helper ─────────────────────────────────────────────────────────

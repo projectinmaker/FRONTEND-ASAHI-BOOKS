@@ -9,7 +9,7 @@ import { api, ApiError } from '@/lib/api';
 import { generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { PembelianPDFTemplate, PenerimaanPDFTemplate, InvoicePembelianPDFTemplate, ReturPembelianPDFTemplate, type PembelianData, type PenerimaanData, type InvoicePembelianData, type ReturPembelianData, type PembelianDetailRow, type PenerimaanDetailRow, type ReturDetailRow, type BiayaTambahan } from '@/components/erp/purchasing/pdf-templates';
-import type { PurchaseOrderResponse, PurchaseInvoiceResponse, PurchaseReturResponse, PenerimaanBarangResponse } from '@/types/api';
+import type { PurchaseOrderResponse, PurchaseInvoiceResponse, PurchaseReturResponse, PenerimaanBarangResponse, MataUangResponse } from '@/types/api';
 
 // ─── Shared error card ──────────────────────────────────────────────────────
 
@@ -48,6 +48,10 @@ function mapPembelianData(d: PurchaseOrderResponse): PembelianData {
     // Update ASAHI (cetak PO): kontak supplier di bawah "Nama Pemasok"
     kontakPerson: d.supplier?.kontakPerson || '',
     noContact: d.supplier?.telepon || '',
+    // Update ASAHI #3: mata uang pilihan saat input PO + alamat pengiriman + PPIC
+    mataUang: d.currency || 'IDR',
+    alamatPengiriman: d.alamatPengiriman || '',
+    ppic: !!d.ppic,
     detail: (d.details || []).map<PembelianDetailRow>((r) => ({
       id: r.id,
       barang: r.barang?.nama || '',
@@ -80,7 +84,18 @@ export function PesananPembelianCetakTab({ id }: { id: string }) {
     setError(null);
     try {
       const res = await api.get<PurchaseOrderResponse>(`/pembelian/purchase-order/${id}`);
-      setData(mapPembelianData(res));
+      // Update ASAHI #3: lengkapi label mata uang ("USD — US Dollar") bila
+      // master mata uang tersedia; gagal memuat → tampilkan kode saja.
+      const kodeMataUang = res.currency || 'IDR';
+      let mataUangLabel = kodeMataUang;
+      try {
+        const currencies = await api.get<MataUangResponse[]>('/master/mata-uang');
+        const found = currencies.find((row) => row.kode === kodeMataUang);
+        if (found) mataUangLabel = found.nama ? `${found.kode} — ${found.nama}` : found.kode;
+      } catch {
+        /* label fallback: kode mata uang saja */
+      }
+      setData({ ...mapPembelianData(res), mataUang: kodeMataUang, mataUangLabel });
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : e instanceof Error ? e.message : 'Gagal memuat data');
     } finally {

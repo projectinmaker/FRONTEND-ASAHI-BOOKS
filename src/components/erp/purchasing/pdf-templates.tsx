@@ -45,6 +45,13 @@ export interface PembelianData {
   // === Update ASAHI (cetak PO): Kontak Person & No. Contact supplier ===
   kontakPerson: string;
   noContact: string;
+  // === Update ASAHI #3: mata uang pilihan saat input PO + alamat pengiriman + PPIC ===
+  /** Kode mata uang (mis. "USD") — dipakai untuk prefix nominal. */
+  mataUang: string;
+  /** Label tampilan (mis. "USD — US Dollar"); fallback ke kode. */
+  mataUangLabel?: string;
+  alamatPengiriman: string;
+  ppic: boolean;
   detail: PembelianDetailRow[];
   biayaTambahan: BiayaTambahan[];
   keterangan: string;
@@ -121,6 +128,93 @@ function InfoCell({ label, value }: { label: string; value: string }) {
       <span style={{ minWidth: '12px' }}>:</span>
       <span>{value || '-'}</span>
     </div>
+  );
+}
+
+// ─── Helper: uang dengan kode mata uang (update ASAHI #3) ───────────────────
+// IDR (mata uang dasar) → angka saja; selain itu → "USD 1.234" dst.,
+// konsisten dengan format daftar pesanan di aplikasi.
+
+function money(value: number, currency?: string | null) {
+  const amount = formatNumber(value);
+  return currency && currency !== 'IDR' ? `${currency} ${amount}` : amount;
+}
+
+// ─── Helper: Detail Table PO dengan kolom harga (update ASAHI #3) ────────────
+// Susunan kolom sama dengan Invoice Penjualan: No | Nama Barang | Qty |
+// Satuan | @Harga | Diskon (%) | Total Harga.
+
+function PODetailTableWithPrice({ detail, currency }: { detail: PembelianDetailRow[]; currency?: string | null }) {
+  return (
+    <table style={tableStyle}>
+      <thead>
+        <tr>
+          <th style={{ ...headerCellStyle, width: '40px' }}>No</th>
+          <th style={headerCellStyle}>Nama Barang</th>
+          <th style={{ ...headerCellStyle, width: '50px' }}>Qty</th>
+          <th style={{ ...headerCellStyle, width: '90px' }}>Satuan</th>
+          <th style={{ ...headerCellStyle, width: '100px' }}>@Harga</th>
+          <th style={{ ...headerCellStyle, width: '70px' }}>Diskon (%)</th>
+          <th style={{ ...headerCellStyle, width: '110px' }}>Total Harga</th>
+        </tr>
+      </thead>
+      <tbody>
+        {detail.map((row, i) => {
+          const totalHarga = row.qty * row.harga;
+          return (
+            <tr key={row.id}>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
+              <td style={cellStyle}>{row.barang}</td>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
+              <td style={{ ...cellStyle, textAlign: 'right' }}>{money(row.harga, currency)}</td>
+              <td style={{ ...cellStyle, textAlign: 'center' }}>{row.diskon || 0}</td>
+              <td style={{ ...cellStyle, textAlign: 'right' }}>{money(totalHarga, currency)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// ─── Helper: Summary Table PO dengan mata uang (update ASAHI #3) ────────────
+
+function POSummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, currency }: { detail: PembelianDetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; currency?: string | null }) {
+  const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmt = diskonGlobal ? (subTotal * diskonGlobal) / 100 : 0;
+  const afterDiskon = subTotal - diskonAmt;
+  const ppnAmt = ppn ? (afterDiskon * ppn) / 100 : 0;
+  const biayaLain = biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
+  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+
+  return (
+    <table style={tableStyle}>
+      <tbody>
+        <tr>
+          <td style={{ ...cellStyle, width: '160px' }}>Sub Total</td>
+          <td style={{ ...cellStyle, textAlign: 'right', width: '140px' }}>{money(subTotal, currency)}</td>
+        </tr>
+        <tr>
+          <td style={cellStyle}>Diskon ({diskonGlobal || 0}%)</td>
+          <td style={{ ...cellStyle, textAlign: 'right' }}>- {money(diskonAmt, currency)}</td>
+        </tr>
+        <tr>
+          <td style={cellStyle}>PPN ({ppn || 0}%)</td>
+          <td style={{ ...cellStyle, textAlign: 'right' }}>{money(ppnAmt, currency)}</td>
+        </tr>
+        {biayaTambahan.length > 0 && (
+          <tr>
+            <td style={cellStyle}>Biaya Lain-lain</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>{money(biayaLain, currency)}</td>
+          </tr>
+        )}
+        <tr>
+          <td style={{ ...cellStyle, fontWeight: 'bold' }}>Total</td>
+          <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>{money(grandTotal, currency)}</td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -320,8 +414,13 @@ function BiayaTambahanTable({ items }: { items: BiayaTambahan[] }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
-  const totalQty = data.detail.reduce((s, r) => s + r.qty, 0);
-  const jumlahBarang = data.detail.length;
+  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
+  const afterDiskon = subTotal - diskonAmt;
+  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
+  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+  const isIdr = !data.mataUang || data.mataUang === 'IDR';
 
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
@@ -348,37 +447,45 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
           <InfoCell label="Nomor" value={data.nomor} />
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
           <InfoCell label="Tanggal Kirim" value={formatDate(data.tanggalKirim)} />
+          {/* Update ASAHI #3: tampilkan mata uang yang dipilih saat input PO */}
+          <InfoCell label="Mata Uang" value={data.mataUangLabel || data.mataUang} />
         </div>
       </div>
 
-      {/* ── Detail Table (tanpa harga) ── */}
+      {/* ── Detail Table (dengan kolom harga — susunan seperti Invoice Penjualan;
+           update ASAHI #3) ── */}
       <div className="mb-4">
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={{ ...headerCellStyle, width: '40px' }}>No</th>
-              <th style={headerCellStyle}>Nama Barang</th>
-              <th style={{ ...headerCellStyle, width: '80px' }}>Qty</th>
-              <th style={{ ...headerCellStyle, width: '100px' }}>Satuan</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.detail.map((row, i) => (
-              <tr key={row.id}>
-                <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
-                <td style={cellStyle}>{row.barang}</td>
-                <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
-                <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <PODetailTableWithPrice detail={data.detail} currency={data.mataUang} />
       </div>
+
+      {/* ── Biaya Tambahan ── */}
+      {data.biayaTambahan.length > 0 && (
+        <div className="mb-4">
+          <BiayaTambahanTable items={data.biayaTambahan} />
+        </div>
+      )}
+
+      {/* ── Alamat Pengiriman (di bawah tabel utama — update ASAHI #3) ── */}
+      {data.alamatPengiriman ? (
+        <div className="mb-4">
+          <strong>Alamat Pengiriman:</strong>
+          <div style={{ whiteSpace: 'pre-line' }}>{data.alamatPengiriman}</div>
+          {/* PPIC opsional — baris tambahan di bawah alamat pengiriman */}
+          {data.ppic ? <div>PPIC</div> : null}
+        </div>
+      ) : null}
 
       {/* ── Footer ── */}
       <div className="grid grid-cols-2 gap-6 mt-4">
         {/* Left */}
         <div>
+          {/* Terbilang hanya untuk IDR (mata uang dasar) — hindari salah baca
+              nominal untuk mata uang asing. */}
+          {isIdr && (
+            <div style={{ marginBottom: '6px' }}>
+              <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
+            </div>
+          )}
           {data.keterangan && (
             <div style={{ marginBottom: '12px' }}>
               <strong>Keterangan:</strong>
@@ -388,20 +495,9 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
           <div style={{ marginTop: '24px' }}>Disetujui, Tgl. ________</div>
         </div>
 
-        {/* Right: Summary stats */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <span>
-              <strong>Total Kuantitas:</strong>
-            </span>
-            <span>{formatNumber(totalQty)}</span>
-          </div>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <span>
-              <strong>Jumlah Barang:</strong>
-            </span>
-            <span>{jumlahBarang}</span>
-          </div>
+        {/* Right: Summary (mata uang mengikuti pilihan saat input PO) */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+          <POSummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} currency={data.mataUang} />
         </div>
       </div>
 

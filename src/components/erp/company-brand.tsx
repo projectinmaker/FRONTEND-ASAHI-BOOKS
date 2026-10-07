@@ -40,7 +40,10 @@ export function CompanyBrand() {
       <CompanyLogo />
       <div>
         <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{name}</div>
-        <div>{address}</div>
+        {/* Update ASAHI #3: alamat mendukung multi-baris — baris baru di
+            Pengaturan → Profil Perusahaan dihormati saat cetak/PDF
+            (mis. enter setelah "Jatireja" agar kop tidak kepanjangan). */}
+        <div style={{ whiteSpace: 'pre-line' }}>{address}</div>
         {telepon ? <div>Telp: {telepon}</div> : null}
         {email ? <div>{email}</div> : null}
       </div>

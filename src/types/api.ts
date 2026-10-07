@@ -1645,6 +1645,9 @@ export interface PurchaseOrderDetailResponse extends PurchaseOrderDetailCreate {
 export interface PurchaseOrderCreate {
   currency?: string;
   syaratBayarId?: string | null;
+  // === Update ASAHI #3 — alamat pengiriman (wajib pilih satu) + PPIC ===
+  alamatPengirimanId: string;
+  ppic?: boolean;
 
   tanggal: string;
   supplierId: string;
@@ -1662,6 +1665,9 @@ export interface PurchaseOrderCreate {
 export interface PurchaseOrderUpdate {
   currency?: string | null;
   syaratBayarId?: string | null;
+  // === Update ASAHI #3 ===
+  alamatPengirimanId?: string | null;
+  ppic?: boolean | null;
   details?: PurchaseOrderDetailCreate[];
 
   tanggal?: string;
@@ -1678,6 +1684,11 @@ export interface PurchaseOrderResponse {
   syaratBayarId?: string | null;
   syaratBayar?: SyaratBayarSimple | null;
   supplierNameSnapshot?: string | null;
+  // === Update ASAHI #3 — alamat pengiriman + PPIC ===
+  alamatPengirimanId?: string | null;
+  /** Snapshot teks "<prefix>\n<nama>" — dipakai untuk cetak PO. */
+  alamatPengiriman?: string | null;
+  ppic?: boolean;
 
   id: string;
   noPesanan: string;
@@ -3641,4 +3652,48 @@ export interface CompanyProfileUpdate {
   telepon?: string | null;
   email?: string | null;
   logo?: string | null;
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// MATA UANG & ALAMAT PENGIRIMAN — update ASAHI #3 (Pengaturan → Profil Perusahaan)
+// ═════════════════════════════════════════════════════════════════════════
+
+export interface MataUangResponse {
+  id: string;
+  kode: string;
+  nama: string;
+  isAktif: boolean;
+  updatedAt: string | null;
+}
+
+export interface MataUangCreate {
+  kode: string;
+  nama: string;
+  isAktif?: boolean;
+}
+
+export interface MataUangUpdate {
+  kode?: string;
+  nama?: string;
+  isAktif?: boolean;
+}
+
+export interface AlamatPengirimanResponse {
+  id: string;
+  prefix: string;
+  nama: string;
+  isAktif: boolean;
+  updatedAt: string | null;
+}
+
+export interface AlamatPengirimanCreate {
+  prefix: string;
+  nama: string;
+  isAktif?: boolean;
+}
+
+export interface AlamatPengirimanUpdate {
+  prefix?: string;
+  nama?: string;
+  isAktif?: boolean;
 }

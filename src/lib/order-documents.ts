@@ -4,9 +4,14 @@ import type { SalesOrderResponse, PurchaseOrderResponse } from '@/types/api';
 
 export type OrderKind = 'sales' | 'purchase';
 export type OrderResponse = SalesOrderResponse | PurchaseOrderResponse;
+// Fallback bila API /master/mata-uang tidak tersedia — nilai seed backend
+// (update ASAHI #3: + EUR, China Yuan, SGD).
 export const ORDER_CURRENCY_OPTIONS = [
-  { id: 'IDR', label: 'IDR' },
-  { id: 'USD', label: 'USD' }
+  { id: 'IDR', label: 'IDR — Rupiah' },
+  { id: 'USD', label: 'USD — US Dollar' },
+  { id: 'EUR', label: 'EUR — Euro' },
+  { id: 'CNY', label: 'CNY — China Yuan' },
+  { id: 'SGD', label: 'SGD — Singapore Dollar' }
 ];
 export const orderEndpoint = (kind: OrderKind) => (kind === 'sales' ? '/penjualan/sales-order' : '/pembelian/purchase-order');
 export const canEditOrder = (status?: string | null) => status === 'DRAFT';
@@ -34,13 +39,14 @@ export function serializeOrderLines(lines: OrderLine[]) {
 
 const commonKeys = ['tanggal', 'syaratBayarId', 'currency', 'diskonGlobal', 'ppn', 'keterangan'] as const;
 const salesKeys = ['pelangganId', 'ekspedisi', 'tanggalPengiriman', 'penjual', 'alamatPengiriman', 'customerPoNumber', 'customerPoDate'] as const;
-const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat'] as const;
+// Update ASAHI #3: alamatPengirimanId (gudang tujuan, wajib pilih satu) + ppic.
+const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppic'] as const;
 export type OrderHeaderKey = (typeof commonKeys)[number] | (typeof salesKeys)[number] | (typeof purchaseKeys)[number];
 export type OrderHeader = Record<OrderHeaderKey, string>;
 export function newOrderHeader(): OrderHeader {
   const date = new Date();
   const tanggal = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : ''])) as OrderHeader;
+  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : key === 'ppic' ? 'false' : ''])) as OrderHeader;
 }
 export function orderHeaderFromResponse(order: OrderResponse): OrderHeader {
   const header = newOrderHeader();
@@ -53,13 +59,16 @@ export function orderHeaderFromResponse(order: OrderResponse): OrderHeader {
   return header;
 }
 export function serializeOrderHeader(kind: OrderKind, header: OrderHeader) {
-  const result: Record<string, string | number | null> = {};
+  const result: Record<string, string | number | boolean | null> = {};
   for (const key of [...commonKeys, ...(kind === 'sales' ? salesKeys : purchaseKeys)]) {
     if (key === 'ppn' || key === 'diskonGlobal') {
       if (header[key] !== '') result[key] = Number(header[key]);
+    } else if (key === 'ppic') {
+      // Update ASAHI #3: PPIC disimpan sebagai boolean (bukan string).
+      result[key] = header[key] === 'true';
     } else result[key] = header[key].trim() || null;
   }
-  return result;
+  return result as Record<string, string | number | null>;
 }
 
 type DetailLike = { barangId: string; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null };
@@ -77,7 +86,7 @@ export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: Or
   return payload;
 }
 export function orderSaveMismatches(kind: OrderKind, requested: Record<string, unknown>, saved: OrderResponse): string[] {
-  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', currency: 'Currency', syaratBayarId: 'Syarat Bayar' };
+  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppic: 'PPIC' };
   const actual = serializeOrderHeader(kind, orderHeaderFromResponse(saved));
   const issues: string[] = [];
   for (const [key, value] of Object.entries(requested)) {
