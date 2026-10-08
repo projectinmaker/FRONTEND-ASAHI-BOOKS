@@ -200,62 +200,66 @@ const modules: NavModule[] = [
 // ── RBAC v2: pemetaan menu → kode permission view ────────────────────────────
 
 /** Kode permission untuk modul single-button (dicek langsung kodenya). */
+// Update ASAHI #5: seluruh kode kini identik dengan registry backend
+// (app/services/access_registry.py) — sebelumnya 20 kode memakai nama lama
+// (cash_bank.*, settlement.*, dsb.) yang tidak pernah cocok, sehingga menu
+// Kas & Bank, Laporan, dsb. tersembunyi untuk semua role kecuali Super Admin.
 const SINGLE_MODULE_PERMISSIONS: Record<string, string> = {
   'workflow-queue': 'workflow.queue.view',
-  organisasi: 'organisation.unit.view'
+  organisasi: 'system.organisation.view'
 };
 
 /** Kode permission subPage per modul (module-id → subPage-id → code). */
 const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
   'cash-bank': {
-    pembayaran: 'cash_bank.pembayaran_kas.view',
-    penerimaan: 'cash_bank.penerimaan_kas.view',
-    'transfer-bank': 'cash_bank.transfer_bank.view',
-    'rekonsiliasi-bank': 'cash_bank.rekonsiliasi_bank.view'
+    pembayaran: 'finance.cash_payment.view',
+    penerimaan: 'finance.cash_receipt.view',
+    'transfer-bank': 'finance.bank_transfer.view',
+    'rekonsiliasi-bank': 'finance.bank_reconciliation.view'
   },
   sales: {
     penawaran: 'sales.penawaran.view',
     pesanan: 'sales.sales_order.view',
-    pengiriman: 'sales.pengiriman.view',
+    pengiriman: 'sales.delivery.view',
     invoice: 'sales.sales_invoice.view',
     'tukar-faktur': 'sales.tukar_faktur.view',
-    retur: 'sales.sales_retur.view',
-    'pelunasan-piutang': 'settlement.pelunasan_piutang.view'
+    retur: 'sales.sales_return.view',
+    'pelunasan-piutang': 'sales.ar_settlement.view'
   },
   purchasing: {
     pesanan: 'purchase.purchase_order.view',
-    penerimaan: 'purchase.penerimaan.view',
+    penerimaan: 'purchase.goods_receipt.view',
     invoice: 'purchase.purchase_invoice.view',
-    retur: 'purchase.purchase_retur.view',
-    'pelunasan-hutang': 'settlement.pelunasan_hutang.view'
+    retur: 'purchase.purchase_return.view',
+    'pelunasan-hutang': 'purchase.ap_settlement.view'
   },
   'fixed-assets': {
     'kategori-aset': 'master.kategori_aset.view',
-    'daftar-aset': 'asset.aset.view',
-    penyusutan: 'asset.aset_transaksi.view',
-    'transaksi-aset': 'asset.aset_transaksi.view'
+    'daftar-aset': 'asset.register.view',
+    penyusutan: 'asset.transaction.view',
+    'transaksi-aset': 'asset.transaction.view'
   },
   inventory: {
-    'permintaan-barang': 'inventory.permintaan.view',
-    'pemindahan-barang': 'inventory.pemindahan.view',
-    penyesuaian: 'inventory.penyesuaian.view',
+    'permintaan-barang': 'inventory.stock_request.view',
+    'pemindahan-barang': 'inventory.transfer.view',
+    penyesuaian: 'inventory.adjustment.view',
     'barang-jasa': 'master.barang.view',
     gudang: 'master.gudang.view',
-    'stok-kartu': 'inventory.stok_kartu.view'
+    'stok-kartu': 'inventory.stock.view'
   },
   'general-ledger': {
-    'jurnal-umum': 'accounting.jurnal_umum.view'
+    'jurnal-umum': 'accounting.journal.view'
   },
   // Modul Laporan: seluruh subPageGroups digating satu kode (dicek sekali per modul).
   reports: {},
   settings: {
     'profil-perusahaan': 'master.company_profile.view',
-    coa: 'coa.akun.view',
-    'setting-akun': 'coa.setting_akun.view',
+    coa: 'accounting.coa.view',
+    'setting-akun': 'master.setting_akun.view',
     pelanggan: 'master.pelanggan.view',
     supplier: 'master.supplier.view',
     gudang: 'master.gudang.view',
-    'kategori-barang': 'master.kategori.view',
+    'kategori-barang': 'master.kategori_barang.view',
     satuan: 'master.satuan.view',
     'syarat-bayar': 'master.syarat_bayar.view',
     pengguna: 'system.users.view',
@@ -266,8 +270,8 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
 /** Kode permission tombol Dashboard. */
 const DASHBOARD_PERMISSION = 'dashboard.operational.view';
 
-/** Kode permission modul Laporan (dicek sekali — bila tak punya, seluruh modul disembunyikan). */
-const REPORTS_PERMISSION = 'reports.laporan.view';
+/** Kode permission modul Laporan — salah satu cukup (dicek sekali per modul). */
+const REPORTS_PERMISSIONS = ['reports.financial.view', 'reports.ledger.view', 'reports.ar_aging.view', 'reports.ap_aging.view', 'reports.cashbank.view', 'reports.inventory_report.view', 'reports.reconciliation_report.view'];
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -303,13 +307,14 @@ export function ERPSidebar() {
   }, [ensureCompanyProfile]);
 
   const can = React.useCallback((code: string) => isSuperAdmin || permissions.includes(code), [isSuperAdmin, permissions]);
+  const canAny = React.useCallback((codes: string[]) => isSuperAdmin || codes.some((c) => permissions.includes(c)), [isSuperAdmin, permissions]);
 
   // Filter modul & subPage berdasarkan permission view (fail-closed).
   const visibleModules = React.useMemo(() => {
     return modules
       .map((mod): NavModule | null => {
         if (mod.id === 'reports') {
-          return can(REPORTS_PERMISSION) ? mod : null;
+          return canAny(REPORTS_PERMISSIONS) ? mod : null;
         }
         if (mod.single) {
           const code = SINGLE_MODULE_PERMISSIONS[mod.id];
@@ -325,7 +330,7 @@ export function ERPSidebar() {
         return { ...mod, subPages };
       })
       .filter((m): m is NavModule => m !== null);
-  }, [can]);
+  }, [can, canAny]);
 
   const dashboardVisible = can(DASHBOARD_PERMISSION);
   const hasAnyMenu = dashboardVisible || visibleModules.length > 0;
