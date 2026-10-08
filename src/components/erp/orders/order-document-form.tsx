@@ -24,7 +24,6 @@ import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderRes
 // Update #4 — auto-fill field berkaitan master data saat pelanggan/supplier dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { ORDER_CURRENCY_OPTIONS, buildOrderUpdate, canEditOrder, formatOrderMoney, newOrderHeader, newOrderLine, orderEndpoint, orderHeaderFromResponse, orderLinesFromResponse, persistOrder, serializeOrderHeader, serializeOrderLines, type OrderHeader, type OrderHeaderKey, type OrderKind, type OrderLine, type OrderResponse } from '@/lib/order-documents';
-
 function includeCurrent(options: SearchableDropdownOption[], id?: string | null, label?: string | null) {
   return id && !options.some((option) => option.id === id) ? [...options, { id, label: label || id }] : options;
 }
@@ -138,7 +137,17 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     restoredRef.current = true;
     const d = draft.draft;
     if (!d) return;
-    if (d.header) setHeader(d.header);
+    // Merge dengan default: draft lama (sebelum fitur PPh23/PPN) tidak
+    // menyimpan key pajak — tanpa merge, flag baru ikut "hilang" dari header.
+    if (d.header)
+      setHeader((prev) => {
+        const merged = { ...prev, ...d.header };
+        // Tarif kosong (draft lama) → pertahankan default (11 / 2), sama
+        // dengan fallback schema backend saat field tidak dikirim.
+        if (!merged.ppn) merged.ppn = prev.ppn;
+        if (!merged.pph23) merged.pph23 = prev.pph23;
+        return merged;
+      });
     if (Array.isArray(d.lines) && d.lines.length) setLines(d.lines);
     setCosts(Array.isArray(d.costs) ? d.costs : []);
     toast.info('Draft isian dipulihkan', { description: `Isian terakhir ${title} dimuat kembali otomatis.` });
@@ -295,6 +304,21 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     }
     return options;
   }, [isSales, alamatKirim, header.alamatPengirimanId, original]);
+
+  // ── Update ASAHI (PPh23/PPN opsional) — preview total PO mengikuti
+  // pilihan pajak (rumus sama dengan backend: DPP + PPN + biaya − PPh23). ──
+  const liveSubtotal = lines.reduce((sum, line) => {
+    const qty = Number(line.qty) || 0;
+    const harga = Number(line.harga) || 0;
+    const diskon = Number(line.diskon) || 0;
+    return sum + qty * harga * (1 - diskon / 100);
+  }, 0);
+  const liveDiskon = liveSubtotal * ((Number(header.diskonGlobal) || 0) / 100);
+  const liveDpp = liveSubtotal - liveDiskon;
+  const livePpn = header.ppnApplicable === 'true' ? liveDpp * ((Number(header.ppn) || 0) / 100) : 0;
+  const livePph23 = header.pph23Applicable === 'true' ? liveDpp * ((Number(header.pph23) || 0) / 100) : 0;
+  const liveBiaya = costs.reduce((sum, cost) => sum + (Number(cost.jumlah) || 0), 0);
+  const liveGrandTotal = liveDpp + livePpn + liveBiaya - livePph23;
 
   return (
     <FormTabShell title={`${original ? (readOnly ? 'Detail' : 'Edit') : 'Buat'} ${title}`}>
@@ -474,7 +498,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                     Tambah Barang
                   </Button>
                 )}
-                <p className="text-xs text-muted-foreground">Total pesanan dihitung saat disimpan. Jika detail diubah, seluruh daftar barang di atas akan menggantikan detail sebelumnya.</p>
+                <p className="text-xs text-muted-foreground">Grand total final dihitung ulang server saat disimpan. Jika detail diubah, seluruh daftar barang di atas akan menggantikan detail sebelumnya.</p>
               </div>
               <div className="space-y-3">
                 <Label>Biaya Tambahan</Label>
@@ -508,9 +532,76 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                   </>
                 )}
               </div>
+              {/* ── Update ASAHI (PPh23/PPN opsional) — khusus PO: pilih pajak
+                  saat input. Boleh dua-duanya, salah satu, atau tidak
+                  keduanya. PPN off → tidak ada PPN; PPh23 on → potongan
+                  dari grand total. ── */}
+              {!isSales && (
+                <div className="space-y-3 rounded-md border p-4">
+                  <div>
+                    <Label>Pajak (PPN / PPh23)</Label>
+                    <p className="text-xs text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan saat dibayar).</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${header.ppnApplicable === 'true' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}>
+                      <Checkbox aria-checked={header.ppnApplicable === 'true'} className="mt-0.5" checked={header.ppnApplicable === 'true'} onCheckedChange={(checked) => setField('ppnApplicable', checked ? 'true' : 'false')} disabled={disabled} />
+                      <span className="flex-1 space-y-2 text-sm leading-snug">
+                        <span className="block font-medium">PPN</span>
+                        {header.ppnApplicable === 'true' && (
+                          <span className="flex items-center gap-2">
+                            <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs" value={header.ppn} onChange={(event) => setField('ppn', event.target.value)} disabled={disabled} />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                    <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${header.pph23Applicable === 'true' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}>
+                      <Checkbox aria-checked={header.pph23Applicable === 'true'} className="mt-0.5" checked={header.pph23Applicable === 'true'} onCheckedChange={(checked) => setField('pph23Applicable', checked ? 'true' : 'false')} disabled={disabled} />
+                      <span className="flex-1 space-y-2 text-sm leading-snug">
+                        <span className="block font-medium">PPh23</span>
+                        {header.pph23Applicable === 'true' && (
+                          <span className="flex items-center gap-2">
+                            <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={header.pph23} onChange={(event) => setField('pph23', event.target.value)} disabled={disabled} />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  </div>
+                  {/* Preview total mengikuti pilihan pajak (mirip perhitungan server) */}
+                  <div className="rounded-md border bg-muted/20 px-4 py-3 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Dasar Pajak (setelah diskon)</span>
+                      <span className="font-mono font-medium">{formatOrderMoney(liveDpp, header.currency)}</span>
+                    </div>
+                    {header.ppnApplicable === 'true' && (
+                      <div className="flex justify-between text-xs">
+                        <span className="pl-3 text-muted-foreground">+ PPN ({header.ppn || 0}%)</span>
+                        <span className="font-mono">{formatOrderMoney(livePpn, header.currency)}</span>
+                      </div>
+                    )}
+                    {header.pph23Applicable === 'true' && (
+                      <div className="flex justify-between text-xs">
+                        <span className="pl-3 text-muted-foreground">- PPh23 ({header.pph23 || 0}%)</span>
+                        <span className="font-mono text-destructive">({formatOrderMoney(livePph23, header.currency)})</span>
+                      </div>
+                    )}
+                    {liveBiaya > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="pl-3 text-muted-foreground">+ Biaya Tambahan</span>
+                        <span className="font-mono">{formatOrderMoney(liveBiaya, header.currency)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t pt-1 text-sm font-semibold">
+                      <span>Grand Total (perkiraan)</span>
+                      <span className="font-mono">{formatOrderMoney(liveGrandTotal, header.currency)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="grid gap-4 md:grid-cols-2">
                 {input('diskonGlobal', 'Diskon Global %', 'number')}
-                {input('ppn', 'PPN %', 'number')}
+                {isSales && input('ppn', 'PPN %', 'number')}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="order-keterangan">Keterangan</Label>

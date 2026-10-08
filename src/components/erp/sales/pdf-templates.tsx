@@ -72,6 +72,10 @@ export interface InvoiceData {
   keterangan: string;
   diskonGlobal: number;
   ppn: number;
+  // === Update ASAHI — pilihan PPh23/PPN saat input SI (opsional) ===
+  ppnApplicable?: boolean;
+  pph23Applicable?: boolean;
+  pph23?: number;
 }
 
 export interface ReturData {
@@ -144,13 +148,15 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // posisinya dikembalikan ke blok footer kiri template (seperti sebelumnya),
 // tetap menyebut TOTAL.
 
-function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[] }) {
+function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0 }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number }) {
   const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = diskonGlobal ? (subTotal * diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = ppn ? (afterDiskon * ppn) / 100 : 0;
+  // Update ASAHI: PPN hanya bila dipilih; PPh23 (jika dipilih) memotong total.
+  const ppnAmt = ppnApplicable && ppn ? (afterDiskon * ppn) / 100 : 0;
+  const pph23Amt = pph23Applicable && pph23 ? (afterDiskon * pph23) / 100 : 0;
   const biayaLain = biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+  const grandTotal = afterDiskon + ppnAmt + biayaLain - pph23Amt;
 
   return (
     <table style={tableStyle}>
@@ -163,10 +169,18 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: De
           <td style={cellStyle}>Diskon ({diskonGlobal || 0}%)</td>
           <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(diskonAmt)}</td>
         </tr>
-        <tr>
-          <td style={cellStyle}>PPN ({ppn || 0}%)</td>
-          <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(ppnAmt)}</td>
-        </tr>
+        {ppnApplicable && (
+          <tr>
+            <td style={cellStyle}>PPN ({ppn || 0}%)</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(ppnAmt)}</td>
+          </tr>
+        )}
+        {pph23Applicable && (
+          <tr>
+            <td style={cellStyle}>PPh23 ({pph23 || 0}%)</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(pph23Amt)}</td>
+          </tr>
+        )}
         {biayaTambahan.length > 0 && (
           <tr>
             <td style={cellStyle}>Biaya Lain-lain</td>
@@ -464,12 +478,17 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
   // Update ASAHI #7: nama perusahaan penerima ditampilkan sebagai baris
   // pertama blok rekening bank (di atas nama bank).
   const { name: companyName, rekeningBank } = useCompanyInfo();
+  // Update ASAHI (PPh23/PPN opsional): PPN hanya bila dipilih; PPh23
+  // memotong grand total — konsisten dengan perhitungan backend.
+  const ppnOn = data.ppnApplicable ?? true;
+  const pph23On = data.pph23Applicable ?? false;
   const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const ppnAmt = ppnOn && data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const pph23Amt = pph23On && data.pph23 ? (afterDiskon * data.pph23) / 100 : 0;
   const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+  const grandTotal = afterDiskon + ppnAmt + biayaLain - pph23Amt;
 
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
@@ -554,7 +573,8 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
 
         {/* Right */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} />
+          {/* Update ASAHI: pilihan PPh23/PPN dari data invoice */}
+          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} />
         </div>
       </div>
 

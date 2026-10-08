@@ -67,7 +67,11 @@ function mapPembelianData(d: PurchaseOrderResponse): PembelianData {
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0
+    ppn: Number(d.ppn) || 0,
+    // === Update ASAHI — pilihan PPh23/PPN saat input PO (opsional) ===
+    ppnApplicable: d.ppnApplicable ?? true,
+    pph23Applicable: d.pph23Applicable ?? false,
+    pph23: Number(d.pph23) || 0
   };
 }
 

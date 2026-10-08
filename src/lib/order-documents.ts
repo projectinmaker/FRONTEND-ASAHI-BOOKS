@@ -40,13 +40,15 @@ export function serializeOrderLines(lines: OrderLine[]) {
 const commonKeys = ['tanggal', 'syaratBayarId', 'currency', 'diskonGlobal', 'ppn', 'keterangan'] as const;
 const salesKeys = ['pelangganId', 'ekspedisi', 'tanggalPengiriman', 'penjual', 'alamatPengiriman', 'customerPoNumber', 'customerPoDate'] as const;
 // Update ASAHI #3: alamatPengirimanId (gudang tujuan, wajib pilih satu) + ppic.
-const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppic'] as const;
+// Update ASAHI (PPh23/PPN opsional): pilihan pajak hanya untuk PO — boleh
+// keduanya, salah satu, atau tidak sama sekali.
+const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppic', 'ppnApplicable', 'pph23Applicable', 'pph23'] as const;
 export type OrderHeaderKey = (typeof commonKeys)[number] | (typeof salesKeys)[number] | (typeof purchaseKeys)[number];
 export type OrderHeader = Record<OrderHeaderKey, string>;
 export function newOrderHeader(): OrderHeader {
   const date = new Date();
   const tanggal = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : key === 'ppic' ? 'false' : ''])) as OrderHeader;
+  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : key === 'ppn' ? '11' : key === 'ppic' ? 'false' : key === 'ppnApplicable' ? 'true' : key === 'pph23Applicable' ? 'false' : key === 'pph23' ? '2' : ''])) as OrderHeader;
 }
 export function orderHeaderFromResponse(order: OrderResponse): OrderHeader {
   const header = newOrderHeader();
@@ -61,14 +63,14 @@ export function orderHeaderFromResponse(order: OrderResponse): OrderHeader {
 export function serializeOrderHeader(kind: OrderKind, header: OrderHeader) {
   const result: Record<string, string | number | boolean | null> = {};
   for (const key of [...commonKeys, ...(kind === 'sales' ? salesKeys : purchaseKeys)]) {
-    if (key === 'ppn' || key === 'diskonGlobal') {
+    if (key === 'ppn' || key === 'diskonGlobal' || key === 'pph23') {
       if (header[key] !== '') result[key] = Number(header[key]);
-    } else if (key === 'ppic') {
-      // Update ASAHI #3: PPIC disimpan sebagai boolean (bukan string).
+    } else if (key === 'ppic' || key === 'ppnApplicable' || key === 'pph23Applicable') {
+      // Update ASAHI #3 / PPh23-PPN: boolean fields (bukan string).
       result[key] = header[key] === 'true';
     } else result[key] = header[key].trim() || null;
   }
-  return result as Record<string, string | number | null>;
+  return result as Record<string, string | number | boolean | null>;
 }
 
 type DetailLike = { barangId: string; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null };
@@ -86,7 +88,7 @@ export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: Or
   return payload;
 }
 export function orderSaveMismatches(kind: OrderKind, requested: Record<string, unknown>, saved: OrderResponse): string[] {
-  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppic: 'PPIC' };
+  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppic: 'PPIC', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23' };
   const actual = serializeOrderHeader(kind, orderHeaderFromResponse(saved));
   const issues: string[] = [];
   for (const [key, value] of Object.entries(requested)) {

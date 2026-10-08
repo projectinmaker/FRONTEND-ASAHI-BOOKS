@@ -17,6 +17,7 @@ import { CurrencyInput } from '@/components/ui/currency-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -172,6 +173,10 @@ interface InvoicePenjualanDraftData {
   alamatPengiriman: string;
   diskonGlobal: string;
   ppn: string;
+  // === Update ASAHI — pilihan PPh23/PPN (bisa keduanya/salah satu/tidak sama sekali) ===
+  ppnApplicable: boolean;
+  pph23Applicable: boolean;
+  pph23: string;
   keterangan: string;
   detail: FormDetailRow[];
   biayaTambahan: FormBiayaRow[];
@@ -285,13 +290,15 @@ function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDeta
   );
 }
 
-// ─── Totals Breakdown (PPN baris terpisah) ──────────────────────────────────
+// ─── Totals Breakdown (PPN/PPh23 baris terpisah, mengikuti pilihan pajak) ────
 
-function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan }: { subtotal: number; diskonGlobalPct: number; ppnPct: number; totalBiayaTambahan: number }) {
+function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23Pct = 0 }: { subtotal: number; diskonGlobalPct: number; ppnPct: number; totalBiayaTambahan: number; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23Pct?: number }) {
   const totalDiskon = subtotal * (diskonGlobalPct / 100);
   const dasarPajak = subtotal - totalDiskon;
-  const ppnAmount = dasarPajak * (ppnPct / 100);
-  const grandTotal = dasarPajak + ppnAmount + totalBiayaTambahan;
+  // Update ASAHI: PPN hanya bila dipilih; PPh23 (jika dipilih) memotong grand total.
+  const ppnAmount = ppnApplicable ? dasarPajak * (ppnPct / 100) : 0;
+  const pph23Amount = pph23Applicable ? dasarPajak * (pph23Pct / 100) : 0;
+  const grandTotal = dasarPajak + ppnAmount + totalBiayaTambahan - pph23Amount;
 
   return (
     <div className="rounded-md border bg-muted/20 px-4 py-3 space-y-1">
@@ -309,10 +316,16 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
         <span className="font-medium">Dasar Pajak</span>
         <span className="font-mono font-medium">{formatRp(dasarPajak)}</span>
       </div>
-      {ppnPct > 0 && (
+      {ppnApplicable && (
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground pl-3">+ PPN ({ppnPct}%)</span>
           <span className="font-mono">{formatRp(ppnAmount)}</span>
+        </div>
+      )}
+      {pph23Applicable && (
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground pl-3">- PPh23 ({pph23Pct}%)</span>
+          <span className="font-mono text-destructive">({formatRp(pph23Amount)})</span>
         </div>
       )}
       {totalBiayaTambahan > 0 && (
@@ -1055,6 +1068,11 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
   const [fPpn, setFPpn] = useState('11');
+  // === Update ASAHI — pilihan PPh23/PPN saat input SI (bisa keduanya,
+  // salah satu, atau tidak sama sekali) ===
+  const [fPpnApplicable, setFPpnApplicable] = useState(true);
+  const [fPph23Applicable, setFPph23Applicable] = useState(false);
+  const [fPph23, setFPph23] = useState('2');
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
@@ -1104,6 +1122,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFAlamatPengiriman(d.alamatPengiriman || '');
     setFDiskonGlobal(d.diskonGlobal ?? '0');
     setFPpn(d.ppn ?? '11');
+    setFPpnApplicable(d.ppnApplicable ?? true);
+    setFPph23Applicable(d.pph23Applicable ?? false);
+    setFPph23(d.pph23 ?? '2');
     setFKeterangan(d.keterangan || '');
     setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
     setFBiayaTambahan(Array.isArray(d.biayaTambahan) ? d.biayaTambahan : []);
@@ -1132,11 +1153,14 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       alamatPengiriman: fAlamatPengiriman,
       diskonGlobal: fDiskonGlobal,
       ppn: fPpn,
+      ppnApplicable: fPpnApplicable,
+      pph23Applicable: fPph23Applicable,
+      pph23: fPph23,
       keterangan: fKeterangan,
       detail: fDetail,
       biayaTambahan: fBiayaTambahan
     });
-  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fKeterangan, fDetail, fBiayaTambahan]);
+  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDetail, fBiayaTambahan]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
@@ -1151,6 +1175,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFAlamatPengiriman('');
     setFDiskonGlobal('0');
     setFPpn('11');
+    setFPpnApplicable(true);
+    setFPph23Applicable(false);
+    setFPph23('2');
     setFKeterangan('');
     setFDetail([newDetailRow()]);
     setFBiayaTambahan([]);
@@ -1255,6 +1282,10 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         alamatPengiriman: fAlamatPengiriman || null,
         diskonGlobal: parseFloat(fDiskonGlobal) || null,
         ppn: parseFloat(fPpn) || 0,
+        // === Update ASAHI — pilihan PPh23/PPN ===
+        ppnApplicable: fPpnApplicable,
+        pph23Applicable: fPph23Applicable,
+        pph23: parseFloat(fPph23) || 2,
         keterangan: fKeterangan || null,
         details,
         biayaTambahan: biaya.length > 0 ? biaya : undefined
@@ -1269,7 +1300,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     } finally {
       setSubmitting(false);
     }
-  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fKeterangan, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
 
   if (ddLoading) {
     return (
@@ -1355,12 +1386,43 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">Diskon Global %</Label>
               <Input type="number" className="h-9 text-xs" value={fDiskonGlobal} min={0} max={100} onChange={(e) => setFDiskonGlobal(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">PPN (%)</Label>
-              <Input type="number" className="h-9 text-xs" value={fPpn} min={0} max={100} onChange={(e) => setFPpn(e.target.value)} />
+          </div>
+          {/* ── Update ASAHI (PPh23/PPN opsional) — pilih pajak saat input:
+              boleh dua-duanya, salah satu, atau tidak sama sekali.
+              PPh23 (jika dipilih) memotong grand total. ── */}
+          <div className="space-y-3 rounded-md border p-4">
+            <div>
+              <Label className="text-xs font-medium">Pajak (PPN / PPh23)</Label>
+              <p className="text-[11px] text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar).</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${fPpnApplicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                <Checkbox aria-checked={fPpnApplicable} className="mt-0.5" checked={fPpnApplicable} onCheckedChange={(checked) => setFPpnApplicable(checked === true)} />
+                <span className="flex-1 space-y-2 text-sm leading-snug">
+                  <span className="block font-medium">PPN</span>
+                  {fPpnApplicable && (
+                    <span className="flex items-center gap-2">
+                      <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs" value={fPpn} onChange={(e) => setFPpn(e.target.value)} />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </span>
+                  )}
+                </span>
+              </label>
+              <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${fPph23Applicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                <Checkbox aria-checked={fPph23Applicable} className="mt-0.5" checked={fPph23Applicable} onCheckedChange={(checked) => setFPph23Applicable(checked === true)} />
+                <span className="flex-1 space-y-2 text-sm leading-snug">
+                  <span className="block font-medium">PPh23</span>
+                  {fPph23Applicable && (
+                    <span className="flex items-center gap-2">
+                      <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={fPph23} onChange={(e) => setFPph23(e.target.value)} />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </span>
+                  )}
+                </span>
+              </label>
             </div>
           </div>
-          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} />
+          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} ppnApplicable={fPpnApplicable} pph23Applicable={fPph23Applicable} pph23Pct={parseFloat(fPph23) || 0} />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
@@ -1409,6 +1471,10 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   const [editMataUang, setEditMataUang] = useState('IDR');
   const [editDiskonGlobal, setEditDiskonGlobal] = useState('0');
   const [editPpn, setEditPpn] = useState('11');
+  // === Update ASAHI — pilihan PPh23/PPN saat edit SI ===
+  const [editPpnApplicable, setEditPpnApplicable] = useState(true);
+  const [editPph23Applicable, setEditPph23Applicable] = useState(false);
+  const [editPph23, setEditPph23] = useState('2');
   const [editKeterangan, setEditKeterangan] = useState('');
   const [soLoading, setSoLoading] = useState(false);
   // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
@@ -1444,6 +1510,9 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         setEditMataUang(inv.mataUang || 'IDR');
         setEditDiskonGlobal(String(inv.diskonGlobal ?? 0));
         setEditPpn(String(inv.ppn ?? 0));
+        setEditPpnApplicable(inv.ppnApplicable ?? true);
+        setEditPph23Applicable(inv.pph23Applicable ?? false);
+        setEditPph23(String(inv.pph23 ?? 2));
         setEditKeterangan(inv.keterangan || '');
         // Update #4: info box No SO · No PO dari response invoice (salesOrder nested);
         // fallback fetch bila header ter-link tapi nested tidak ikut terkirim.
@@ -1524,6 +1593,10 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         mataUang: editMataUang || undefined,
         diskonGlobal: parseFloat(editDiskonGlobal) || null,
         ppn: parseFloat(editPpn) || 0,
+        // === Update ASAHI — pilihan PPh23/PPN ===
+        ppnApplicable: editPpnApplicable,
+        pph23Applicable: editPph23Applicable,
+        pph23: parseFloat(editPph23) || 2,
         keterangan: editKeterangan || null
       };
       await api.put<SalesInvoiceResponse>(`/penjualan/sales-invoice/${editId}`, body);
@@ -1535,7 +1608,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     } finally {
       setEditSubmitting(false);
     }
-  }, [editId, editPelangganId, editTanggal, editSyaratBayarId, editSalesOrderId, editEkspedisi, editTanggalPengiriman, editAlamatPengiriman, editMataUang, editDiskonGlobal, editPpn, editKeterangan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [editId, editPelangganId, editTanggal, editSyaratBayarId, editSalesOrderId, editEkspedisi, editTanggalPengiriman, editAlamatPengiriman, editMataUang, editDiskonGlobal, editPpn, editPpnApplicable, editPph23Applicable, editPph23, editKeterangan, subPage, activeTabId, closeTab, refreshListTab]);
 
   return (
     <FormTabShell title="Edit Invoice Penjualan">
@@ -1614,7 +1687,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                 </div>
               </div>
               <Separator />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Mata Uang</Label>
                   <Input className="h-9 text-xs" value={editMataUang} onChange={(e) => setEditMataUang(e.target.value)} placeholder="e.g. IDR" />
@@ -1623,9 +1696,39 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                   <Label className="text-xs font-medium">Diskon Global %</Label>
                   <Input type="number" className="h-9 text-xs" value={editDiskonGlobal} min={0} max={100} onChange={(e) => setEditDiskonGlobal(e.target.value)} />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">PPN (%)</Label>
-                  <Input type="number" className="h-9 text-xs" value={editPpn} min={0} max={100} onChange={(e) => setEditPpn(e.target.value)} />
+              </div>
+              {/* ── Update ASAHI (PPh23/PPN opsional) — pilih pajak saat edit:
+                  boleh dua-duanya, salah satu, atau tidak sama sekali. ── */}
+              <div className="space-y-3 rounded-md border p-4">
+                <div>
+                  <Label className="text-xs font-medium">Pajak (PPN / PPh23)</Label>
+                  <p className="text-[11px] text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar). Grand total dihitung ulang saat disimpan.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${editPpnApplicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                    <Checkbox aria-checked={editPpnApplicable} className="mt-0.5" checked={editPpnApplicable} onCheckedChange={(checked) => setEditPpnApplicable(checked === true)} />
+                    <span className="flex-1 space-y-2 text-sm leading-snug">
+                      <span className="block font-medium">PPN</span>
+                      {editPpnApplicable && (
+                        <span className="flex items-center gap-2">
+                          <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs" value={editPpn} onChange={(e) => setEditPpn(e.target.value)} />
+                          <span className="text-xs text-muted-foreground">%</span>
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                  <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${editPph23Applicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                    <Checkbox aria-checked={editPph23Applicable} className="mt-0.5" checked={editPph23Applicable} onCheckedChange={(checked) => setEditPph23Applicable(checked === true)} />
+                    <span className="flex-1 space-y-2 text-sm leading-snug">
+                      <span className="block font-medium">PPh23</span>
+                      {editPph23Applicable && (
+                        <span className="flex items-center gap-2">
+                          <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={editPph23} onChange={(e) => setEditPph23(e.target.value)} />
+                          <span className="text-xs text-muted-foreground">%</span>
+                        </span>
+                      )}
+                    </span>
+                  </label>
                 </div>
               </div>
               <div className="space-y-1.5">

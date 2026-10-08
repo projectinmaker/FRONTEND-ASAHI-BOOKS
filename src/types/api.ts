@@ -1446,6 +1446,10 @@ export interface SalesInvoiceCreate {
   mataUang?: string;
   diskonGlobal?: number | null;
   ppn?: number;
+  // === Update ASAHI — pilihan PPh23/PPN (bisa keduanya/salah satu/tidak sama sekali) ===
+  ppnApplicable?: boolean;
+  pph23Applicable?: boolean;
+  pph23?: number;
   keterangan?: string | null;
   autoPostJurnal?: false;
   details: SalesInvoiceDetailCreate[];
@@ -1463,6 +1467,10 @@ export interface SalesInvoiceUpdate {
   mataUang?: string;
   diskonGlobal?: number | null;
   ppn?: number;
+  // === Update ASAHI — pilihan PPh23/PPN ===
+  ppnApplicable?: boolean;
+  pph23Applicable?: boolean;
+  pph23?: number;
   keterangan?: string | null;
   autoPostJurnal?: boolean;
 }
@@ -1482,6 +1490,11 @@ export interface SalesInvoiceResponse {
   mataUang: string;
   diskonGlobal: number;
   ppn: number;
+  // === Update ASAHI — pilihan PPh23/PPN ===
+  ppnApplicable: boolean;
+  pph23Applicable: boolean;
+  pph23: number;
+  totalPph23: number;
   keterangan: string | null;
   autoPostJurnal: boolean;
   subTotal: number;
@@ -1670,6 +1683,10 @@ export interface PurchaseOrderCreate {
   alamat?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
+  // === Update ASAHI — pilihan PPh23/PPN (bisa keduanya/salah satu/tidak sama sekali) ===
+  ppnApplicable?: boolean;
+  pph23Applicable?: boolean;
+  pph23?: number;
   keterangan?: string | null;
   /** @deprecated Orders never post journals. */
   autoPostJurnal?: false;
@@ -1691,6 +1708,10 @@ export interface PurchaseOrderUpdate {
   alamat?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
+  // === Update ASAHI — pilihan PPh23/PPN ===
+  ppnApplicable?: boolean;
+  pph23Applicable?: boolean;
+  pph23?: number;
   keterangan?: string | null;
 }
 
@@ -1713,6 +1734,11 @@ export interface PurchaseOrderResponse {
   alamat: string | null;
   diskonGlobal: number;
   ppn: number;
+  // === Update ASAHI — pilihan PPh23/PPN ===
+  ppnApplicable: boolean;
+  pph23Applicable: boolean;
+  pph23: number;
+  totalPph23: number;
   keterangan: string | null;
   /** @deprecated Retained only for legacy responses. */
   autoPostJurnal: boolean;

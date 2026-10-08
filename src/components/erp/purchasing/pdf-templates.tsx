@@ -57,6 +57,10 @@ export interface PembelianData {
   keterangan: string;
   diskonGlobal: number;
   ppn: number;
+  // === Update ASAHI — pilihan PPh23/PPN saat input PO (opsional) ===
+  ppnApplicable?: boolean;
+  pph23Applicable?: boolean;
+  pph23?: number;
 }
 
 export interface PenerimaanData {
@@ -183,13 +187,15 @@ function PODetailTableWithPrice({ detail, currency }: { detail: PembelianDetailR
 // posisinya dikembalikan ke blok footer kiri template (seperti sebelumnya),
 // tetap menyebut TOTAL (hanya IDR).
 
-function POSummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, currency }: { detail: PembelianDetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; currency?: string | null }) {
+function POSummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, currency, ppnApplicable = true, pph23Applicable = false, pph23 = 0 }: { detail: PembelianDetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; currency?: string | null; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number }) {
   const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = diskonGlobal ? (subTotal * diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = ppn ? (afterDiskon * ppn) / 100 : 0;
+  // Update ASAHI: PPN hanya bila dipilih; PPh23 (jika dipilih) memotong total.
+  const ppnAmt = ppnApplicable && ppn ? (afterDiskon * ppn) / 100 : 0;
+  const pph23Amt = pph23Applicable && pph23 ? (afterDiskon * pph23) / 100 : 0;
   const biayaLain = biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+  const grandTotal = afterDiskon + ppnAmt + biayaLain - pph23Amt;
 
   return (
     <table style={tableStyle}>
@@ -202,10 +208,18 @@ function POSummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, currency }: 
           <td style={cellStyle}>Diskon ({diskonGlobal || 0}%)</td>
           <td style={{ ...cellStyle, textAlign: 'right' }}>- {money(diskonAmt, currency)}</td>
         </tr>
-        <tr>
-          <td style={cellStyle}>PPN ({ppn || 0}%)</td>
-          <td style={{ ...cellStyle, textAlign: 'right' }}>{money(ppnAmt, currency)}</td>
-        </tr>
+        {ppnApplicable && (
+          <tr>
+            <td style={cellStyle}>PPN ({ppn || 0}%)</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>{money(ppnAmt, currency)}</td>
+          </tr>
+        )}
+        {pph23Applicable && (
+          <tr>
+            <td style={cellStyle}>PPh23 ({pph23 || 0}%)</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>- {money(pph23Amt, currency)}</td>
+          </tr>
+        )}
         {biayaTambahan.length > 0 && (
           <tr>
             <td style={cellStyle}>Biaya Lain-lain</td>
@@ -419,12 +433,17 @@ function BiayaTambahanTable({ items }: { items: BiayaTambahan[] }) {
 export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
   // Update ASAHI #5: posisi terbilang dikembalikan ke blok footer kiri
   // (seperti sebelum update #4) — tetap menyebut TOTAL, hanya untuk IDR.
+  // Update ASAHI (PPh23/PPN opsional): PPN hanya bila dipilih; PPh23
+  // memotong grand total — konsisten dengan perhitungan backend.
+  const ppnOn = data.ppnApplicable ?? true;
+  const pph23On = data.pph23Applicable ?? false;
   const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const ppnAmt = ppnOn && data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
+  const pph23Amt = pph23On && data.pph23 ? (afterDiskon * data.pph23) / 100 : 0;
   const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+  const grandTotal = afterDiskon + ppnAmt + biayaLain - pph23Amt;
   const isIdr = !data.mataUang || data.mataUang === 'IDR';
 
   return (
@@ -505,7 +524,7 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
 
         {/* Right: Summary (mata uang mengikuti pilihan saat input PO) */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <POSummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} currency={data.mataUang} />
+          <POSummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} currency={data.mataUang} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} />
         </div>
       </div>
 
