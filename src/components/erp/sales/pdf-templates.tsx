@@ -358,7 +358,7 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// 2. SURAT JALAN (PENGIRIMAN)
+// 2. DELIVERY ORDER (PENGIRIMAN — dulu "Surat Jalan")
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
@@ -370,17 +370,19 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Surat Jalan</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Delivery Order</div>
       </div>
 
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
+          {/* Update ASAHI — label "Kepada" → "Kirim ke"; alamat perusahaan
+              (dari master data pelanggan) tampil di bawah nama. */}
           <div style={{ marginBottom: '2px' }}>
-            <strong>Kepada</strong>
+            <strong>Kirim ke</strong>
           </div>
           <div style={{ marginBottom: '2px' }}>{data.kepada}</div>
-          <div>{data.alamatPenerima}</div>
+          <div style={{ whiteSpace: 'pre-line' }}>{data.alamatPenerima}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />

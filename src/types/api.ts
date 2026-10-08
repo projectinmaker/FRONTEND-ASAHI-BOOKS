@@ -940,6 +940,8 @@ export interface PelangganSimple {
   id: string;
   kode: string;
   nama: string;
+  /** Update ASAHI — alamat master pelanggan; dipakai cetak Delivery Order (Pengiriman). */
+  alamat?: string | null;
 }
 
 export interface SyaratBayarSimple {

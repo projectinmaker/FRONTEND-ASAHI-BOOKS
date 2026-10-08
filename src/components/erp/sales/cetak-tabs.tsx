@@ -141,14 +141,16 @@ export function PesananCetakTab({ id }: { id: string }) {
   );
 }
 
-// ─── 2. Pengiriman (Surat Jalan) Cetak ──────────────────────────────────────
+// ─── 2. Pengiriman (Delivery Order) Cetak ────────────────────────────────────
 
 function mapPengirimanData(d: PengirimanBarangResponse): PengirimanData {
   return {
     nomor: d.noSuratJalan || '',
     tanggal: d.tanggal || '',
     kepada: d.pelanggan?.nama || '',
-    alamatPenerima: d.alamatPengiriman || '',
+    // Update ASAHI — alamat perusahaan di bawah nama "Kirim ke" diambil dari
+    // master data pelanggan; fallback ke alamat pengiriman manual bila master kosong.
+    alamatPenerima: d.pelanggan?.alamat || d.alamatPengiriman || '',
     ekspedisi: d.ekspedisi || '',
     // Update #4: No SO + No PO customer dari SO ter-link pengiriman.
     noSo: d.salesOrder?.noPesanan || '',
@@ -194,9 +196,9 @@ export function PengirimanCetakTab({ id }: { id: string }) {
     if (!data) return;
     setDownloading(true);
     try {
-      // Update ASAHI: nomor pola baru "KB ASI/2026/001" mengandung spasi & '/'
+      // Update ASAHI #3: nomor pola "DO ASI/2026/001" (dulu KB ASI/...) mengandung spasi & '/'
       // → sanitasi agar valid sebagai nama file.
-      await generatePDF(elementId, `Surat-Jalan-${fileSafeNo(data.nomor || id)}.pdf`);
+      await generatePDF(elementId, `Delivery-Order-${fileSafeNo(data.nomor || id)}.pdf`);
     } finally {
       setDownloading(false);
     }
@@ -207,7 +209,7 @@ export function PengirimanCetakTab({ id }: { id: string }) {
   }, []);
 
   return (
-    <FormTabShell title={`Cetak Surat Jalan${data ? ` — ${data.nomor}` : ''}`}>
+    <FormTabShell title={`Cetak Delivery Order${data ? ` — ${data.nomor}` : ''}`}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={handlePrint} disabled={loading || !!error}>
