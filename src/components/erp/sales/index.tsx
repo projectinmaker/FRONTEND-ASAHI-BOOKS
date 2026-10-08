@@ -354,7 +354,10 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
           if (r.id !== id) return r;
           if (field === 'barangId') {
             const found = barangOptions.find((b) => b.id === value);
-            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '' };
+            // Update ASAHI #4: satuan otomatis terpilih dari master barang (base_uom).
+            const satuanDefault = found?.satuanId || '';
+            const satuanFound = satuanOptions.find((s) => s.id === satuanDefault);
+            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', satuanId: satuanDefault, satuanNama: satuanFound?.nama || '' };
           }
           if (field === 'satuanId') {
             const found = satuanOptions.find((s) => s.id === value);

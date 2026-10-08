@@ -885,6 +885,9 @@ export interface BarangDropdown {
   stockItem?: boolean;
   // === Update #4 — deteksi FEFO di form penerimaan (input kedaluwarsa kondisional).
   metodeValuasi?: string | null;
+  // === Update ASAHI #4 — satuan default barang (base_uom) untuk auto-fill
+  // dropdown satuan di form penjualan/pembelian (sejalan auto-fill harga).
+  satuanId?: string | null;
 }
 
 // ── Enums (Phase 5) ─────────────────────────────────────────────────

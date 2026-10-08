@@ -204,7 +204,9 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, satuanOptions }: {
           if (r.id !== id) return r;
           if (field === 'barangId') {
             const found = barangOptions.find((b) => b.id === value);
-            return { ...r, barangId: value, ...(satuanOptions ? { satuanId: '' } : {}), kodeBarang: found?.kode || '', barangNama: found?.nama || '', harga: found ? String(found.hargaPokok) : r.harga };
+            // Update ASAHI #4: satuan otomatis terpilih dari master barang (base_uom,
+            // dulu di-reset kosong) — sejalan dengan auto-fill harga.
+            return { ...r, barangId: value, ...(satuanOptions ? { satuanId: found?.satuanId || '' } : {}), kodeBarang: found?.kode || '', barangNama: found?.nama || '', harga: found ? String(found.hargaPokok) : r.harga };
           }
           return { ...r, [field]: value };
         })
@@ -358,7 +360,10 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, metode
             const found = barangOptions.find((b) => b.id === value);
             // Auto-fill harga perolehan dari harga pokok barang (bila belum terisi).
             // Field tetap dikirim di payload walau input disembunyikan; nanti ditimpa harga PO saat tarik data.
-            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', hargaPerolehan: !r.hargaPerolehan && found ? String(found.hargaPokok) : r.hargaPerolehan };
+            // Update ASAHI #4: satuan otomatis terpilih dari master barang (base_uom).
+            const satuanDefault = found?.satuanId || '';
+            const satuanFound = satuanOptions.find((s) => s.id === satuanDefault);
+            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', satuanId: satuanDefault, satuanNama: satuanFound?.nama || '', hargaPerolehan: !r.hargaPerolehan && found ? String(found.hargaPokok) : r.hargaPerolehan };
           }
           if (field === 'satuanId') {
             const found = satuanOptions.find((s) => s.id === value);

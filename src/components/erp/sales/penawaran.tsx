@@ -156,7 +156,10 @@ function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions }: {
             const hargaJual = Number(found?.hargaJual);
             const hargaPokok = Number(found?.hargaPokok);
             const hargaDefault = found ? (hargaJual > 0 ? String(hargaJual) : hargaPokok > 0 ? String(hargaPokok) : '') : r.harga;
-            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', ...(hargaDefault ? { harga: hargaDefault } : {}) };
+            // Update ASAHI #4: satuan otomatis terpilih dari master barang (base_uom).
+            const satuanDefault = found?.satuanId || '';
+            const satuanFound = satuanOptions.find((s) => s.id === satuanDefault);
+            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', satuanId: satuanDefault, satuanNama: satuanFound?.nama || '', ...(hargaDefault ? { harga: hargaDefault } : {}) };
           }
           if (field === 'satuanId') {
             const found = satuanOptions.find((s) => s.id === value);

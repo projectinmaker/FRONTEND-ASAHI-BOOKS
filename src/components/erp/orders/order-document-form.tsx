@@ -218,7 +218,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
             if (isSales && Number(found.hargaJual) > 0) hargaDefault = String(Number(found.hargaJual));
             else if (Number(found.hargaPokok) > 0) hargaDefault = String(Number(found.hargaPokok));
           }
-          return { ...line, barangId: value, satuanId: '', ...(hargaDefault ? { harga: hargaDefault } : {}) };
+          // Update ASAHI #4: satuan otomatis terpilih dari master barang
+          // (base_uom) — sejalan dengan auto-fill harga; user tetap bisa ganti manual.
+          return { ...line, barangId: value, satuanId: found?.satuanId || '', ...(hargaDefault ? { harga: hargaDefault } : {}) };
         }
         return { ...line, [field]: value };
       })
