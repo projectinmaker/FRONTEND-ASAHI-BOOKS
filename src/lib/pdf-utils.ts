@@ -125,7 +125,6 @@ export async function generatePDF(elementId: string, filename: string) {
     backgroundColor: '#ffffff'
   });
 
-  const imgData = canvas.toDataURL('image/png');
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -136,11 +135,49 @@ export async function generatePDF(elementId: string, filename: string) {
   const pdfHeight = pdf.internal.pageSize.getHeight();
   const imgWidth = canvas.width;
   const imgHeight = canvas.height;
-  const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-  const imgX = (pdfWidth - imgWidth * ratio) / 2;
-  const imgY = 0;
 
-  pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+  // Lebar gambar dipetakan ke lebar halaman penuh (px canvas per mm).
+  const pxPerMm = imgWidth / pdfWidth;
+  // Sisakan ±12mm di bawah tiap halaman supaya tidak menimpa indikator halaman.
+  const pageContentMm = pdfHeight - 12;
+  const pageHeightPx = Math.floor(pageContentMm * pxPerMm);
+
+  if (imgHeight <= pageHeightPx) {
+    // Konten muat dalam 1 halaman — skala penuh sesuai lebar, dipusatkan.
+    const ratio = pdfWidth / imgWidth;
+    const imgX = 0;
+    const imgY = 0;
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+  } else {
+    // Konten lebih tinggi dari 1 halaman → potong per halaman (lebar penuh),
+    // bukan menyusutkan seluruh dokumen jadi 1 halaman kecil.
+    const pageCount = Math.ceil(imgHeight / pageHeightPx);
+    for (let p = 0; p < pageCount; p++) {
+      if (p > 0) pdf.addPage();
+      const slice = document.createElement('canvas');
+      slice.width = canvas.width;
+      slice.height = Math.min(pageHeightPx, imgHeight - p * pageHeightPx);
+      const ctx = slice.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, slice.width, slice.height);
+        ctx.drawImage(canvas, 0, p * pageHeightPx, slice.width, slice.height, 0, 0, slice.width, slice.height);
+      }
+      pdf.addImage(slice.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, slice.height / pxPerMm);
+    }
+  }
+
+  // ── Update cetak: indikator "Halaman X dari Y" di KANAN BAWAH setiap
+  //    halaman — berlaku untuk SEMUA dokumen cetak (digambar via jsPDF,
+  //    bukan elemen HTML, supaya posisinya selalu tepat di pojok halaman).
+  const totalPages = pdf.getNumberOfPages();
+  pdf.setFontSize(9);
+  pdf.setTextColor(85, 85, 85);
+  for (let p = 1; p <= totalPages; p++) {
+    pdf.setPage(p);
+    pdf.text(`Halaman ${p} dari ${totalPages}`, pdfWidth - 8, pdfHeight - 6, { align: 'right' });
+  }
+
   pdf.save(filename);
 }
 

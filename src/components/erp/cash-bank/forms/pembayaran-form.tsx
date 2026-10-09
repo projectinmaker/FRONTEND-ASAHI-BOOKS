@@ -256,6 +256,10 @@ interface PembayaranDraftData {
   tanggal: string;
   noNukti: string;
   noCek: string;
+  tanggalCek: string;
+  jumlahCek: string;
+  mataUang: string;
+  nilaiTukar: string;
   penerima: string;
   catatan: string;
   rincianRows: RincianRow[];
@@ -288,6 +292,11 @@ export default function PembayaranForm({ mode, id }: Props) {
   const [noNukti, setNoNukti] = useState('');
   const [rincianRows, setRincianRows] = useState<RincianRow[]>([]);
   const [noCek, setNoCek] = useState('');
+  // === Update cetak "Bayar Pemasok" — info cek & mata uang ===
+  const [tanggalCek, setTanggalCek] = useState('');
+  const [jumlahCek, setJumlahCek] = useState('');
+  const [mataUang, setMataUang] = useState('IDR');
+  const [nilaiTukar, setNilaiTukar] = useState('1');
   const [penerima, setPenerima] = useState('');
   const [catatan, setCatatan] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -308,6 +317,10 @@ export default function PembayaranForm({ mode, id }: Props) {
     setTanggal(d.tanggal || todayStr());
     setNoNukti(d.noNukti || '');
     setNoCek(d.noCek || '');
+    setTanggalCek(d.tanggalCek || '');
+    setJumlahCek(d.jumlahCek || '');
+    setMataUang(d.mataUang || 'IDR');
+    setNilaiTukar(d.nilaiTukar || '1');
     setPenerima(d.penerima || '');
     setCatatan(d.catatan || '');
     setRincianRows(Array.isArray(d.rincianRows) ? d.rincianRows : []);
@@ -326,9 +339,9 @@ export default function PembayaranForm({ mode, id }: Props) {
       return;
     }
     if (isCreate) {
-      draft.saveDraft({ kasBankId, tanggal, noNukti, noCek, penerima, catatan, rincianRows });
+      draft.saveDraft({ kasBankId, tanggal, noNukti, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, penerima, catatan, rincianRows });
     }
-  }, [kasBankId, tanggal, noNukti, noCek, penerima, catatan, rincianRows]);
+  }, [kasBankId, tanggal, noNukti, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, penerima, catatan, rincianRows]);
 
   // ── Draft otomatis: buang draft → kosongkan form ──
   const handleDiscardDraft = useCallback(() => {
@@ -338,6 +351,10 @@ export default function PembayaranForm({ mode, id }: Props) {
     setTanggal(todayStr());
     setNoNukti('');
     setNoCek('');
+    setTanggalCek('');
+    setJumlahCek('');
+    setMataUang('IDR');
+    setNilaiTukar('1');
     setPenerima('');
     setCatatan('');
     setRincianRows([]);
@@ -375,6 +392,10 @@ export default function PembayaranForm({ mode, id }: Props) {
         setKasBankId(res.kasBankId);
         setNoNukti(res.noNukti);
         setNoCek(res.noCek || '');
+        setTanggalCek(res.tanggalCek || '');
+        setJumlahCek(res.jumlahCek != null ? String(res.jumlahCek) : '');
+        setMataUang(res.mataUang || 'IDR');
+        setNilaiTukar(res.nilaiTukar != null ? String(res.nilaiTukar) : '1');
         setPenerima(res.penerima || '');
         setCatatan(res.catatan || '');
         setEditNoBukti(res.noBukti);
@@ -433,6 +454,10 @@ export default function PembayaranForm({ mode, id }: Props) {
           kasBankId: kasBankId || undefined,
           noNukti: noNukti.trim(),
           noCek: noCek.trim() || null,
+          tanggalCek: tanggalCek || null,
+          jumlahCek: jumlahCek ? parseInt(jumlahCek.replace(/\D/g, ''), 10) || 0 : null,
+          mataUang: mataUang.trim().toUpperCase() || 'IDR',
+          nilaiTukar: parseFloat(nilaiTukar.replace(',', '.')) || 1,
           penerima: penerima.trim() || null,
           catatan: catatan.trim() || null
         };
@@ -444,6 +469,10 @@ export default function PembayaranForm({ mode, id }: Props) {
           kasBankId,
           noNukti: noNukti.trim(),
           noCek: noCek.trim() || undefined,
+          tanggalCek: tanggalCek || undefined,
+          jumlahCek: jumlahCek ? parseInt(jumlahCek.replace(/\D/g, ''), 10) || 0 : undefined,
+          mataUang: mataUang.trim().toUpperCase() || 'IDR',
+          nilaiTukar: parseFloat(nilaiTukar.replace(',', '.')) || 1,
           penerima: penerima.trim() || undefined,
           catatan: catatan.trim() || undefined,
           rincian: rincianRows.map((r) => ({
@@ -466,7 +495,7 @@ export default function PembayaranForm({ mode, id }: Props) {
     } finally {
       setSubmitting(false);
     }
-  }, [validate, isEdit, id, tanggal, kasBankId, noNukti, noCek, penerima, catatan, rincianRows, activeTabId, closeTab, refreshListTab]);
+  }, [validate, isEdit, id, tanggal, kasBankId, noNukti, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, penerima, catatan, rincianRows, activeTabId, closeTab, refreshListTab, draft, isCreate]);
 
   // ── Close tab ──
   const handleClose = useCallback(() => {
@@ -543,9 +572,28 @@ export default function PembayaranForm({ mode, id }: Props) {
             {/* Info Lainnya */}
             <div className="space-y-4">
               <Label className="text-sm font-medium">Info Lainnya</Label>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">No Cek</Label>
-                <Input value={noCek} onChange={(e) => setNoCek(e.target.value)} placeholder="Nomor cek (opsional)" />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">No Cek</Label>
+                  <Input value={noCek} onChange={(e) => setNoCek(e.target.value)} placeholder="Nomor cek (opsional)" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Tgl Cek</Label>
+                  <Input type="date" value={tanggalCek} onChange={(e) => setTanggalCek(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Jumlah Cek</Label>
+                  <CurrencyInput placeholder="0" value={jumlahCek} onValueChange={setJumlahCek} className="text-right font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Mata Uang</Label>
+                  <Input value={mataUang} onChange={(e) => setMataUang(e.target.value.toUpperCase())} placeholder="IDR" maxLength={8} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Nilai Tukar</Label>
+                  <Input type="text" inputMode="decimal" value={nilaiTukar} onChange={(e) => setNilaiTukar(e.target.value.replace(',', '.'))} placeholder="1" className="text-right font-mono" />
+                  <p className="text-[11px] text-muted-foreground">Contoh: 1 (IDR); untuk valas isi kurs berlaku.</p>
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">Penerima</Label>

@@ -542,8 +542,8 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
         </div>
       </div>
 
-      {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
+      {/* Indikator halaman digambar otomatis oleh jsPDF di kanan bawah
+          (lihat generatePDF di src/lib/pdf-utils.ts) — berlaku semua dokumen. */}
     </div>
   );
 }
@@ -632,8 +632,8 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
         </div>
       </div>
 
-      {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
+      {/* Indikator halaman digambar otomatis oleh jsPDF di kanan bawah
+          (lihat generatePDF di src/lib/pdf-utils.ts) — berlaku semua dokumen. */}
     </div>
   );
 }
@@ -726,8 +726,8 @@ export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianDa
         </div>
       </div>
 
-      {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
+      {/* Indikator halaman digambar otomatis oleh jsPDF di kanan bawah
+          (lihat generatePDF di src/lib/pdf-utils.ts) — berlaku semua dokumen. */}
     </div>
   );
 }
@@ -795,8 +795,8 @@ export function ReturPembelianPDFTemplate({ data }: { data: ReturPembelianData }
         </div>
       </div>
 
-      {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
+      {/* Indikator halaman digambar otomatis oleh jsPDF di kanan bawah
+          (lihat generatePDF di src/lib/pdf-utils.ts) — berlaku semua dokumen. */}
     </div>
   );
 }

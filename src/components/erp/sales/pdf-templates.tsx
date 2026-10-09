@@ -351,8 +351,8 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
         </div>
       </div>
 
-      {/* Bottom right page indicator */}
-      <div style={{ textAlign: 'right', marginTop: '12px', fontSize: '10px', color: '#555' }}>Halaman 1 dari 1</div>
+      {/* Indikator halaman digambar otomatis oleh jsPDF di kanan bawah
+          (lihat generatePDF di src/lib/pdf-utils.ts) — berlaku semua dokumen. */}
     </div>
   );
 }

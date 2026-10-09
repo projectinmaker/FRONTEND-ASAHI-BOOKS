@@ -1175,6 +1175,11 @@ export interface PembayaranKasCreate {
   kasBankId: string;
   noNukti: string;
   noCek?: string | null;
+  // === Update cetak "Bayar Pemasok" — info cek & mata uang ===
+  tanggalCek?: string | null;
+  jumlahCek?: number | string | null;
+  mataUang?: string;
+  nilaiTukar?: number | string;
   penerima?: string | null;
   catatan?: string | null;
   rincian: PembayaranRincianCreate[];
@@ -1192,6 +1197,13 @@ export interface PaymentAllocationItem {
   invoiceId: string;
   nilai: number | string; // Decimal di backend, bisa string atau number di frontend
   akunPerkiraanId: string;
+  // === Update cetak "Bayar Pemasok" — diskon pelunasan & detail faktur ===
+  diskon?: number | string;
+  terutang?: number | string | null;
+  noFaktur?: string | null;
+  tanggalFaktur?: string | null;
+  jatuhTempo?: string | null;
+  nilaiTagihan?: number | string | null;
 }
 
 // Helper untuk cek apakah dokumen kas/bank adalah settlement.
@@ -1208,6 +1220,11 @@ export interface PembayaranKasResponse {
   kasBankId: string;
   noNukti: string;
   noCek: string | null;
+  // === Update cetak "Bayar Pemasok" — info cek & mata uang ===
+  tanggalCek: string | null;
+  jumlahCek: number | string | null;
+  mataUang: string;
+  nilaiTukar: number | string;
   penerima: string | null;
   catatan: string | null;
   autoPostJurnal: boolean;
@@ -1220,8 +1237,13 @@ export interface PembayaranKasResponse {
   kasBank: KasBankSimple | null;
   creator: PenggunaSimple | null;
   rincian: PembayaranRincianResponse[];
+  // === Update #5 — penalti pelunasan (backend: pembayaran_kas.penalti) ===
+  // totalNilai = Σ rincian − Σ alokasi.diskon + penalti
+  penalti?: number | string;
+  akunPenaltiId?: string | null;
   // === Phase 1.B — field tambahan dari backend ===
   supplierId?: string | null;
+  supplier?: { id: string; nama: string; alamat: string | null } | null;
   alokasi?: PaymentAllocationItem[];
   jurnal?: { id: string; noJurnal: string } | null;
 }
@@ -1265,6 +1287,9 @@ export interface PenerimaanKasResponse {
   kasBank: KasBankSimple | null;
   creator: PenggunaSimple | null;
   rincian: PenerimaanRincianResponse[];
+  // === Update #5 — penalti pelunasan piutang (backend: pembayaran_kas.penalti) ===
+  penalti?: number | string;
+  akunPenaltiId?: string | null;
   // === Phase 1.B — field tambahan dari backend ===
   pelangganId?: string | null;
   alokasi?: PaymentAllocationItem[];
@@ -1305,6 +1330,11 @@ export interface PembayaranKasUpdate {
   kasBankId?: string;
   noNukti?: string;
   noCek?: string | null;
+  // === Update cetak "Bayar Pemasok" — info cek & mata uang (editable) ===
+  tanggalCek?: string | null;
+  jumlahCek?: number | string | null;
+  mataUang?: string;
+  nilaiTukar?: number | string;
   penerima?: string | null;
   catatan?: string | null;
 }
@@ -3123,6 +3153,8 @@ export type StatusPembayaran = 'BELUM_DIBAYAR' | 'PARSIAL' | 'LUNAS' | 'LEBIH_BA
 export interface PelunasanAlokasiCreate {
   invoiceId: string;
   nilai: string;
+  /** Update cetak "Bayar Pemasok" — diskon pelunasan per faktur (hutang) */
+  diskon?: string;
 }
 
 export interface PelunasanCreate {
@@ -3137,6 +3169,12 @@ export interface PelunasanCreate {
   penalti?: string;
   /** Wajib bila penalti > 0 (akun AKTIF leaf, bukan kas/bank/AR/AP) */
   akunPenaltiId?: string | null;
+  /** Update cetak "Bayar Pemasok" — info header cek & mata uang (hutang) */
+  noCek?: string | null;
+  tanggalCek?: string | null;
+  jumlahCek?: number | string | null;
+  mataUang?: string;
+  nilaiTukar?: number | string;
 }
 
 export interface PelunasanAlokasiResponse {

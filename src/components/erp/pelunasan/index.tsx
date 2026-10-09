@@ -143,7 +143,13 @@ interface PelunasanDraftData {
   /** Update #5: penalti (display terformat) + akun penalti */
   penaltiDisplay?: string;
   akunPenaltiId?: string;
-  alokasi: { invoiceId: string; nilaiDisplay: string }[];
+  /** Update cetak "Bayar Pemasok" — info cek & mata uang (hutang) */
+  noCek?: string;
+  tanggalCek?: string;
+  jumlahCek?: string;
+  mataUang?: string;
+  nilaiTukar?: string;
+  alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string }[];
 }
 
 function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey?: number }) {
@@ -181,6 +187,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   interface AllocationRow {
     invoice: InvoiceSaldoResponse;
     nilaiDisplay: string; // formatted display
+    /** Update cetak "Bayar Pemasok" — diskon pelunasan per faktur (hutang) */
+    diskonDisplay?: string;
   }
   const [selected, setSelected] = useState<Record<string, AllocationRow>>({});
 
@@ -191,6 +199,13 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   const [catatan, setCatatan] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // ── Update cetak "Bayar Pemasok" — info cek & mata uang (hutang saja) ──
+  const [noCek, setNoCek] = useState('');
+  const [tanggalCek, setTanggalCek] = useState('');
+  const [jumlahCek, setJumlahCek] = useState('');
+  const [mataUang, setMataUang] = useState('IDR');
+  const [nilaiTukar, setNilaiTukar] = useState('1');
 
   // ── Penalti + akun penalti (Update #5) ──
   const [penaltiDisplay, setPenaltiDisplay] = useState('');
@@ -276,7 +291,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
         const initial = sisa > 0 ? sisa : 0;
         next[inv.invoiceId] = {
           invoice: inv,
-          nilaiDisplay: initial > 0 ? sanitizeRupiahInput(String(initial)) : ''
+          nilaiDisplay: initial > 0 ? sanitizeRupiahInput(String(initial)) : '',
+          diskonDisplay: ''
         };
       }
       return next;
@@ -288,6 +304,15 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       const row = prev[invoiceId];
       if (!row) return prev;
       return { ...prev, [invoiceId]: { ...row, nilaiDisplay: sanitizeRupiahInput(val) } };
+    });
+  }, []);
+
+  // Update cetak "Bayar Pemasok" — input diskon pelunasan per faktur (hutang)
+  const updateDiskon = useCallback((invoiceId: string, val: string) => {
+    setSelected((prev) => {
+      const row = prev[invoiceId];
+      if (!row) return prev;
+      return { ...prev, [invoiceId]: { ...row, diskonDisplay: sanitizeRupiahInput(val) } };
     });
   }, []);
 
@@ -335,11 +360,13 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   // ── Total allocation ──
   const selectedList = useMemo(() => Object.values(selected), [selected]);
   const totalAllocation = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.nilaiDisplay)), 0), [selectedList]);
+  // Update cetak "Bayar Pemasok" — Σ diskon pelunasan; kas keluar = Σ nilai − Σ diskon
+  const totalDiskon = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.diskonDisplay || '')), 0), [selectedList]);
 
   // ── Penalti (Update #5): subtotal alokasi + penalti = total pembayaran ──
   const penaltiNum = useMemo(() => parseNum(parseRupiahInput(penaltiDisplay)), [penaltiDisplay]);
   const penaltiMissingAkun = penaltiNum > 0 && !akunPenaltiId;
-  const totalPembayaran = totalAllocation + penaltiNum;
+  const totalPembayaran = totalAllocation - totalDiskon + penaltiNum;
 
   // Akun penalti: piutang → utamakan akun PENDAPATAN; hutang → utamakan akun BEBAN.
   // Prefilter kosong → fallback seluruh akun AKTIF bertingkat DETAIL.
@@ -386,6 +413,12 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     if (d.catatan) setCatatan(d.catatan);
     if (d.penaltiDisplay) setPenaltiDisplay(d.penaltiDisplay);
     if (d.akunPenaltiId) setAkunPenaltiId(d.akunPenaltiId);
+    // Update cetak "Bayar Pemasok"
+    if (d.noCek) setNoCek(d.noCek);
+    if (d.tanggalCek) setTanggalCek(d.tanggalCek);
+    if (d.jumlahCek) setJumlahCek(d.jumlahCek);
+    if (d.mataUang) setMataUang(d.mataUang);
+    if (d.nilaiTukar) setNilaiTukar(d.nilaiTukar);
   }, []);
 
   // Tahap 2 — alokasi invoice dipulihkan saat daftar tagihan selesai dimuat
@@ -401,7 +434,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     const restored: Record<string, AllocationRow> = {};
     for (const a of d.alokasi) {
       const inv = map.get(a.invoiceId);
-      if (inv) restored[a.invoiceId] = { invoice: inv, nilaiDisplay: a.nilaiDisplay || '' };
+      if (inv) restored[a.invoiceId] = { invoice: inv, nilaiDisplay: a.nilaiDisplay || '', diskonDisplay: a.diskonDisplay || '' };
     }
     if (Object.keys(restored).length > 0) {
       setSelected(restored);
@@ -428,9 +461,14 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       catatan,
       penaltiDisplay,
       akunPenaltiId,
-      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay }))
+      noCek,
+      tanggalCek,
+      jumlahCek,
+      mataUang,
+      nilaiTukar,
+      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '' }))
     });
-  }, [tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selected]);
+  }, [tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, selected]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
@@ -442,6 +480,11 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     setKasBankId('');
     setPenaltiDisplay('');
     setAkunPenaltiId('');
+    setNoCek('');
+    setTanggalCek('');
+    setJumlahCek('');
+    setMataUang('IDR');
+    setNilaiTukar('1');
     setErrors({});
   }, []);
 
@@ -465,6 +508,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     if (selectedList.length === 0) e.alokasi = 'Pilih minimal 1 invoice untuk dialokasikan';
     let hasInvalid = false;
     let hasOver = false;
+    let hasDiskonOver = false;
     for (const row of selectedList) {
       const n = parseNum(parseRupiahInput(row.nilaiDisplay));
       if (n <= 0) {
@@ -476,15 +520,24 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
         hasOver = true;
         break;
       }
+      // Update cetak "Bayar Pemasok" — diskon tidak boleh melebihi nilai pembayaran
+      const disk = parseNum(parseRupiahInput(row.diskonDisplay || ''));
+      if (disk > n + 0.01) {
+        hasDiskonOver = true;
+        break;
+      }
     }
     if (hasInvalid) e.alokasi = 'Semua nilai pembayaran harus lebih dari 0';
     if (!e.alokasi && hasOver) e.alokasi = 'Nilai pembayaran tidak boleh melebihi sisa tagihan';
+    if (!e.alokasi && hasDiskonOver) e.alokasi = 'Diskon tidak boleh melebihi nilai pembayaran invoice terkait';
     // Update #5 — penalti
     if (penaltiNum < 0) e.penalti = 'Penalti tidak boleh negatif';
     if (penaltiNum > 0 && !akunPenaltiId) e.penalti = 'Akun penalti wajib dipilih bila penalti > 0';
+    // Update cetak "Bayar Pemasok" — nilai tukar
+    if (!isPiutang && !(parseFloat(nilaiTukar.replace(',', '.')) > 0)) e.nilaiTukar = 'Nilai tukar harus lebih dari 0';
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId]);
+  }, [tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId, isPiutang, nilaiTukar]);
 
   // ── Submit draft ──
   const handleSubmit = useCallback(async () => {
@@ -499,11 +552,23 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
         catatan: catatan.trim() || undefined,
         alokasi: selectedList.map((r) => ({
           invoiceId: r.invoice.invoiceId,
-          nilai: parseRupiahInput(r.nilaiDisplay)
+          nilai: parseRupiahInput(r.nilaiDisplay),
+          // Update cetak "Bayar Pemasok" — diskon pelunasan per faktur
+          diskon: parseRupiahInput(r.diskonDisplay || '')
         })),
         // Update #5 — penalti di level header; totalNilai (Σ alokasi + penalti) dihitung backend.
         penalti: parseRupiahInput(penaltiDisplay),
-        akunPenaltiId: akunPenaltiId || null
+        akunPenaltiId: akunPenaltiId || null,
+        // Update cetak "Bayar Pemasok" — info header cek & mata uang (hutang saja)
+        ...(!isPiutang
+          ? {
+              noCek: noCek.trim() || null,
+              tanggalCek: tanggalCek || null,
+              jumlahCek: jumlahCek ? parseInt(jumlahCek.replace(/\D/g, ''), 10) || 0 : null,
+              mataUang: mataUang.trim().toUpperCase() || 'IDR',
+              nilaiTukar: parseFloat(nilaiTukar.replace(',', '.')) || 1
+            }
+          : {})
       };
       const res = await pelunasanApi.create(jenis, payload);
       toast.success(`Draft pembayaran ${res.noBukti} dibuat`, {
@@ -519,6 +584,11 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       setCatatan('');
       setPenaltiDisplay('');
       setAkunPenaltiId('');
+      setNoCek('');
+      setTanggalCek('');
+      setJumlahCek('');
+      setMataUang('IDR');
+      setNilaiTukar('1');
       setRiwayatInvoiceId(null);
       setRiwayatData(null);
       setTanggal(todayStr());
@@ -529,7 +599,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     } finally {
       setSubmitting(false);
     }
-  }, [validate, selectedPihakId, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, clearSelection, fetchTagihan]);
+  }, [validate, selectedPihakId, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft]);
 
   // ── Export Excel daftar tagihan (Update #5) — ikut filter aktif ──
   const handleExport = useCallback(async () => {
@@ -877,6 +947,33 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
               </div>
             </div>
 
+            {/* Update cetak "Bayar Pemasok" — info cek & mata uang (hutang saja) */}
+            {!isPiutang && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">No Cek</Label>
+                  <Input value={noCek} onChange={(e) => setNoCek(e.target.value)} placeholder="Nomor cek (opsional)" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Tgl Cek</Label>
+                  <Input type="date" value={tanggalCek} onChange={(e) => setTanggalCek(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Jumlah Cek</Label>
+                  <Input type="text" inputMode="numeric" placeholder="0" value={jumlahCek} onChange={(e) => setJumlahCek(sanitizeRupiahInput(e.target.value))} className="text-right font-mono h-9 text-sm" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Mata Uang</Label>
+                  <Input value={mataUang} onChange={(e) => setMataUang(e.target.value.toUpperCase())} placeholder="IDR" maxLength={8} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Nilai Tukar</Label>
+                  <Input type="text" inputMode="decimal" value={nilaiTukar} onChange={(e) => setNilaiTukar(e.target.value.replace(',', '.'))} placeholder="1" className={`text-right font-mono h-9 text-sm ${errors.nilaiTukar ? 'border-destructive' : ''}`} />
+                  {errors.nilaiTukar && <p className="text-xs text-destructive">{errors.nilaiTukar}</p>}
+                </div>
+              </div>
+            )}
+
             {/* Penalti (Update #5) — opsional; akun wajib bila penalti > 0 */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -920,6 +1017,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                       <TableHead>No Invoice</TableHead>
                       <TableHead className="text-right w-[140px]">Sisa Tagihan</TableHead>
                       <TableHead className="text-right w-[180px]">Nilai Pembayaran</TableHead>
+                      {/* Update cetak "Bayar Pemasok" — diskon pelunasan per faktur (hutang) */}
+                      {!isPiutang && <TableHead className="text-right w-[160px]">Diskon</TableHead>}
                       <TableHead className="w-12" />
                     </TableRow>
                   </TableHeader>
@@ -929,6 +1028,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                       const n = parseNum(parseRupiahInput(row.nilaiDisplay));
                       const over = n > sisa + 0.01;
                       const sisaSetelah = sisa - n;
+                      const disk = parseNum(parseRupiahInput(row.diskonDisplay || ''));
+                      const diskonOver = disk > n + 0.01;
                       return (
                         <TableRow key={row.invoice.invoiceId}>
                           <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
@@ -938,6 +1039,12 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                             <Input type="text" inputMode="numeric" placeholder="0" value={row.nilaiDisplay} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${over ? 'border-destructive' : ''}`} />
                             {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">Melebihi sisa tagihan</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">Lunas</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
                           </TableCell>
+                          {!isPiutang && (
+                            <TableCell className="text-right">
+                              <Input type="text" inputMode="numeric" placeholder="0" value={row.diskonDisplay || ''} onChange={(e) => updateDiskon(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${diskonOver ? 'border-destructive' : ''}`} aria-label={`Diskon pelunasan ${row.invoice.noDokumen}`} />
+                              {diskonOver ? <p className="mt-1 text-[11px] leading-tight text-destructive">Melebihi nilai pembayaran</p> : disk > 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">Dibayar: {formatRp(n - disk)}</p> : null}
+                            </TableCell>
+                          )}
                           <TableCell className="p-1">
                             <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => removeAllocation(row.invoice.invoiceId)} title="Hapus dari alokasi">
                               <X className="h-4 w-4" />
@@ -952,13 +1059,19 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
               {errors.alokasi && <p className="text-xs text-destructive">{errors.alokasi}</p>}
             </div>
 
-            {/* Ringkasan total (Update #5: subtotal alokasi + penalti) */}
+            {/* Ringkasan total (Update #5: subtotal alokasi + penalti; Update cetak "Bayar Pemasok": − diskon) */}
             <div className="flex justify-end">
               <div className="w-full max-w-xs space-y-1.5 rounded-md border bg-muted/30 p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Subtotal Alokasi</span>
                   <span className="font-mono">{formatRp(totalAllocation)}</span>
                 </div>
+                {!isPiutang && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Diskon</span>
+                    <span className="font-mono">−{formatRp(totalDiskon)}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Penalti</span>
                   <span className="font-mono">{formatRp(penaltiNum)}</span>
