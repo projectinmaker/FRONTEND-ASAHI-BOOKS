@@ -45,9 +45,9 @@ function mapPesananData(d: SalesOrderResponse): PesananData {
     kepada: d.pelanggan?.nama || '',
     alamatPenerima: d.alamatPengiriman || '',
     syaratPembayaran: d.syaratBayar?.nama || '',
-    ekspedisi: d.ekspedisi || '',
+    // Update ASAHI (revisi SO): ekspedisi & penjual tidak lagi bagian dokumen
+    // SO; tanggalPengiriman tetap dipetakan (label cetak "Target Pengiriman").
     tanggalPengiriman: d.tanggalPengiriman || '',
-    penjual: d.penjual || '',
     // Update #4: No PO customer dari SO (SalesOrderResponse.customerPoNumber).
     noPo: d.customerPoNumber || '',
     detail: (d.details || []).map<DetailRow>((r) => ({

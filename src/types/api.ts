@@ -1379,13 +1379,13 @@ export interface SalesOrderCreate {
   currency?: string;
   customerPoNumber?: string | null;
   customerPoDate?: string | null;
+  /** Update ASAHI (revisi SO): singkatan bebas nama perusahaan customer — segmen nomor SO "SO ASI/TBI/2026/001"; kosong → "SO ASI/-/2026/001". */
+  customerCode?: string | null;
 
   tanggal: string;
   pelangganId: string;
   syaratBayarId?: string | null;
-  ekspedisi?: string | null;
   tanggalPengiriman?: string | null;
-  penjual?: string | null;
   alamatPengiriman?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
@@ -1405,9 +1405,7 @@ export interface SalesOrderUpdate {
   tanggal?: string;
   pelangganId?: string;
   syaratBayarId?: string | null;
-  ekspedisi?: string | null;
   tanggalPengiriman?: string | null;
-  penjual?: string | null;
   alamatPengiriman?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
@@ -1419,15 +1417,15 @@ export interface SalesOrderResponse {
   customerPoNumber?: string | null;
   customerPoDate?: string | null;
   fulfillmentStatus?: string | null;
+  /** Singkatan customer yang dipakai di nomor SO (immutable setelah create). */
+  customerCode?: string | null;
 
   id: string;
   noPesanan: string;
   tanggal: string;
   pelangganId: string;
   syaratBayarId: string | null;
-  ekspedisi: string | null;
   tanggalPengiriman: string | null;
-  penjual: string | null;
   alamatPengiriman: string | null;
   diskonGlobal: number;
   ppn: number;

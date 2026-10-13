@@ -38,7 +38,11 @@ export function serializeOrderLines(lines: OrderLine[]) {
 }
 
 const commonKeys = ['tanggal', 'syaratBayarId', 'currency', 'diskonGlobal', 'ppn', 'keterangan'] as const;
-const salesKeys = ['pelangganId', 'ekspedisi', 'tanggalPengiriman', 'penjual', 'alamatPengiriman', 'customerPoNumber', 'customerPoDate'] as const;
+// Update ASAHI (revisi SO): ekspedisi & penjual dihapus dari dokumen SO;
+// customerCode = singkatan customer (input manual) → segmen nomor "SO ASI/TBI/2026/001".
+// customerCode hanya efektif saat create — backend mengabaikannya saat update
+// (bagian dari nomor dokumen, immutable).
+const salesKeys = ['pelangganId', 'customerCode', 'tanggalPengiriman', 'alamatPengiriman', 'customerPoNumber', 'customerPoDate'] as const;
 // Update ASAHI #3: alamatPengirimanId (gudang tujuan, wajib pilih satu) + ppic.
 // Update ASAHI (PPh23/PPN opsional): pilihan pajak hanya untuk PO — boleh
 // keduanya, salah satu, atau tidak sama sekali.
@@ -88,7 +92,7 @@ export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: Or
   return payload;
 }
 export function orderSaveMismatches(kind: OrderKind, requested: Record<string, unknown>, saved: OrderResponse): string[] {
-  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppic: 'PPIC', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23' };
+  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppic: 'PPIC', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23' };
   const actual = serializeOrderHeader(kind, orderHeaderFromResponse(saved));
   const issues: string[] = [];
   for (const [key, value] of Object.entries(requested)) {

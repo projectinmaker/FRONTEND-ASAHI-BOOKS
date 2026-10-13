@@ -399,9 +399,21 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                   <>
                     {input('customerPoNumber', 'Customer PO Number')}
                     {input('customerPoDate', 'Customer PO Date', 'date')}
-                    {input('ekspedisi', 'Ekspedisi')}
-                    {input('tanggalPengiriman', 'Tanggal Pengiriman', 'date')}
-                    {input('penjual', 'Penjual')}
+                    {/* ── Update ASAHI (revisi SO): Singkatan Customer — input
+                        bebas (mis. TBI untuk TOYOTA BOSHUKU INDONESIA) yang
+                        menjadi segmen nomor pesanan:
+                          terisi  → "SO ASI/TBI/2026/001"
+                          kosong  → "SO ASI/-/2026/001"
+                        Terkunci saat edit karena bagian dari nomor dokumen
+                        (immutable setelah dokumen dibuat). ── */}
+                    <div className="space-y-1.5" key="customerCode">
+                      <Label htmlFor="order-customerCode">Singkatan Customer</Label>
+                      <Input id="order-customerCode" value={header.customerCode} onChange={(event) => setField('customerCode', event.target.value)} disabled={disabled || !!original} placeholder="mis. TBI" maxLength={20} />
+                      <p className="text-xs text-muted-foreground">{original ? 'Singkatan terkunci — bagian dari nomor dokumen dan tidak dapat diubah setelah pesanan dibuat.' : 'Singkatan nama perusahaan customer untuk nomor SO (contoh: TBI → SO ASI/TBI/2026/001). Kosongkan untuk tanda "-", tanpa karakter "/".'}</p>
+                    </div>
+                    {/* Update ASAHI (revisi SO): label "Tanggal Pengiriman" → "Target Pengiriman". */}
+                    {input('tanggalPengiriman', 'Target Pengiriman', 'date')}
+                    {/* Update ASAHI (revisi SO): field Ekspedisi & Penjual dihapus dari dokumen SO. */}
                     <div className="space-y-1.5 md:col-span-2">
                       <Label htmlFor="order-alamatPengiriman">Alamat Pengiriman</Label>
                       {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}

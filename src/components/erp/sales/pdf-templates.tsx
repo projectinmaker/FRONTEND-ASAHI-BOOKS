@@ -29,9 +29,9 @@ export interface PesananData {
   kepada: string;
   alamatPenerima: string;
   syaratPembayaran: string;
-  ekspedisi: string;
+  // Update ASAHI (revisi SO): ekspedisi & penjual dihapus dari dokumen;
+  // tanggalPengiriman tetap tapi label cetak menjadi "Target Pengiriman".
   tanggalPengiriman: string;
-  penjual: string;
   // === Update #4 — No PO customer dari SO (label "No PO" di print pesanan) ===
   noPo: string;
   detail: DetailRow[];
@@ -262,9 +262,8 @@ function BiayaTambahanTable({ items }: { items: BiayaTambahan[] }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PesananPDFTemplate({ data }: { data: PesananData }) {
-  const totalQty = data.detail.reduce((s, r) => s + r.qty, 0);
-  const jumlahBarang = data.detail.length;
-
+  // Update ASAHI (revisi SO): Total Kuantitas & Jumlah Barang dihapus dari
+  // dokumen — tidak ada lagi perhitungan ringkasan qty/jumlah item.
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
@@ -291,9 +290,9 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
           <InfoCell label="Nomor" value={data.nomor} />
           <InfoCell label="No PO" value={data.noPo} />
           <InfoCell label="Syarat Pembayaran" value={data.syaratPembayaran} />
-          <InfoCell label="Ekspedisi" value={data.ekspedisi} />
-          <InfoCell label="Tanggal Pengiriman" value={formatDate(data.tanggalPengiriman)} />
-          <InfoCell label="Penjual" value={data.penjual} />
+          {/* Update ASAHI (revisi SO): label "Tanggal Pengiriman" → "Target Pengiriman";
+              field Ekspedisi & Penjual dihapus dari dokumen. */}
+          <InfoCell label="Target Pengiriman" value={formatDate(data.tanggalPengiriman)} />
         </div>
       </div>
 
@@ -322,32 +321,33 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
       </div>
 
       {/* ── Footer ── */}
-      <div className="grid grid-cols-2 gap-6 mt-4">
-        {/* Left */}
-        <div>
-          {data.keterangan && (
-            <div style={{ marginBottom: '12px' }}>
-              <strong>Keterangan:</strong>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{data.keterangan}</div>
-            </div>
-          )}
-          <div style={{ marginTop: '24px' }}>Disetujui, Tgl. ________</div>
-        </div>
+      <div className="grid grid-cols-1 gap-6 mt-4">
+        {/* Keterangan (opsional) */}
+        {data.keterangan && (
+          <div>
+            <strong>Keterangan:</strong>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{data.keterangan}</div>
+          </div>
+        )}
+      </div>
 
-        {/* Right: Summary stats */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <span>
-              <strong>Total Kuantitas:</strong>
-            </span>
-            <span>{formatNumber(totalQty)}</span>
-          </div>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <span>
-              <strong>Jumlah Barang:</strong>
-            </span>
-            <span>{jumlahBarang}</span>
-          </div>
+      {/* ── Signatures — Update ASAHI (revisi SO): dua tanda tangan
+          "Disiapkan oleh" & "Disetujui oleh", masing-masing dengan kolom
+          tanda tangan dan tanggal di bawahnya (menggantikan blok lama
+          "Disetujui, Tgl. ________" dan ringkasan Total Kuantitas /
+          Jumlah Barang yang dihapus). ── */}
+      <div className="grid grid-cols-2 gap-8 mt-10" style={{ textAlign: 'center' }}>
+        <div>
+          <div>Disiapkan oleh,</div>
+          {/* Kolom tanda tangan */}
+          <div style={{ marginTop: '56px' }}>_____________________</div>
+          <div>Tgl. ______________</div>
+        </div>
+        <div>
+          <div>Disetujui oleh,</div>
+          {/* Kolom tanda tangan */}
+          <div style={{ marginTop: '56px' }}>_____________________</div>
+          <div>Tgl. ______________</div>
         </div>
       </div>
 
