@@ -456,7 +456,7 @@ function mapLppbData(d: LppbResponse): LppbData {
     noDo: d.nomorDo || '',
     noRi: d.nomorRi || '',
     proyek: d.proyek || '',
-    vendor: d.supplier?.nama || '',
+    supplier: d.supplier?.nama || '',
     keterangan: d.keterangan || '',
     mengetahuiJabatan: d.mengetahuiJabatan || '',
     mengetahuiNama: d.mengetahuiNama || '',

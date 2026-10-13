@@ -872,7 +872,7 @@ export interface LppbData {
   noDo: string;
   noRi: string;
   proyek: string;
-  vendor: string;
+  supplier: string;
   keterangan: string;
   mengetahuiJabatan: string;
   mengetahuiNama: string;
@@ -929,7 +929,7 @@ export function LppbPDFTemplate({ data }: { data: LppbData }) {
         <InfoCell label="Nomor DO" value={data.noDo || '-'} />
         <InfoCell label="Nomor RI" value={data.noRi || '-'} />
         <InfoCell label="Proyek" value={data.proyek || '-'} />
-        <InfoCell label="Vendor" value={data.vendor || '-'} />
+        <InfoCell label="Supplier" value={data.supplier || '-'} />
       </div>
 
       {/* ── Tabel pemeriksaan & pengujian (header 2 baris, HASIL PENGUJIAN 2 sub-kolom) ── */}
