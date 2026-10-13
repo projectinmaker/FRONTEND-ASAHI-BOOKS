@@ -3,6 +3,8 @@
 import { formatNumber, formatDate, terbilang, DOC_TITLE_FONT_SIZE } from '@/lib/pdf-utils';
 // Update ASAHI: header cetak pakai identitas perusahaan dinamis (Pengaturan → Profil Perusahaan)
 import { CompanyBrand } from '@/components/erp/company-brand';
+// Update ASAHI #005 — info perusahaan di footer LPPB (dari store profil)
+import { useCompanyInfo } from '@/store/company-store';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -835,6 +837,201 @@ export function ReturPembelianPDFTemplate({ data }: { data: ReturPembelianData }
 
       {/* Indikator halaman digambar otomatis oleh jsPDF di kanan bawah
           (lihat generatePDF di src/lib/pdf-utils.ts) — berlaku semua dokumen. */}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 5. LPPB — LAPORAN PEMERIKSAAN DAN PENGUJIAN BARANG (Update ASAHI #005)
+// Dokumen RECORD QMS (kop menyusuri format cetak yang sudah ada).
+// ═════════════════════════════════════════════════════════════════════════════
+
+export interface LppbDetailRow {
+  id: string;
+  urutan: number;
+  /** true = baris jasa pengujian (mis. NDT) — berpasangan di bawah barangnya */
+  isJasa: boolean;
+  kodeMaterial: string;
+  deskripsiSpesifikasi: string;
+  satuan: string;
+  qtyPo: number;
+  qtyPenerimaan: number;
+  qtyBaik: number;
+  qtyTidakBaik: number;
+  qtySudahDiterima: number;
+  qtyBelumDiterima: number;
+}
+
+export interface LppbData {
+  nomor: string;
+  tanggal: string;
+  revisi: string;
+  noFormat: string;
+  tanggalTerima: string;
+  noPo: string;
+  noDo: string;
+  noRi: string;
+  proyek: string;
+  vendor: string;
+  keterangan: string;
+  mengetahuiJabatan: string;
+  mengetahuiNama: string;
+  detail: LppbDetailRow[];
+}
+
+const lppbThStyle: React.CSSProperties = {
+  border: '1px solid #333',
+  padding: '4px 6px',
+  backgroundColor: '#f1f5f9',
+  fontWeight: 'bold',
+  fontSize: '9px',
+  textAlign: 'center',
+  verticalAlign: 'middle'
+};
+
+const lppbTdStyle: React.CSSProperties = {
+  border: '1px solid #333',
+  padding: '4px 6px',
+  fontSize: '10px',
+  verticalAlign: 'top'
+};
+
+export function LppbPDFTemplate({ data }: { data: LppbData }) {
+  return (
+    <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
+      {/* ── KOP (menyusuri format cetak yang sudah ada: Profil Perusahaan) ── */}
+      <div className="flex justify-between items-start mb-2">
+        <CompanyBrand />
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '10px', fontStyle: 'italic' }}>ASI Quality Management System — RECORD</div>
+        </div>
+      </div>
+
+      {/* ── Judul dokumen ── */}
+      <div style={{ textAlign: 'center', margin: '10px 0 4px' }}>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold', textDecoration: 'underline' }}>LAPORAN PEMERIKSAAN DAN PENGUJIAN BARANG</div>
+        <div style={{ fontSize: '12px', fontWeight: 'bold', letterSpacing: '2px' }}>(LPPB)</div>
+      </div>
+
+      {/* ── Blok identitas dokumen (kanan) ── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '6px' }}>
+        <div style={{ minWidth: '300px' }}>
+          <InfoCell label="Nomor LPPB" value={data.nomor} />
+          <InfoCell label="Tanggal LPPB" value={data.tanggal ? formatDate(data.tanggal) : '-'} />
+          <InfoCell label="Revisi" value={data.revisi || '-'} />
+        </div>
+      </div>
+
+      {/* ── Blok referensi transaksi ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: '24px', rowGap: '1px', marginBottom: '10px' }}>
+        <InfoCell label="Tgl Terima" value={data.tanggalTerima ? formatDate(data.tanggalTerima) : '-'} />
+        <InfoCell label="Nomor PO" value={data.noPo || '-'} />
+        <InfoCell label="Nomor DO" value={data.noDo || '-'} />
+        <InfoCell label="Nomor RI" value={data.noRi || '-'} />
+        <InfoCell label="Proyek" value={data.proyek || '-'} />
+        <InfoCell label="Vendor" value={data.vendor || '-'} />
+      </div>
+
+      {/* ── Tabel pemeriksaan & pengujian (header 2 baris, HASIL PENGUJIAN 2 sub-kolom) ── */}
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={{ ...lppbThStyle, width: '24px' }} rowSpan={2}>
+              NO
+            </th>
+            <th style={lppbThStyle} rowSpan={2}>
+              KODE MATERIAL
+            </th>
+            <th style={lppbThStyle} rowSpan={2}>
+              DESKRIPSI SPESIFIKASI
+            </th>
+            <th style={lppbThStyle} rowSpan={2}>
+              SATUAN
+            </th>
+            <th style={lppbThStyle} rowSpan={2}>
+              KUANTITAS PO
+            </th>
+            <th style={lppbThStyle} rowSpan={2}>
+              KUANTITAS PENERIMAAN
+            </th>
+            <th style={{ ...lppbThStyle, backgroundColor: '#e2e8f0' }} colSpan={2}>
+              HASIL PENGUJIAN
+            </th>
+            <th style={lppbThStyle} rowSpan={2}>
+              SUDAH DITERIMA
+            </th>
+            <th style={lppbThStyle} rowSpan={2}>
+              BELUM DITERIMA
+            </th>
+          </tr>
+          <tr>
+            <th style={{ ...lppbThStyle, backgroundColor: '#e2e8f0' }}>BAIK</th>
+            <th style={{ ...lppbThStyle, backgroundColor: '#e2e8f0' }}>TIDAK BAIK</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.detail.map((r) => (
+            <tr key={r.id} style={r.isJasa ? { backgroundColor: '#fefce8' } : undefined}>
+              <td style={{ ...lppbTdStyle, textAlign: 'center', color: '#666' }}>{r.isJasa ? '↳' : r.urutan}</td>
+              <td style={{ ...lppbTdStyle, fontFamily: 'monospace' }}>{r.kodeMaterial || '—'}</td>
+              <td style={lppbTdStyle}>{r.deskripsiSpesifikasi}</td>
+              <td style={{ ...lppbTdStyle, textAlign: 'center' }}>{r.satuan || '—'}</td>
+              <td style={{ ...lppbTdStyle, textAlign: 'right' }}>{formatNumber(r.qtyPo)}</td>
+              <td style={{ ...lppbTdStyle, textAlign: 'right' }}>{formatNumber(r.qtyPenerimaan)}</td>
+              <td style={{ ...lppbTdStyle, textAlign: 'right' }}>{formatNumber(r.qtyBaik)}</td>
+              <td style={{ ...lppbTdStyle, textAlign: 'right' }}>{r.qtyTidakBaik > 0 ? formatNumber(r.qtyTidakBaik) : '0'}</td>
+              <td style={{ ...lppbTdStyle, textAlign: 'right' }}>{formatNumber(r.qtySudahDiterima)}</td>
+              <td style={{ ...lppbTdStyle, textAlign: 'right' }}>{formatNumber(r.qtyBelumDiterima)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* ── Keterangan (satu baris di bawah tabel) ── */}
+      {data.keterangan && (
+        <div style={{ marginTop: '8px', fontSize: '10px' }}>
+          <strong>Keterangan:</strong> {data.keterangan}
+        </div>
+      )}
+
+      {/* ── Pengesahan: Mengetahui ── */}
+      <div style={{ marginTop: '36px', textAlign: 'center' }}>
+        <div>Mengetahui,</div>
+        {data.mengetahuiJabatan ? <div style={{ fontWeight: 'bold' }}>{data.mengetahuiJabatan}</div> : <div style={{ height: '14px' }} />}
+        {/* ruang tanda tangan — tanpa garis kotak (konsisten #004) */}
+        <div style={{ height: '70px' }} />
+        <div style={{ fontWeight: 'bold', textDecoration: 'underline' }}>{data.mengetahuiNama || '____________________'}</div>
+        <div style={{ fontSize: '9px', color: '#555' }}>Nama Terang</div>
+      </div>
+
+      {/* ── Footer: kontrol dokumen QMS + identitas perusahaan ── */}
+      <div style={{ marginTop: '28px', borderTop: '1px solid #333', paddingTop: '4px', fontSize: '9px', textAlign: 'center', color: '#333' }}>
+        <div>
+          No. Format: {data.noFormat || '—'}, Rev. {data.revisi || '—'}, halaman 1
+        </div>
+        <LppbFooterCompany />
+      </div>
+
+      {/* Indikator halaman digambar otomatis oleh jsPDF di kanan bawah
+          (lihat generatePDF di src/lib/pdf-utils.ts) — berlaku semua dokumen. */}
+    </div>
+  );
+}
+
+/** Footer perusahaan LPPB — nama + alamat + telepon/email dari Profil Perusahaan. */
+function LppbFooterCompany() {
+  const { name, address, telepon, email } = useCompanyInfo();
+  return (
+    <div>
+      <div style={{ fontWeight: 'bold' }}>{name}</div>
+      {address ? <div style={{ whiteSpace: 'pre-line' }}>Kantor: {address}</div> : null}
+      {telepon || email ? (
+        <div>
+          {telepon ? `Telepon: ${telepon}` : ''}
+          {telepon && email ? ' · ' : ''}
+          {email ? `Email: ${email}` : ''}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -37,7 +37,9 @@ import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { toast } from 'sonner';
-import { PesananPembelianCetakTab, PenerimaanCetakTab, InvoicePembelianCetakTab, ReturPembelianCetakTab } from '@/components/erp/purchasing/cetak-tabs';
+import { PesananPembelianCetakTab, PenerimaanCetakTab, InvoicePembelianCetakTab, ReturPembelianCetakTab, LppbCetakTab } from '@/components/erp/purchasing/cetak-tabs';
+// Update ASAHI #005 — modul LPPB (list + form) sebagai file mandiri
+import { LppbTab, LppbForm } from '@/components/erp/purchasing/lppb';
 import { PelunasanHutangView } from '@/components/erp/pelunasan';
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
@@ -3714,6 +3716,10 @@ export default function Purchasing(props: PurchasingPageProps) {
     if (props.formMode === 'retur-cetak' && editId) {
       return <ReturPembelianCetakTab id={editId} />;
     }
+    // Update ASAHI #005 — cetak LPPB
+    if (props.formMode === 'lppb-cetak' && editId) {
+      return <LppbCetakTab id={editId} />;
+    }
 
     switch (subPage) {
       case 'pesanan':
@@ -3724,6 +3730,9 @@ export default function Purchasing(props: PurchasingPageProps) {
         return editId ? <InvoiceEditForm editId={editId} /> : <InvoiceCreateForm />;
       case 'retur':
         return editId ? <ReturEditForm editId={editId} /> : <ReturCreateForm />;
+      // Update ASAHI #005 — form LPPB (create + edit)
+      case 'lppb':
+        return <LppbForm lppbId={editId} />;
       default:
         return null;
     }
@@ -3779,6 +3788,8 @@ function PurchasingListContent({ subPage, refreshKey }: { subPage: string; refre
           {subPage === 'penerimaan' && <PenerimaanTab supplierOptions={supplierOptions} barangOptions={barangOptions} satuanOptions={satuanOptions} purchaseOrderOptions={purchaseOrderOptions} refreshKey={refreshKey} />}
           {subPage === 'invoice' && <InvoiceTab supplierOptions={supplierOptions} barangOptions={barangOptions} purchaseOrderOptions={purchaseOrderOptions} refreshKey={refreshKey} />}
           {subPage === 'retur' && <ReturTab supplierOptions={supplierOptions} barangOptions={barangOptions} purchaseOrderOptions={purchaseOrderOptions} refreshKey={refreshKey} />}
+          {/* Update ASAHI #005 — LPPB (self-contained: opsi PO dimuat sendiri) */}
+          {subPage === 'lppb' && <LppbTab refreshKey={refreshKey} />}
         </>
       )}
     </div>

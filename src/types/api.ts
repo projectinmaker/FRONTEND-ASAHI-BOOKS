@@ -2069,6 +2069,84 @@ export interface PenerimaanBarangResponse {
   details: PenerimaanBarangDetailResponse[];
 }
 
+// ── LPPB — Laporan Pemeriksaan & Pengujian Barang (Update ASAHI #005) ──
+
+export interface LppbDetailCreate {
+  urutan: number;
+  /** Null = baris jasa pengujian manual (mis. NDT, berpasangan di bawah barangnya). */
+  barangId?: string | null;
+  purchaseOrderDetailId?: string | null;
+  kodeMaterial?: string | null;
+  deskripsiSpesifikasi: string;
+  satuan?: string | null;
+  qtyPo: number;
+  qtyPenerimaan: number;
+  qtyBaik: number;
+  qtyTidakBaik: number;
+}
+
+export interface LppbDetailResponse extends LppbDetailCreate {
+  id: string;
+  qtySudahDiterima: number;
+  qtyBelumDiterima: number;
+}
+
+export interface LppbCreate {
+  tanggal: string;
+  purchaseOrderId: string;
+  tanggalTerima?: string | null;
+  nomorDo?: string | null;
+  nomorRi?: string | null;
+  proyek?: string | null;
+  revisi?: string | null;
+  noFormat?: string | null;
+  keterangan?: string | null;
+  mengetahuiJabatan?: string | null;
+  mengetahuiNama?: string | null;
+  details: LppbDetailCreate[];
+}
+
+export interface LppbUpdate {
+  tanggal?: string;
+  purchaseOrderId?: string;
+  tanggalTerima?: string | null;
+  nomorDo?: string | null;
+  nomorRi?: string | null;
+  proyek?: string | null;
+  revisi?: string | null;
+  noFormat?: string | null;
+  keterangan?: string | null;
+  mengetahuiJabatan?: string | null;
+  mengetahuiNama?: string | null;
+  details?: LppbDetailCreate[];
+}
+
+export interface LppbResponse {
+  id: string;
+  noForm: string;
+  tanggal: string;
+  tanggalTerima: string | null;
+  purchaseOrderId: string;
+  supplierId: string;
+  nomorDo: string | null;
+  nomorRi: string | null;
+  proyek: string | null;
+  revisi: string | null;
+  noFormat: string | null;
+  keterangan: string | null;
+  mengetahuiJabatan: string | null;
+  mengetahuiNama: string | null;
+  status: StatusPenjualan;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  totalItem?: number;
+  purchaseOrder: PurchaseOrderSimple | null;
+  supplier: SupplierSimple | null;
+  creator: PenggunaSimple | null;
+  details: LppbDetailResponse[];
+}
+
 // ── Persediaan ───────────────────────────────────────────────────────
 
 export interface PenyesuaianStokCreate {

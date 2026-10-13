@@ -10,8 +10,8 @@ import { generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 // Update #002: label jenis belanja (CONSUMABLE → "Consumable") untuk kolom cetak PO
 import { jenisPembelianLabel } from '@/lib/order-documents';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
-import { PembelianPDFTemplate, PenerimaanPDFTemplate, InvoicePembelianPDFTemplate, ReturPembelianPDFTemplate, type PembelianData, type PenerimaanData, type InvoicePembelianData, type ReturPembelianData, type PembelianDetailRow, type PenerimaanDetailRow, type ReturDetailRow, type BiayaTambahan } from '@/components/erp/purchasing/pdf-templates';
-import type { PurchaseOrderResponse, PurchaseInvoiceResponse, PurchaseReturResponse, PenerimaanBarangResponse, MataUangResponse } from '@/types/api';
+import { PembelianPDFTemplate, PenerimaanPDFTemplate, InvoicePembelianPDFTemplate, ReturPembelianPDFTemplate, LppbPDFTemplate, type PembelianData, type PenerimaanData, type InvoicePembelianData, type ReturPembelianData, type PembelianDetailRow, type PenerimaanDetailRow, type ReturDetailRow, type BiayaTambahan, type LppbData, type LppbDetailRow } from '@/components/erp/purchasing/pdf-templates';
+import type { PurchaseOrderResponse, PurchaseInvoiceResponse, PurchaseReturResponse, PenerimaanBarangResponse, MataUangResponse, LppbResponse } from '@/types/api';
 
 // ─── Shared error card ──────────────────────────────────────────────────────
 
@@ -434,6 +434,111 @@ export function ReturPembelianCetakTab({ id }: { id: string }) {
             <div className="overflow-x-auto border rounded-md bg-white">
               <div id={elementId} className="inline-block">
                 <ReturPembelianPDFTemplate data={data} />
+              </div>
+            </div>
+          )
+        )}
+      </div>
+    </FormTabShell>
+  );
+}
+
+// ─── 5. LPPB Cetak (Update ASAHI #005) ──────────────────────────────────────
+
+function mapLppbData(d: LppbResponse): LppbData {
+  return {
+    nomor: d.noForm || '',
+    tanggal: d.tanggal || '',
+    revisi: d.revisi || '',
+    noFormat: d.noFormat || '',
+    tanggalTerima: d.tanggalTerima || '',
+    noPo: d.purchaseOrder?.noPesanan || '',
+    noDo: d.nomorDo || '',
+    noRi: d.nomorRi || '',
+    proyek: d.proyek || '',
+    vendor: d.supplier?.nama || '',
+    keterangan: d.keterangan || '',
+    mengetahuiJabatan: d.mengetahuiJabatan || '',
+    mengetahuiNama: d.mengetahuiNama || '',
+    detail: (d.details || [])
+      .slice()
+      .sort((a, b) => a.urutan - b.urutan)
+      .map<LppbDetailRow>((r) => ({
+        id: r.id,
+        urutan: r.urutan,
+        isJasa: !r.barangId && !r.purchaseOrderDetailId,
+        kodeMaterial: r.kodeMaterial || '',
+        deskripsiSpesifikasi: r.deskripsiSpesifikasi || '',
+        satuan: r.satuan || '',
+        qtyPo: Number(r.qtyPo) || 0,
+        qtyPenerimaan: Number(r.qtyPenerimaan) || 0,
+        qtyBaik: Number(r.qtyBaik) || 0,
+        qtyTidakBaik: Number(r.qtyTidakBaik) || 0,
+        qtySudahDiterima: Number(r.qtySudahDiterima) || 0,
+        qtyBelumDiterima: Number(r.qtyBelumDiterima) || 0
+      }))
+  };
+}
+
+export function LppbCetakTab({ id }: { id: string }) {
+  const [data, setData] = useState<LppbData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const elementId = `pdf-lppb-${id}`;
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<LppbResponse>(`/pembelian/lppb/${id}`);
+      setData(mapLppbData(res));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : e instanceof Error ? e.message : 'Gagal memuat data');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleDownload = useCallback(async () => {
+    if (!data) return;
+    setDownloading(true);
+    try {
+      await generatePDF(elementId, `LPPB-${fileSafeNo(data.nomor || id)}.pdf`);
+    } finally {
+      setDownloading(false);
+    }
+  }, [data, elementId, id]);
+
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
+
+  return (
+    <FormTabShell title={`Cetak LPPB${data ? ` — ${data.nomor}` : ''}`}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={handlePrint} disabled={loading || !!error}>
+            <Printer className="mr-1.5 h-4 w-4" /> Cetak
+          </Button>
+          <Button size="sm" onClick={handleDownload} disabled={loading || !!error || downloading}>
+            <Download className="mr-1.5 h-4 w-4" /> {downloading ? 'Memproses…' : 'Download PDF'}
+          </Button>
+        </div>
+        {loading ? (
+          <CetakLoading />
+        ) : error ? (
+          <CetakError message={error} />
+        ) : (
+          data && (
+            <div className="overflow-x-auto border rounded-md bg-white">
+              <div id={elementId} className="inline-block">
+                <LppbPDFTemplate data={data} />
               </div>
             </div>
           )

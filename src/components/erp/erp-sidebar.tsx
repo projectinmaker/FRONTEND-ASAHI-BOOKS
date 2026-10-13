@@ -74,6 +74,8 @@ const modules: NavModule[] = [
     icon: TrendingDown,
     subPages: [
       { id: 'pesanan', label: 'Pesanan', icon: FileText },
+      // Update ASAHI #005 — LPPB: inspeksi QC barang masuk (sebelum diterima ke gudang)
+      { id: 'lppb', label: 'LPPB', icon: ClipboardCheck },
       { id: 'penerimaan', label: 'Penerimaan', icon: Package },
       { id: 'invoice', label: 'Invoice', icon: Receipt },
       { id: 'retur', label: 'Retur', icon: RotateCcw },
@@ -235,6 +237,7 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
   },
   purchasing: {
     pesanan: 'purchase.purchase_order.view',
+    lppb: 'purchase.lppb.view',
     penerimaan: 'purchase.goods_receipt.view',
     invoice: 'purchase.purchase_invoice.view',
     retur: 'purchase.purchase_return.view',
