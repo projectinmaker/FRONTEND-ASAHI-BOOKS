@@ -3809,3 +3809,109 @@ export interface AlamatPengirimanUpdate {
   nama?: string;
   isAktif?: boolean;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REQUEST ORDER PART (PRODUKSI) — form pre-PO yang diajukan Engineering
+// sebelum masuk ke Purchasing
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type RequestOrderPartStatus = 'DRAFT' | 'DISETUJUI';
+
+/** Ringkasan SO ter-link pada ROP (nested di response ROP). */
+export interface RequestOrderPartSalesOrder {
+  id: string;
+  noPesanan: string;
+  customerCode: string | null;
+  customerPoNumber: string | null;
+  status: string;
+  tanggal: string;
+}
+
+/** Pembuat ROP (nested di response ROP). */
+export interface RequestOrderPartCreator {
+  id: string;
+  username: string;
+  namaLengkap: string;
+}
+
+/** Baris item ROP. PERHATIAN: qty/qs diserialisasi backend sebagai STRING
+ *  desimal ("4.00") — normalisasi ke number di UI sebelum dipakai/dikirim. */
+export interface RequestOrderPartItem {
+  id: string;
+  no: number;
+  idPart: string;
+  description: string;
+  material: string | null;
+  qty: string | number;
+  qs: string | number;
+  supplierId: string | null;
+  keterangan: string | null;
+  supplier: SupplierSimple | null;
+}
+
+export interface RequestOrderPart {
+  id: string;
+  noRop: string;
+  tanggal: string;
+  projectName: string;
+  model: string | null;
+  salesOrderId: string | null;
+  pelangganId: string | null;
+  catatan: string | null;
+  dibuatOleh: string | null;
+  diperiksaOleh: string | null;
+  diketahuiOleh: string | null;
+  disetujuiOleh: string | null;
+  status: RequestOrderPartStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  salesOrder: RequestOrderPartSalesOrder | null;
+  pelanggan: PelangganSimple | null;
+  creator: RequestOrderPartCreator | null;
+  items: RequestOrderPartItem[];
+}
+
+/** Baris list ROP — header + totalItem, TANPA array items. */
+export interface RequestOrderPartListRow extends Omit<RequestOrderPart, 'items'> {
+  totalItem: number;
+}
+
+export interface RequestOrderPartItemCreate {
+  no: number;
+  idPart: string;
+  description: string;
+  material?: string | null;
+  qty: number;
+  qs: number;
+  supplierId?: string | null;
+  keterangan?: string | null;
+}
+
+export interface RequestOrderPartCreate {
+  tanggal: string;
+  projectName: string;
+  model?: string | null;
+  salesOrderId?: string | null;
+  catatan?: string | null;
+  dibuatOleh?: string | null;
+  diperiksaOleh?: string | null;
+  diketahuiOleh?: string | null;
+  disetujuiOleh?: string | null;
+  items: RequestOrderPartItemCreate[];
+}
+
+/** PUT partial — hanya field yang berubah; `items` bila dikirim MENGGANTI
+ *  seluruh baris. Hanya boleh untuk status DRAFT. */
+export interface RequestOrderPartUpdate {
+  tanggal?: string;
+  projectName?: string;
+  model?: string | null;
+  salesOrderId?: string | null;
+  catatan?: string | null;
+  dibuatOleh?: string | null;
+  diperiksaOleh?: string | null;
+  diketahuiOleh?: string | null;
+  disetujuiOleh?: string | null;
+  items?: RequestOrderPartItemCreate[];
+}

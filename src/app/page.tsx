@@ -17,6 +17,8 @@ const Sales = dynamic(() => import('@/components/erp/sales'), { ssr: false });
 const Purchasing = dynamic(() => import('@/components/erp/purchasing'), { ssr: false });
 const FixedAssets = dynamic(() => import('@/components/erp/fixed-assets'), { ssr: false });
 const Inventory = dynamic(() => import('@/components/erp/inventory'), { ssr: false });
+// Produksi (ROP — Request Order Part, pre-PO dari Engineering)
+const Production = dynamic(() => import('@/components/erp/production'), { ssr: false });
 const GeneralLedger = dynamic(() => import('@/components/erp/general-ledger'), { ssr: false });
 const Reports = dynamic(() => import('@/components/erp/reports'), { ssr: false });
 const Organisasi = dynamic(() => import('@/components/erp/organisasi'), { ssr: false });
@@ -33,6 +35,7 @@ const moduleLabels: Record<string, string> = {
   purchasing: 'Pembelian',
   'fixed-assets': 'Aset Tetap',
   inventory: 'Persediaan',
+  production: 'Produksi',
   'general-ledger': 'Buku Besar',
   'workflow-queue': 'Antrean Persetujuan',
   reports: 'Laporan',
@@ -67,6 +70,8 @@ const subPageLabels: Record<string, string> = {
   'barang-jasa': 'Barang & Jasa',
   gudang: 'Gudang',
   'stok-kartu': 'Stok Kartu / Valuasi',
+  // Produksi
+  'request-order-part': 'Request Order Part',
   // Buku Besar
   'jurnal-umum': 'Jurnal Umum',
   // Laporan
@@ -121,6 +126,8 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
       return <FixedAssets subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'inventory':
       return <Inventory subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
+    case 'production':
+      return <Production subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'general-ledger':
       return <GeneralLedger subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'reports':

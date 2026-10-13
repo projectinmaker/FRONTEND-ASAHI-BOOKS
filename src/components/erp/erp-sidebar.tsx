@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2 } from 'lucide-react';
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -104,6 +104,13 @@ const modules: NavModule[] = [
       { id: 'gudang', label: 'Gudang', icon: Warehouse },
       { id: 'stok-kartu', label: 'Stok Kartu / Valuasi', icon: Calculator }
     ]
+  },
+  // Produksi — Request Order Part (ROP), form pre-PO dari Engineering
+  {
+    id: 'production',
+    label: 'Produksi',
+    icon: Factory,
+    subPages: [{ id: 'request-order-part', label: 'Request Order Part', icon: ClipboardList }]
   },
   {
     id: 'general-ledger',
@@ -246,6 +253,9 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     'barang-jasa': 'master.barang.view',
     gudang: 'master.gudang.view',
     'stok-kartu': 'inventory.stock.view'
+  },
+  production: {
+    'request-order-part': 'production.request_order_part.view'
   },
   'general-ledger': {
     'jurnal-umum': 'accounting.journal.view'

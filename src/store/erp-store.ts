@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ModuleId = 'dashboard' | 'cash-bank' | 'sales' | 'purchasing' | 'fixed-assets' | 'inventory' | 'general-ledger' | 'reports' | 'organisasi' | 'settings' | 'workflow-queue';
+export type ModuleId = 'dashboard' | 'cash-bank' | 'sales' | 'purchasing' | 'fixed-assets' | 'inventory' | 'production' | 'general-ledger' | 'reports' | 'organisasi' | 'settings' | 'workflow-queue';
 
 export type SubPageId = string;
 
