@@ -7,11 +7,13 @@
  * ref DOM → html2canvas-pro → jsPDF A4 portrait. Identitas perusahaan
  * (logo + nama) dari useCompanyStore via CompanyBrand.
  *
- * Struktur dokumen: kop perusahaan + judul "REQUEST ORDER PART", info
- * Project/Model/Customer/Tanggal + info SO terpilih, tabel item dengan grup
- * kolom dua baris (ORDER / STOK), Note, blok tanda tangan 4 kolom
- * (DIBUAT / DIPERIKSA / DIKETAHUI / DISETUJUI), dan legenda distribusi
- * salinan warna PUTIH/KUNING/MERAH.
+ * Struktur dokumen (update ASAHI #003): kop perusahaan + judul
+ * "REQUEST ORDER PART", info Project/Model/Customer/Tanggal + info SO
+ * terpilih, tabel item dengan kolom NO s.d. SUPPLIER sejajar satu baris +
+ * KETERANGAN sebagai header grup dua sub-kolom (ORDER / STOK), Note, blok
+ * tanda tangan 4 kolom (DIBUAT / DIPERIKSA / DIKETAHUI / DISETUJUI), dan
+ * legenda distribusi salinan warna PUTIH/KUNING/MERAH. Baris Status di kop
+ * dihapus (workflow tanpa persetujuan; dokumen final dicetak setelah dibuat).
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -33,9 +35,12 @@ export interface RequestOrderPartPrintItem {
   description: string;
   material: string;
   qty: number;
-  qs: number;
+  /** Update #003: QS = kode (tipe seperti ID PART) — teks. */
+  qs: string;
   supplier: string;
-  keterangan: string;
+  /** Update #003: KETERANGAN dibagi dua sub-kolom ORDER & STOK. */
+  keteranganOrder: string;
+  keteranganStok: string;
 }
 
 export interface RequestOrderPartPrintData {
@@ -170,7 +175,7 @@ function SignatureBlock({ labels, names }: { labels: string[]; names: string[] }
 // ─── Template utama ──────────────────────────────────────────────────────────
 
 export function RequestOrderPartPDFTemplate({ data }: { data: RequestOrderPartPrintData }) {
-  const colCount = 8; // NO + 4 (ORDER) + 3 (STOK)
+  const colCount = 9; // NO + ID PART + DESCRIPTION + MATERIAL + QTY + QS + SUPPLIER + KETERANGAN(2)
 
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
@@ -182,9 +187,7 @@ export function RequestOrderPartPDFTemplate({ data }: { data: RequestOrderPartPr
           <div style={{ marginTop: '4px', fontSize: '11px' }}>
             <strong>No:</strong> {data.nomor || '-'}
           </div>
-          <div style={{ fontSize: '11px' }}>
-            <strong>Status:</strong> {data.status === 'DISETUJUI' ? 'DISETUJUI' : 'DRAFT'}
-          </div>
+          {/* Update #003: baris Status dihapus — workflow tanpa persetujuan. */}
         </div>
       </div>
 
@@ -204,7 +207,8 @@ export function RequestOrderPartPDFTemplate({ data }: { data: RequestOrderPartPr
         </div>
       </div>
 
-      {/* ── Tabel item — dua baris header grup ORDER / STOK ── */}
+      {/* ── Tabel item (update #003): NO s.d. SUPPLIER sejajar satu baris;
+          KETERANGAN = header grup dua sub-kolom ORDER / STOK ── */}
       <div className="mb-4">
         <table style={tableStyle}>
           <thead>
@@ -212,21 +216,31 @@ export function RequestOrderPartPDFTemplate({ data }: { data: RequestOrderPartPr
               <th style={{ ...headerCellStyle, width: '32px' }} rowSpan={2}>
                 NO
               </th>
-              <th style={orderGroupStyle} colSpan={4}>
-                ORDER
+              <th style={headerCellStyle} rowSpan={2}>
+                ID PART
               </th>
-              <th style={stokGroupStyle} colSpan={3}>
-                STOK
+              <th style={headerCellStyle} rowSpan={2}>
+                DESCRIPTION
+              </th>
+              <th style={headerCellStyle} rowSpan={2}>
+                MATERIAL
+              </th>
+              <th style={{ ...headerCellStyle, width: '46px' }} rowSpan={2}>
+                QTY
+              </th>
+              <th style={headerCellStyle} rowSpan={2}>
+                QS
+              </th>
+              <th style={headerCellStyle} rowSpan={2}>
+                SUPPLIER
+              </th>
+              <th style={orderGroupStyle} colSpan={2}>
+                KETERANGAN
               </th>
             </tr>
             <tr>
-              <th style={headerCellStyle}>ID PART</th>
-              <th style={headerCellStyle}>DESCRIPTION</th>
-              <th style={headerCellStyle}>MATERIAL</th>
-              <th style={{ ...headerCellStyle, width: '46px' }}>QTY</th>
-              <th style={{ ...headerCellStyle, width: '42px' }}>QS</th>
-              <th style={headerCellStyle}>SUPPLIER</th>
-              <th style={headerCellStyle}>KETERANGAN</th>
+              <th style={orderGroupStyle}>ORDER</th>
+              <th style={stokGroupStyle}>STOK</th>
             </tr>
           </thead>
           <tbody>
@@ -244,9 +258,10 @@ export function RequestOrderPartPDFTemplate({ data }: { data: RequestOrderPartPr
                 <td style={cellStyle}>{row.description}</td>
                 <td style={cellStyle}>{row.material || '-'}</td>
                 <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
-                <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qs)}</td>
+                <td style={cellStyle}>{row.qs || '-'}</td>
                 <td style={cellStyle}>{row.supplier || '-'}</td>
-                <td style={cellStyle}>{row.keterangan || '-'}</td>
+                <td style={cellStyle}>{row.keteranganOrder || '-'}</td>
+                <td style={cellStyle}>{row.keteranganStok || '-'}</td>
               </tr>
             ))}
           </tbody>
@@ -305,11 +320,13 @@ export function mapRopPrintData(d: RequestOrderPart): RequestOrderPartPrintData 
         idPart: it.idPart || '',
         description: it.description || '',
         material: it.material || '',
-        // qty/qs datang sebagai string desimal ("4.00") — normalisasi ke number.
+        // qty datang sebagai string desimal ("4.00") — normalisasi ke number.
+        // QS kini kode teks (update #003).
         qty: Number(it.qty) || 0,
-        qs: Number(it.qs) || 0,
+        qs: it.qs || '',
         supplier: it.supplier?.nama || '',
-        keterangan: it.keterangan || ''
+        keteranganOrder: it.keteranganOrder || '',
+        keteranganStok: it.keteranganStok || ''
       }))
   };
 }

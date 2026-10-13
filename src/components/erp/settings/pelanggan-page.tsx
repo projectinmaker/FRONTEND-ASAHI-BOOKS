@@ -65,6 +65,8 @@ interface FormState {
   syaratBayarId: string; // UUID, prefer pakai ini (canonical)
   creditLimit: string; // input as string, parse to number on submit
   taxStatus: string; // 'PKP' | 'NON_PKP' | ''
+  // === Update #003 — singkatan nama perusahaan ===
+  singkatan: string;
   // === Legacy (tetap dipertahankan untuk backward compat) ===
   syaratBayarDefault: string;
 }
@@ -82,6 +84,8 @@ const emptyForm: FormState = {
   syaratBayarId: '',
   creditLimit: '',
   taxStatus: '',
+  // === Update #003 ===
+  singkatan: '',
   // === Legacy ===
   syaratBayarDefault: ''
 };
@@ -136,6 +140,7 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
             syaratBayarId: res.syaratBayarId || '',
             creditLimit: res.creditLimit != null ? String(res.creditLimit) : '',
             taxStatus: res.taxStatus || '',
+            singkatan: res.singkatan || '',
             // Fallback: kalau syaratBayarId belum di-set, coba match berdasarkan nama legacy
             syaratBayarDefault: res.syaratBayarDefault || ''
           }));
@@ -311,6 +316,8 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
             syaratBayarId: form.syaratBayarId || undefined,
             creditLimit: creditLimitNum,
             taxStatus: taxStatusVal,
+            // === Update #003 — singkatan (segmen nomor SO) ===
+            singkatan: form.singkatan.trim() || undefined,
             // === Legacy (fallback kalau syaratBayarId belum di-set) ===
             syaratBayarDefault: form.syaratBayarDefault || undefined
           };
@@ -332,6 +339,8 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
           syaratBayarId: form.syaratBayarId || undefined,
           creditLimit: creditLimitNum,
           taxStatus: taxStatusVal,
+          // === Update #003 — singkatan (null = hapus nilai lama) ===
+          singkatan: form.singkatan.trim() || null,
           // === Legacy ===
           syaratBayarDefault: form.syaratBayarDefault || undefined
         };
@@ -409,6 +418,13 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
             <Label htmlFor="pel-nama">Nama Pelanggan</Label>
             <Input id="pel-nama" placeholder="Nama pelanggan" value={form.nama} onChange={(e) => updateForm('nama', e.target.value)} onBlur={() => handleBlur('nama')} aria-invalid={!!formErrors.nama} className={formErrors.nama ? 'border-destructive focus-visible:ring-destructive' : ''} autoFocus />
             {formErrors.nama && <p className="text-xs text-destructive mt-1">{formErrors.nama}</p>}
+          </div>
+
+          {/* Singkatan (Update #003) — auto-fill di form Penawaran/SO */}
+          <div className="space-y-2">
+            <Label htmlFor="pel-singkatan">Singkatan</Label>
+            <Input id="pel-singkatan" placeholder="mis. TBI" maxLength={20} value={form.singkatan} onChange={(e) => updateForm('singkatan', e.target.value)} />
+            <p className="text-[11px] text-muted-foreground">Singkatan nama perusahaan tanpa karakter "/" — dipakai segmen nomor SO (SO ASI/TBI/2026/001) dan auto-fill di form Penawaran/SO.</p>
           </div>
 
           {/* Alamat */}
@@ -568,6 +584,7 @@ export default function PelangganPage({ refreshKey, formMode, formProps }: Pelan
                 email: (formProps?.email as string) || '',
                 kontakPerson: (formProps?.kontakPerson as string) || '',
                 npwp: (formProps?.npwp as string) || '',
+                singkatan: (formProps?.singkatan as string) || '',
                 syaratBayarDefault: (formProps?.syaratBayarDefault as string) || ''
                 // Field baru Phase 2 (nitku, syaratBayarId, creditLimit, taxStatus) akan
                 // di-fetch dari detail endpoint di useEffect PelangganForm.
@@ -725,6 +742,9 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
             <Skeleton className="h-4 w-24" />
           </TableCell>
           <TableCell>
+            <Skeleton className="h-4 w-16" />
+          </TableCell>
+          <TableCell>
             <Skeleton className="h-4 w-28" />
           </TableCell>
           <TableCell>
@@ -809,6 +829,7 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="whitespace-nowrap">Kode Akun</TableHead>
                   <TableHead className="whitespace-nowrap">Nama Akun / Pelanggan</TableHead>
                   <TableHead className="whitespace-nowrap">Kode Pelanggan</TableHead>
+                  <TableHead className="whitespace-nowrap">Singkatan</TableHead>
                   <TableHead className="whitespace-nowrap">Telepon</TableHead>
                   <TableHead className="whitespace-nowrap">Email</TableHead>
                   <TableHead className="whitespace-nowrap">NPWP</TableHead>
@@ -821,7 +842,7 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
                   <SkeletonRows />
                 ) : paginatedData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="p-0">
+                    <TableCell colSpan={9} className="p-0">
                       {debouncedSearch ? (
                         <EmptyState icon={SearchX} title="Tidak ada hasil pencarian" description={`Tidak ada pelanggan yang cocok dengan "${debouncedSearch}". Coba kata kunci lain.`} />
                       ) : (
@@ -849,6 +870,7 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="whitespace-nowrap font-mono font-medium text-xs">{row.kode || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap font-medium">{row.isLinked ? row.namaPelanggan || row.nama : <span className="text-muted-foreground italic">{row.nama}</span>}</TableCell>
                       <TableCell className="whitespace-nowrap font-mono text-xs">{row.kodePelanggan || '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs uppercase">{row.singkatan || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground text-xs">{row.telepon || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground text-xs">{row.email || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground text-xs">{row.npwp || '-'}</TableCell>
@@ -877,6 +899,7 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
                                       email: row.email || '',
                                       kontakPerson: row.kontakPerson || '',
                                       npwp: row.npwp || '',
+                                      singkatan: row.singkatan || '',
                                       syaratBayarDefault: row.syaratBayarDefault || ''
                                     }
                                   })

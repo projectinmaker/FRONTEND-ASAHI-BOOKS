@@ -50,10 +50,10 @@ function mapPembelianData(d: PurchaseOrderResponse): PembelianData {
     // Update ASAHI (cetak PO): kontak supplier di bawah "Nama Pemasok"
     kontakPerson: d.supplier?.kontakPerson || '',
     noContact: d.supplier?.telepon || '',
-    // Update ASAHI #3: mata uang pilihan saat input PO + alamat pengiriman + PPIC
+    // Update ASAHI #3: mata uang pilihan saat input PO + alamat pengiriman
     mataUang: d.currency || 'IDR',
     alamatPengiriman: d.alamatPengiriman || '',
-    ppic: !!d.ppic,
+    // Update #003: ppic dihapus dari form/cetak PO
     // Update #002: snapshot PIC Gudang untuk cetak PO
     picGudang: d.picGudang || '',
     picGudangTelepon: d.picGudangTelepon || '',

@@ -61,10 +61,11 @@ const commonKeys = ['tanggal', 'syaratBayarId', 'currency', 'diskonGlobal', 'ppn
 // customerCode hanya efektif saat create — backend mengabaikannya saat update
 // (bagian dari nomor dokumen, immutable).
 const salesKeys = ['pelangganId', 'customerCode', 'tanggalPengiriman', 'alamatPengiriman', 'customerPoNumber', 'customerPoDate'] as const;
-// Update ASAHI #3: alamatPengirimanId (gudang tujuan, wajib pilih satu) + ppic.
+// Update ASAHI #3: alamatPengirimanId (gudang tujuan, wajib pilih satu).
+// Update #003: ppic dihapus dari form PO.
 // Update ASAHI (PPh23/PPN opsional): pilihan pajak hanya untuk PO — boleh
 // keduanya, salah satu, atau tidak sama sekali.
-const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppic', 'ppnApplicable', 'pph23Applicable', 'pph23', 'picGudang', 'picGudangTelepon'] as const;
+const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppnApplicable', 'pph23Applicable', 'pph23', 'picGudang', 'picGudangTelepon'] as const;
 
 // ── Update #002 — jenis belanja per baris PO (dasar posting COA) ──
 export const JENIS_PEMBELIAN_OPTIONS = [
@@ -81,7 +82,7 @@ export type OrderHeader = Record<OrderHeaderKey, string>;
 export function newOrderHeader(): OrderHeader {
   const date = new Date();
   const tanggal = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : key === 'ppn' ? '11' : key === 'ppic' ? 'false' : key === 'ppnApplicable' ? 'true' : key === 'pph23Applicable' ? 'false' : key === 'pph23' ? '2' : ''])) as OrderHeader;
+  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : key === 'ppn' ? '11' : key === 'ppnApplicable' ? 'true' : key === 'pph23Applicable' ? 'false' : key === 'pph23' ? '2' : ''])) as OrderHeader;
 }
 export function orderHeaderFromResponse(order: OrderResponse): OrderHeader {
   const header = newOrderHeader();
@@ -98,8 +99,8 @@ export function serializeOrderHeader(kind: OrderKind, header: OrderHeader) {
   for (const key of [...commonKeys, ...(kind === 'sales' ? salesKeys : purchaseKeys)]) {
     if (key === 'ppn' || key === 'diskonGlobal' || key === 'pph23') {
       if (header[key] !== '') result[key] = Number(header[key]);
-    } else if (key === 'ppic' || key === 'ppnApplicable' || key === 'pph23Applicable') {
-      // Update ASAHI #3 / PPh23-PPN: boolean fields (bukan string).
+    } else if (key === 'ppnApplicable' || key === 'pph23Applicable') {
+      // Update ASAHI PPh23-PPN: boolean fields (bukan string).
       result[key] = header[key] === 'true';
     } else if (key === 'picGudang' || key === 'picGudangTelepon') {
       // Update #002: kirim string kosong (BUKAN null) — null dianggap "tidak
@@ -128,7 +129,7 @@ export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: Or
   return payload;
 }
 export function orderSaveMismatches(kind: OrderKind, requested: Record<string, unknown>, saved: OrderResponse): string[] {
-  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppic: 'PPIC', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23', picGudang: 'PIC Gudang', picGudangTelepon: 'No. Telp PIC Gudang' };
+  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23', picGudang: 'PIC Gudang', picGudangTelepon: 'No. Telp PIC Gudang' };
   const actual = serializeOrderHeader(kind, orderHeaderFromResponse(saved));
   const issues: string[] = [];
   for (const [key, value] of Object.entries(requested)) {

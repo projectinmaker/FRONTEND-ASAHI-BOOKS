@@ -98,6 +98,8 @@ export interface PenawaranData {
   alamatPenerima: string;
   syaratPembayaran: string;
   keterangan: string;
+  /** Update #003: No. PO customer — terisi saat penawaran dibuat (dibawa ke SO). */
+  noPo?: string;
   detail: DetailRow[];
   biayaTambahan: BiayaTambahan[];
   diskonGlobal: number;
@@ -698,6 +700,8 @@ export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
           <InfoCell label="No. Penawaran" value={data.nomor} />
+          {/* Update #003: No. PO customer (mirror template SO/Pengiriman/Invoice) */}
+          <InfoCell label="No PO" value={data.noPo || ''} />
           <InfoCell label="Berlaku Hingga" value={formatDate(data.berlakuHingga)} />
           <InfoCell label="Syarat Pembayaran" value={data.syaratPembayaran} />
         </div>

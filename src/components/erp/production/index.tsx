@@ -46,8 +46,9 @@ const PERM = {
 // ─── Helpers bersama ─────────────────────────────────────────────────────────
 
 function RopStatusBadge({ status }: { status: RequestOrderPartStatus }) {
-  if (status === 'DISETUJUI') {
-    return <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Disetujui</span>;
+  // Update #003: DISETUJUI → DIBUAT (finalisasi lewat tombol "Buat ROP").
+  if (status === 'DIBUAT') {
+    return <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Dibuat</span>;
   }
   return <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Draft</span>;
 }
@@ -260,7 +261,7 @@ function RequestOrderPartTab({ refreshKey }: { refreshKey?: number }) {
               <SelectContent>
                 <SelectItem value="semua">Semua Status</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="DISETUJUI">Disetujui</SelectItem>
+                <SelectItem value="DIBUAT">Dibuat</SelectItem>
               </SelectContent>
             </Select>
           </div>

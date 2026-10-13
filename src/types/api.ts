@@ -290,6 +290,8 @@ export interface PelangganResponse {
   taxStatus?: TaxStatus;
   syaratBayarId?: string | null;
   syaratBayar?: SyaratBayarSimple | null;
+  // === Update #003 — singkatan nama perusahaan ===
+  singkatan?: string | null;
   // === Legacy (tetap ada di response, jangan di-update dari form) ===
   syaratBayarDefault: string | null;
   status: string;
@@ -312,6 +314,8 @@ export interface PelangganCreate {
   creditLimit?: number | null;
   taxStatus?: TaxStatus;
   syaratBayarId?: string | null;
+  // === Update #003 — singkatan nama perusahaan (segmen nomor SO) ===
+  singkatan?: string | null;
   // === Legacy ===
   syaratBayarDefault?: string | null;
   akunPiutangId?: string | null;
@@ -333,6 +337,8 @@ export interface PelangganUpdate {
   creditLimit?: number | null;
   taxStatus?: TaxStatus;
   syaratBayarId?: string | null;
+  // === Update #003 — singkatan (null = hapus) ===
+  singkatan?: string | null;
   // === Legacy ===
   syaratBayarDefault?: string | null;
   status?: string;
@@ -353,6 +359,8 @@ export interface PelangganCOAItem {
   email: string | null;
   kontakPerson: string | null;
   npwp: string | null;
+  // === Update #003 — singkatan nama perusahaan ===
+  singkatan: string | null;
   syaratBayarDefault: string | null;
   status: string;
   isLinked: boolean;
@@ -857,6 +865,8 @@ export interface PelangganDropdown {
   kontakPerson?: string | null;
   email?: string | null;
   syaratBayarId?: string | null;
+  // === Update #003 — singkatan nama perusahaan (auto-fill form Penawaran/SO) ===
+  singkatan?: string | null;
 }
 
 export interface SupplierDropdown {
@@ -1010,6 +1020,9 @@ export interface PenawaranCreate {
   syaratBayarId?: string | null;
   alamatPengiriman?: string | null;
   keterangan?: string | null;
+  // === Update #003 — dibawa ke SO saat konversi ===
+  customerPoNumber?: string | null;
+  customerCode?: string | null;
   mataUang?: string;
   diskonGlobal?: number;
   ppn?: number;
@@ -1028,6 +1041,9 @@ export interface PenawaranResponse {
   syaratBayarId?: string | null;
   alamatPengiriman?: string | null;
   keterangan?: string | null;
+  // === Update #003 ===
+  customerPoNumber?: string | null;
+  customerCode?: string | null;
   mataUang: string;
   diskonGlobal: string;
   ppn: string;
@@ -1718,9 +1734,9 @@ export interface PurchaseOrderDetailResponse extends PurchaseOrderDetailCreate {
 export interface PurchaseOrderCreate {
   currency?: string;
   syaratBayarId?: string | null;
-  // === Update ASAHI #3 — alamat pengiriman (wajib pilih satu) + PPIC ===
+  // === Update ASAHI #3 — alamat pengiriman (wajib pilih satu) ===
   alamatPengirimanId: string;
-  ppic?: boolean;
+  // === Update #003 — checkbox PPIC dihapus dari form PO ===
   // === Update #002 — snapshot PIC gudang untuk cetak PO ===
   picGudang?: string | null;
   picGudangTelepon?: string | null;
@@ -1747,7 +1763,7 @@ export interface PurchaseOrderUpdate {
   syaratBayarId?: string | null;
   // === Update ASAHI #3 ===
   alamatPengirimanId?: string | null;
-  ppic?: boolean | null;
+  // === Update #003 — ppic dihapus ===
   // === Update #002 — snapshot PIC gudang (string kosong = hapus) ===
   picGudang?: string | null;
   picGudangTelepon?: string | null;
@@ -1771,11 +1787,11 @@ export interface PurchaseOrderResponse {
   syaratBayarId?: string | null;
   syaratBayar?: SyaratBayarSimple | null;
   supplierNameSnapshot?: string | null;
-  // === Update ASAHI #3 — alamat pengiriman + PPIC ===
+  // === Update ASAHI #3 — alamat pengiriman ===
   alamatPengirimanId?: string | null;
   /** Snapshot teks "<prefix>\n<nama>" — dipakai untuk cetak PO. */
   alamatPengiriman?: string | null;
-  ppic?: boolean;
+  // === Update #003 — ppic dihapus dari form/cetak PO ===
   // === Update #002 — snapshot PIC gudang untuk cetak PO ===
   picGudang?: string | null;
   picGudangTelepon?: string | null;
@@ -3843,7 +3859,7 @@ export interface AlamatPengirimanUpdate {
 // sebelum masuk ke Purchasing
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type RequestOrderPartStatus = 'DRAFT' | 'DISETUJUI';
+export type RequestOrderPartStatus = 'DRAFT' | 'DIBUAT';
 
 /** Ringkasan SO ter-link pada ROP (nested di response ROP). */
 export interface RequestOrderPartSalesOrder {
@@ -3862,8 +3878,10 @@ export interface RequestOrderPartCreator {
   namaLengkap: string;
 }
 
-/** Baris item ROP. PERHATIAN: qty/qs diserialisasi backend sebagai STRING
- *  desimal ("4.00") — normalisasi ke number di UI sebelum dipakai/dikirim. */
+/** Baris item ROP. PERHATIAN: qty diserialisasi backend sebagai STRING
+ *  desimal ("4.00") — normalisasi ke number di UI sebelum dipakai/dikirim.
+ *  Update #003: qs kini bertipe data seperti ID PART (kode teks alfanumerik)
+ *  dan keterangan dipecah dua: keteranganOrder + keteranganStok. */
 export interface RequestOrderPartItem {
   id: string;
   no: number;
@@ -3871,9 +3889,10 @@ export interface RequestOrderPartItem {
   description: string;
   material: string | null;
   qty: string | number;
-  qs: string | number;
+  qs: string | null;
   supplierId: string | null;
-  keterangan: string | null;
+  keteranganOrder: string | null;
+  keteranganStok: string | null;
   supplier: SupplierSimple | null;
 }
 
@@ -3911,9 +3930,11 @@ export interface RequestOrderPartItemCreate {
   description: string;
   material?: string | null;
   qty: number;
-  qs: number;
+  /** Update #003: kode QS (seperti ID PART) — teks, kosong = null. */
+  qs?: string | null;
   supplierId?: string | null;
-  keterangan?: string | null;
+  keteranganOrder?: string | null;
+  keteranganStok?: string | null;
 }
 
 export interface RequestOrderPartCreate {

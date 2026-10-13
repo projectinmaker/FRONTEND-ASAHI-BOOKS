@@ -204,6 +204,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
       const next = { ...prev };
       if (isSales) {
         next.alamatPengiriman = master?.alamat || '';
+        // Update #003: singkatan customer auto-fill dari master pelanggan —
+        // hanya saat create (di edit terkunci: bagian dari nomor dokumen).
+        if (!original) next.customerCode = (master && 'singkatan' in master ? master.singkatan : '') || '';
       } else {
         next.alamat = master?.alamat || '';
         const supplierCurrency = master && 'currency' in master ? master.currency : null;
@@ -465,7 +468,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
 
               {/* ── Update ASAHI #3: Alamat Pengiriman (khusus PO) — wajib
                   centang SATU gudang tujuan; mencek yang lain otomatis
-                  memindahkan pilihan (tidak bisa dua). PPIC opsional. ── */}
+                  memindahkan pilihan (tidak bisa dua). Update #003: checkbox
+                  PPIC dihapus dari form. ── */}
               {!isSales && (
                 <div className="space-y-3 rounded-md border p-4">
                   <div>
@@ -507,13 +511,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                       })}
                     </div>
                   )}
-                  <div className="flex items-center gap-2 pt-1">
-                    <Checkbox id="order-ppic" checked={header.ppic === 'true'} onCheckedChange={(checked) => setField('ppic', checked ? 'true' : 'false')} disabled={disabled} />
-                    <Label htmlFor="order-ppic" className="cursor-pointer font-normal">
-                      PPIC <span className="text-xs text-muted-foreground">(opsional — tampil di bawah alamat pengiriman saat cetak)</span>
-                    </Label>
-                  </div>
-                  {/* Update #002: PIC Gudang + no. telepon — snapshot untuk cetak PO. */}
+                  {/* Update #003: PIC Gudang + no. telepon — snapshot untuk cetak PO
+                      (checkbox PPIC dihapus). */}
                   <div className="grid gap-4 sm:grid-cols-2">
                     {input('picGudang', 'PIC Gudang', 'text', 100)}
                     {input('picGudangTelepon', 'No. Telepon PIC', 'text', 50)}

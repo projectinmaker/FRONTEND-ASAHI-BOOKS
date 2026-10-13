@@ -707,15 +707,20 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
   const [fPpn, setFPpn] = useState('11');
+  // ── Update #003: No. PO customer + singkatan — dibawa ke SO saat konversi ──
+  const [fCustomerPoNumber, setFCustomerPoNumber] = useState('');
+  const [fCustomerCode, setFCustomerCode] = useState('');
   const [fDetail, setFDetail] = useState<PenawaranFormRow[]>([newFormRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<PenawaranBiayaRow[]>([]);
 
   // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis
-  // dari master (tidak perlu input manual lagi; tetap bisa disunting). ──
+  // dari master (tidak perlu input manual lagi; tetap bisa disunting).
+  // Update #003: singkatan customer ikut ditarik dari master pelanggan. ──
   const handlePelangganChange = (id: string) => {
     setFPelangganId(id);
     const master = findPartyMaster(pelangganOptions, id);
     setFAlamatPengiriman(master?.alamat || '');
+    setFCustomerCode(master?.singkatan || '');
     if (master?.syaratBayarId) setFSyaratBayarId(master.syaratBayarId);
   };
 
@@ -777,6 +782,8 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         setFSyaratBayarId(p.syaratBayarId || '');
         setFAlamatPengiriman(p.alamatPengiriman || '');
         setFKeterangan(p.keterangan || '');
+        setFCustomerPoNumber(p.customerPoNumber || '');
+        setFCustomerCode(p.customerCode || '');
         setFDiskonGlobal(String(Number(p.diskonGlobal) || 0));
         setFPpn(String(Number(p.ppn) || 0));
         setFDetail(
@@ -875,6 +882,9 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         syaratBayarId: fSyaratBayarId || null,
         alamatPengiriman: fAlamatPengiriman || null,
         keterangan: fKeterangan || null,
+        // Update #003 — dibawa ke SO saat konversi
+        customerPoNumber: fCustomerPoNumber.trim() || null,
+        customerCode: fCustomerCode.trim() || null,
         mataUang: 'IDR',
         diskonGlobal: parseFloat(fDiskonGlobal) || 0,
         ppn: parseFloat(fPpn) || 0,
@@ -895,7 +905,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     } finally {
       setSubmitting(false);
     }
-  }, [editId, fPelangganId, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fDiskonGlobal, fPpn, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [editId, fPelangganId, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fCustomerPoNumber, fCustomerCode, fDiskonGlobal, fPpn, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
 
   const loading = ddLoading || editLoading;
 
@@ -982,6 +992,21 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               />
             </div>
           </div>
+          {/* ── Update #003: Nomor PO + Singkatan Customer — supaya SO hasil
+              konversi langsung lengkap (No PO terisi, nomor SO pakai
+              segmen singkatan). ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Nomor PO (Customer)</Label>
+              <Input className="h-9 text-xs" value={fCustomerPoNumber} onChange={(e) => setFCustomerPoNumber(e.target.value)} placeholder="mis. PO-CUST-001 (opsional)" maxLength={50} disabled={readOnly} />
+              <p className="text-[11px] text-muted-foreground">No. PO dari customer — dibawa ke Sales Order saat penawaran dikonversi.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Singkatan Customer</Label>
+              <Input className="h-9 text-xs uppercase" value={fCustomerCode} onChange={(e) => setFCustomerCode(e.target.value)} placeholder="mis. TBI" maxLength={20} disabled={readOnly} />
+              <p className="text-[11px] text-muted-foreground">Otomatis dari master pelanggan — dipakai segmen nomor SO hasil konversi (SO ASI/TBI/2026/001). Tanpa karakter "/".</p>
+            </div>
+          </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Alamat Pengiriman</Label>
             {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
@@ -1046,6 +1071,8 @@ function mapPenawaranData(d: PenawaranResponse): PenawaranData {
     alamatPenerima: d.alamatPengiriman || '',
     syaratPembayaran: d.syaratBayar?.nama || '',
     keterangan: d.keterangan || '',
+    // Update #003: No. PO customer ikut dicetak di kepala dokumen
+    noPo: d.customerPoNumber || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
       barang: r.barang?.nama || '',

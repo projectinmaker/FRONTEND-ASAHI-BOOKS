@@ -48,13 +48,13 @@ export interface PembelianData {
   // === Update ASAHI (cetak PO): Kontak Person & No. Contact supplier ===
   kontakPerson: string;
   noContact: string;
-  // === Update ASAHI #3: mata uang pilihan saat input PO + alamat pengiriman + PPIC ===
+  // === Update ASAHI #3: mata uang pilihan saat input PO + alamat pengiriman ===
   /** Kode mata uang (mis. "USD") — dipakai untuk prefix nominal. */
   mataUang: string;
   /** Label tampilan (mis. "USD — US Dollar"); fallback ke kode. */
   mataUangLabel?: string;
   alamatPengiriman: string;
-  ppic: boolean;
+  // === Update #003: ppic dihapus dari form/cetak PO ===
   // === Update #002 — snapshot PIC Gudang (cetak PO, di bawah alamat pengiriman) ===
   picGudang?: string | null;
   picGudangTelepon?: string | null;
@@ -515,8 +515,7 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
         <div className="mb-4">
           <strong>Alamat Pengiriman:</strong>
           <div style={{ whiteSpace: 'pre-line' }}>{data.alamatPengiriman}</div>
-          {/* PPIC opsional — baris tambahan di bawah alamat pengiriman */}
-          {data.ppic ? <div>PPIC</div> : null}
+          {/* Update #003: baris PPIC dihapus — digantikan PIC Gudang di bawah. */}
           {/* Update #002: PIC Gudang + no. telepon (snapshot saat input PO) */}
           {data.picGudang ? (
             <div>

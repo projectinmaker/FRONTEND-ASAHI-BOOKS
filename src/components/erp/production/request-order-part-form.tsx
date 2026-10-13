@@ -7,16 +7,18 @@
  * - Header: Project Name, Model, Customer (READ-ONLY, otomatis dari SO yang
  *   dipilih), Tanggal, dan pemilihan SO via SearchableDropdown (kartu info SO
  *   tampil di kanan atas setelah dipilih).
- * - Tabel item dengan DUA BARIS HEADER GRUP: ORDER (ID PART, DESCRIPTION,
- *   MATERIAL, QTY) dan STOK (QS, SUPPLIER, KETERANGAN). QS = Quantity Stok
- *   (stok tersedia), QTY = jumlah yang di-order.
+ * - Tabel item (update ASAHI #003): kolom NO s.d. SUPPLIER SEJAJAR satu
+ *   baris header; kolom terakhir KETERANGAN dibagi dua sub-kolom di bawahnya:
+ *   ORDER dan STOK. QS bertipe data seperti ID PART (kode, bisa alfanumerik).
  * - Bawah tabel: Note (catatan) di kiri + blok tanda tangan 4 kolom
  *   (DIBUAT / DIPERIKSA / DIKETAHUI / DISETUJUI).
  * - Legenda distribusi salinan: PUTIH = PURCHASING, KUNING = PRODUKSI,
  *   MERAH = ENGINEERING.
  *
- * Status: DRAFT → DISETUJUI (approve). Edit hanya untuk DRAFT. Cancel =
- * hard delete dengan alasan (jejak di modul Histori).
+ * Workflow (update ASAHI #003 — tanpa persetujuan): form diisi → Simpan
+ * (status DRAFT) → tombol "Buat ROP" (final, status DIBUAT). Hanya DRAFT
+ * yang bisa diedit. Hapus/Batalkan = hard delete dengan alasan (jejak di
+ * modul Histori). Status TIDAK ditampilkan di form.
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
@@ -27,7 +29,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Loader2, Plus, Trash2, Printer, CheckCircle, FileText, AlertTriangle } from 'lucide-react';
@@ -45,11 +46,13 @@ import type { RequestOrderPart, RequestOrderPartCreate, RequestOrderPartItemCrea
 
 // ─── Konstanta ───────────────────────────────────────────────────────────────
 
-/** Kode permission RBAC (registry backend — modul produksi). */
+/** Kode permission RBAC (registry backend — modul produksi).
+ * CATATAN #003: `approve` = hak finalisasi lewat tombol "Buat ROP"
+ * (endpoint POST /buat — dipetakan ke permission approve di access_registry). */
 const PERM = {
   create: 'production.request_order_part.create',
   edit: 'production.request_order_part.edit',
-  approve: 'production.request_order_part.approve',
+  buat: 'production.request_order_part.approve',
   cancel: 'production.request_order_part.cancel',
   print: 'production.request_order_part.print'
 } as const;
@@ -74,10 +77,13 @@ interface RopItemDraft {
   description: string;
   material: string;
   qty: string;
+  /** Update #003: QS bertipe data seperti ID PART — kode (bisa alfanumerik). */
   qs: string;
   /** '' = tanpa supplier (null di backend). */
   supplierId: string;
-  keterangan: string;
+  /** Update #003: KETERANGAN dibagi dua sub-kolom — ORDER & STOK. */
+  keteranganOrder: string;
+  keteranganStok: string;
 }
 
 let ropRowKeyCounter = 0;
@@ -86,7 +92,7 @@ function newRowKey() {
 }
 
 function emptyItem(): RopItemDraft {
-  return { key: newRowKey(), idPart: '', description: '', material: '', qty: '', qs: '', supplierId: '', keterangan: '' };
+  return { key: newRowKey(), idPart: '', description: '', material: '', qty: '', qs: '', supplierId: '', keteranganOrder: '', keteranganStok: '' };
 }
 
 /** Data draft localStorage (mode create). */
@@ -100,11 +106,11 @@ interface RopDraftData {
   items: RopItemDraft[];
 }
 
-// ─── Badge status ROP ────────────────────────────────────────────────────────
+// ─── Badge status ROP (dipakai halaman LIST; form tidak menampilkan status) ──
 
 export function RopStatusBadge({ status }: { status: RequestOrderPartStatus }) {
-  if (status === 'DISETUJUI') {
-    return <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Disetujui</span>;
+  if (status === 'DIBUAT') {
+    return <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">Dibuat</span>;
   }
   return <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">Draft</span>;
 }
@@ -161,12 +167,12 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
 
   // ── State aksi ──
   const [submitting, setSubmitting] = useState(false);
-  const [approving, setApproving] = useState(false);
-  const [approveOpen, setApproveOpen] = useState(false);
+  const [membuat, setMembuat] = useState(false);
+  const [buatOpen, setBuatOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
 
-  /** Mode view, ATAU dokumen sudah DISETUJUI (terkunci, read-only). */
+  /** Mode view, ATAU dokumen sudah DIBUAT/final (terkunci, read-only). */
   const readOnly = mode === 'view' || (!!detail && detail.status !== 'DRAFT');
 
   const title = mode === 'create' ? 'ROP Baru' : detail?.noRop || 'Request Order Part';
@@ -224,11 +230,13 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
               idPart: it.idPart || '',
               description: it.description || '',
               material: it.material || '',
-              // Backend mengirim qty/qs sebagai string desimal ("4.00") — normalisasi.
+              // Backend mengirim qty sebagai string desimal ("4.00") —
+              // normalisasi ke number. QS kini kode teks (update #003).
               qty: it.qty != null && it.qty !== '' ? String(Number(it.qty)) : '',
-              qs: it.qs != null && it.qs !== '' ? String(Number(it.qs)) : '',
+              qs: it.qs || '',
               supplierId: it.supplierId || '',
-              keterangan: it.keterangan || ''
+              keteranganOrder: it.keteranganOrder || '',
+              keteranganStok: it.keteranganStok || ''
             }))
         );
       } catch (err) {
@@ -349,7 +357,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
     setItems((prev) => [...prev, emptyItem()]);
   }, []);
 
-  // ── Bangun payload items (no urut otomatis, qty/qs number) ──
+  // ── Bangun payload items (no urut otomatis, qty number, qs teks) ──
   const buildItemsPayload = useCallback((): RequestOrderPartItemCreate[] | null => {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
@@ -364,9 +372,11 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
       description: it.description.trim(),
       material: it.material.trim() || null,
       qty: Number(it.qty) || 0,
-      qs: Number(it.qs) || 0,
+      // Update #003: QS = kode (tipe seperti ID PART), teks bebas.
+      qs: it.qs.trim() || null,
       supplierId: it.supplierId || null,
-      keterangan: it.keterangan.trim() || null
+      keteranganOrder: it.keteranganOrder.trim() || null,
+      keteranganStok: it.keteranganStok.trim() || null
     }));
   }, [items]);
 
@@ -451,7 +461,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
       origItems.length !== items.length ||
       origItems.some((o, i) => {
         const it = items[i];
-        return o.idPart !== it.idPart.trim() || o.description !== it.description.trim() || (o.material || '') !== it.material.trim() || Number(o.qty) !== (Number(it.qty) || 0) || Number(o.qs) !== (Number(it.qs) || 0) || (o.supplierId || '') !== (it.supplierId || '') || (o.keterangan || '') !== it.keterangan.trim();
+        return o.idPart !== it.idPart.trim() || o.description !== it.description.trim() || (o.material || '') !== it.material.trim() || Number(o.qty) !== (Number(it.qty) || 0) || (o.qs || '') !== it.qs.trim() || (o.supplierId || '') !== (it.supplierId || '') || (o.keteranganOrder || '') !== it.keteranganOrder.trim() || (o.keteranganStok || '') !== it.keteranganStok.trim();
       });
     if (itemsChanged) {
       const itemsPayload = buildItemsPayload();
@@ -478,20 +488,20 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
     }
   };
 
-  // ── Setujui (DRAFT → DISETUJUI) ──
-  const handleApprove = async () => {
+  // ── Buat ROP (finalisasi DRAFT → DIBUAT — update #003, pengganti Setujui) ──
+  const handleBuat = async () => {
     if (!ropId) return;
-    setApproving(true);
+    setMembuat(true);
     try {
-      const res = await api.post<RequestOrderPart>(`/produksi/request-order-part/${ropId}/approve`);
+      const res = await api.post<RequestOrderPart>(`/produksi/request-order-part/${ropId}/buat`);
       setDetail(res);
       refreshListTab('production', 'request-order-part');
-      toast.success('ROP disetujui', { description: `${res.noRop} kini DISETUJUI — dokumen terkunci (read-only).` });
-      setApproveOpen(false);
+      toast.success('ROP berhasil dibuat', { description: `${res.noRop} kini dokumen final — terkunci (read-only).` });
+      setBuatOpen(false);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.detail : 'Gagal menyetujui ROP');
+      toast.error(err instanceof ApiError ? err.detail : 'Gagal membuat (finalisasi) ROP');
     } finally {
-      setApproving(false);
+      setMembuat(false);
     }
   };
 
@@ -545,7 +555,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
     );
   }
 
-  const tableColCount = readOnly ? 8 : 9; // NO + ORDER(4) + STOK(3) [+ aksi]
+  const tableColCount = readOnly ? 9 : 10; // NO + 6 kolom flat + KETERANGAN(2) [+ aksi]
 
   return (
     <FormTabShell title={title}>
@@ -566,15 +576,16 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
             {/* ── Header dokumen: judul + nomor + status (kiri) & Pilih SO + kartu info SO (kanan) ── */}
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
+                {/* Update #003: status TIDAK ditampilkan di form (workflow tanpa
+                    persetujuan — lihat tombol Buat ROP di bar aksi). */}
                 <div className="flex flex-wrap items-center gap-3">
                   <h3 className="text-lg font-bold uppercase tracking-tight">Request Order Part</h3>
-                  {detail && <RopStatusBadge status={detail.status} />}
                 </div>
                 {detail?.noRop ? <p className="mt-1 font-mono text-sm font-medium text-muted-foreground">{detail.noRop}</p> : <p className="mt-1 text-xs text-muted-foreground">Nomor dokumen (mis. ROP ASI/2026/001) dibuat otomatis oleh sistem setelah disimpan.</p>}
                 {detail?.creator?.namaLengkap && <p className="mt-0.5 text-xs text-muted-foreground">Dibuat oleh akun: {detail.creator.namaLengkap}</p>}
                 {mode === 'edit' && readOnly && detail && (
                   <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-700">
-                    Dokumen sudah <strong>DISETUJUI</strong> — hanya dapat dilihat dan dicetak. Perubahan hanya untuk status DRAFT.
+                    Dokumen sudah <strong>DIBUAT</strong> (final) — hanya dapat dilihat dan dicetak. Perubahan hanya untuk dokumen yang belum dibuat.
                   </p>
                 )}
               </div>
@@ -634,7 +645,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
               </div>
             </div>
 
-            {/* ── Tabel item — header grup dua baris: ORDER / STOK ── */}
+            {/* ── Tabel item (update #003): NO s.d. SUPPLIER sejajar satu baris;
+                KETERANGAN = header grup yang dibagi dua sub-kolom ORDER & STOK ── */}
             <div className="space-y-2">
               <div className="overflow-x-auto rounded-md border">
                 <Table>
@@ -643,11 +655,26 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                       <TableHead rowSpan={2} className="w-12 text-center align-middle">
                         NO
                       </TableHead>
-                      <TableHead colSpan={4} className="bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-widest">
-                        ORDER
+                      <TableHead rowSpan={2} className="min-w-[110px] whitespace-nowrap">
+                        ID PART
                       </TableHead>
-                      <TableHead colSpan={3} className="bg-amber-50 text-center text-[11px] font-semibold uppercase tracking-widest">
-                        STOK
+                      <TableHead rowSpan={2} className="min-w-[180px]">
+                        DESCRIPTION
+                      </TableHead>
+                      <TableHead rowSpan={2} className="min-w-[100px]">
+                        MATERIAL
+                      </TableHead>
+                      <TableHead rowSpan={2} className="min-w-[80px] text-right">
+                        QTY
+                      </TableHead>
+                      <TableHead rowSpan={2} className="min-w-[90px]">
+                        QS
+                      </TableHead>
+                      <TableHead rowSpan={2} className="min-w-[170px]">
+                        SUPPLIER
+                      </TableHead>
+                      <TableHead colSpan={2} className="bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-widest">
+                        KETERANGAN
                       </TableHead>
                       {!readOnly && (
                         <TableHead rowSpan={2} className="w-12 text-center align-middle">
@@ -656,13 +683,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                       )}
                     </TableRow>
                     <TableRow>
-                      <TableHead className="min-w-[110px] whitespace-nowrap">ID PART</TableHead>
-                      <TableHead className="min-w-[180px]">DESCRIPTION</TableHead>
-                      <TableHead className="min-w-[100px]">MATERIAL</TableHead>
-                      <TableHead className="min-w-[80px] text-right">QTY</TableHead>
-                      <TableHead className="min-w-[70px] text-right">QS</TableHead>
-                      <TableHead className="min-w-[170px]">SUPPLIER</TableHead>
-                      <TableHead className="min-w-[140px]">KETERANGAN</TableHead>
+                      <TableHead className="min-w-[130px] bg-slate-100 text-[11px] font-semibold uppercase tracking-widest">ORDER</TableHead>
+                      <TableHead className="min-w-[130px] bg-amber-50 text-[11px] font-semibold uppercase tracking-widest">STOK</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -680,9 +702,14 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                         <TableCell className="align-top">{readOnly ? it.description || '-' : <Input value={it.description} onChange={(e) => updateItem(idx, { description: e.target.value })} placeholder="Deskripsi part" className="h-9" aria-label={`DESCRIPTION baris ${idx + 1}`} />}</TableCell>
                         <TableCell className="align-top">{readOnly ? it.material || '-' : <Input value={it.material} onChange={(e) => updateItem(idx, { material: e.target.value })} placeholder="Material" className="h-9" aria-label={`MATERIAL baris ${idx + 1}`} />}</TableCell>
                         <TableCell className="align-top">{readOnly ? <span className="block text-right tabular-nums">{Number(it.qty) ? Number(it.qty).toLocaleString('id-ID') : '0'}</span> : <Input type="number" min={0} step="any" value={it.qty} onChange={(e) => updateItem(idx, { qty: e.target.value })} placeholder="0" className="h-9 text-right tabular-nums" aria-label={`QTY baris ${idx + 1}`} />}</TableCell>
-                        <TableCell className="align-top">{readOnly ? <span className="block text-right tabular-nums">{Number(it.qs) ? Number(it.qs).toLocaleString('id-ID') : '0'}</span> : <Input type="number" min={0} step="any" value={it.qs} onChange={(e) => updateItem(idx, { qs: e.target.value })} placeholder="0" className="h-9 text-right tabular-nums" aria-label={`QS baris ${idx + 1}`} />}</TableCell>
+                        <TableCell className="align-top">
+                          {/* Update #003: QS bertipe data seperti ID PART — input teks. */}
+                          {readOnly ? <span className="font-mono text-xs">{it.qs || '-'}</span> : <Input value={it.qs} onChange={(e) => updateItem(idx, { qs: e.target.value })} placeholder="Kode QS" maxLength={100} className="h-9 font-mono text-xs" aria-label={`QS baris ${idx + 1}`} />}
+                        </TableCell>
                         <TableCell className="align-top">{readOnly ? supplierOptions.find((s) => s.id === it.supplierId)?.nama || '-' : <SearchableDropdown value={it.supplierId} onValueChange={(v) => updateItem(idx, { supplierId: v })} options={supplierDropdownOptions} allOption={{ id: '', label: 'Tanpa supplier' }} placeholder="Pilih supplier..." searchPlaceholder="Cari supplier..." loading={dropdownsLoading} compact className="text-left" />}</TableCell>
-                        <TableCell className="align-top">{readOnly ? it.keterangan || '-' : <Input value={it.keterangan} onChange={(e) => updateItem(idx, { keterangan: e.target.value })} placeholder="Keterangan" className="h-9" aria-label={`KETERANGAN baris ${idx + 1}`} />}</TableCell>
+                        {/* ── KETERANGAN — dua sub-kolom: ORDER (kiri) & STOK (kanan) ── */}
+                        <TableCell className="align-top">{readOnly ? it.keteranganOrder || '-' : <Input value={it.keteranganOrder} onChange={(e) => updateItem(idx, { keteranganOrder: e.target.value })} placeholder="Keterangan order" className="h-9" aria-label={`KETERANGAN ORDER baris ${idx + 1}`} />}</TableCell>
+                        <TableCell className="align-top">{readOnly ? it.keteranganStok || '-' : <Input value={it.keteranganStok} onChange={(e) => updateItem(idx, { keteranganStok: e.target.value })} placeholder="Keterangan stok" className="h-9" aria-label={`KETERANGAN STOK baris ${idx + 1}`} />}</TableCell>
                         {!readOnly && (
                           <TableCell className="align-top">
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive" onClick={() => removeItem(idx)} title={`Hapus baris ${idx + 1}`} aria-label={`Hapus baris ${idx + 1}`}>
@@ -702,7 +729,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                   </Button>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">QTY = jumlah yang di-order · QS = Quantity Stok (jumlah stok tersedia) · Supplier opsional per baris.</p>
+              <p className="text-xs text-muted-foreground">QTY = jumlah yang di-order · QS = kode stok/part (tipe seperti ID PART) · Keterangan Order/Stok opsional per baris.</p>
             </div>
 
             {/* ── Bawah tabel: Note (kiri) + tanda tangan 4 kolom (kanan) ── */}
@@ -729,21 +756,29 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
             {/* ── Legenda distribusi salinan ── */}
             <ColorLegend />
 
-            {/* ── Bar aksi ── */}
+            {/* ── Bar aksi (update #003 — workflow baru tanpa persetujuan):
+                create → Simpan; DRAFT → Simpan Perubahan + Buat ROP + Hapus;
+                final (DIBUAT) → Cetak + Batalkan Dokumen ── */}
             <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
               {mode === 'create' && (
                 <div className="mr-auto">
                   <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Request Order Part" />
                 </div>
               )}
-              <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting || approving || canceling}>
+              <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting || membuat || canceling}>
                 Tutup
               </Button>
 
               {mode === 'create' && can(PERM.create) && (
                 <Button onClick={handleSubmitCreate} disabled={submitting} className="gap-2">
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  <FileText className="h-4 w-4" /> Simpan Draft
+                  <FileText className="h-4 w-4" /> Simpan
+                </Button>
+              )}
+
+              {mode !== 'create' && !readOnly && can(PERM.print) && (
+                <Button variant="outline" onClick={handlePrint} className="gap-2">
+                  <Printer className="h-4 w-4" /> Cetak
                 </Button>
               )}
 
@@ -754,22 +789,24 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                 </Button>
               )}
 
-              {mode !== 'create' && !readOnly && detail?.status === 'DRAFT' && can(PERM.approve) && (
-                <Button onClick={() => setApproveOpen(true)} disabled={approving || submitting} className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
-                  {approving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  <CheckCircle className="h-4 w-4" /> Setujui
+              {/* DRAFT → aksi Buat ROP (finalisasi) berdampingan dengan Hapus */}
+              {mode !== 'create' && !readOnly && detail?.status === 'DRAFT' && can(PERM.buat) && (
+                <Button onClick={() => setBuatOpen(true)} disabled={membuat || submitting} className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
+                  {membuat && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <CheckCircle className="h-4 w-4" /> Buat ROP
                 </Button>
               )}
 
-              {mode !== 'create' && can(PERM.print) && (
+              {/* DRAFT → Hapus (hard delete draft). Final → Batalkan Dokumen. */}
+              {mode !== 'create' && can(PERM.cancel) && (
+                <Button variant="destructive" onClick={() => setCancelOpen(true)} disabled={canceling || membuat || submitting} className="gap-2">
+                  <Trash2 className="h-4 w-4" /> {readOnly ? 'Batalkan Dokumen' : 'Hapus'}
+                </Button>
+              )}
+
+              {mode !== 'create' && readOnly && can(PERM.print) && (
                 <Button variant="outline" onClick={handlePrint} className="gap-2">
                   <Printer className="h-4 w-4" /> Cetak
-                </Button>
-              )}
-
-              {mode !== 'create' && can(PERM.cancel) && (
-                <Button variant="destructive" onClick={() => setCancelOpen(true)} disabled={canceling || approving || submitting} className="gap-2">
-                  Batalkan Dokumen
                 </Button>
               )}
             </div>
@@ -777,41 +814,41 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
         </Card>
       )}
 
-      {/* ── Dialog konfirmasi Setujui ── */}
-      <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
+      {/* ── Dialog konfirmasi Buat ROP (finalisasi — update #003) ── */}
+      <AlertDialog open={buatOpen} onOpenChange={setBuatOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-emerald-600" />
-              Setujui dokumen ROP ini?
+              Buat dokumen ROP ini?
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="text-left">
                 <span className="block">
-                  Dokumen <strong>{detail?.noRop}</strong> akan diubah statusnya menjadi <strong>DISETUJUI</strong>. Setelah disetujui, dokumen terkunci dan tidak dapat diedit lagi.
+                  Dokumen <strong>{detail?.noRop}</strong> akan dibuat (final). Setelah dibuat, dokumen terkunci dan tidak dapat diedit lagi.
                 </span>
                 <span className="mt-1 block text-muted-foreground">Pastikan seluruh item part dan blok tanda tangan sudah benar sebelum melanjutkan.</span>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={approving}>Batal</AlertDialogCancel>
+            <AlertDialogCancel disabled={membuat}>Batal</AlertDialogCancel>
             <AlertDialogAction
               className="gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
-              disabled={approving}
+              disabled={membuat}
               onClick={(e) => {
                 e.preventDefault(); // jangan tutup otomatis — biarkan handler yang menutup setelah sukses
-                void handleApprove();
+                void handleBuat();
               }}>
-              {approving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Ya, Setujui
+              {membuat && <Loader2 className="h-4 w-4 animate-spin" />}
+              Ya, Buat ROP
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Dialog alasan pembatalan (hard delete) ── */}
-      <HardDeleteCancelDialog open={cancelOpen} onOpenChange={setCancelOpen} title="Batalkan Dokumen ROP?" formLabel={`ROP ${detail?.noRop || ''}`} submitting={canceling} onConfirm={handleCancelDoc} />
+      {/* ── Dialog alasan penghapusan (hard delete) — DRAFT: "Hapus", final: "Batalkan" ── */}
+      <HardDeleteCancelDialog open={cancelOpen} onOpenChange={setCancelOpen} title={readOnly ? 'Batalkan Dokumen ROP?' : 'Hapus ROP?'} formLabel={`ROP ${detail?.noRop || ''}`} submitting={canceling} onConfirm={handleCancelDoc} />
     </FormTabShell>
   );
 }
