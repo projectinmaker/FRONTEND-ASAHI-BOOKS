@@ -151,7 +151,7 @@ function mapPengirimanData(d: PengirimanBarangResponse): PengirimanData {
     // Update ASAHI — alamat perusahaan di bawah nama "Kirim ke" diambil dari
     // master data pelanggan; fallback ke alamat pengiriman manual bila master kosong.
     alamatPenerima: d.pelanggan?.alamat || d.alamatPengiriman || '',
-    ekspedisi: d.ekspedisi || '',
+    // Update #004: field Ekspedisi dihapus dari dokumen DO.
     // Update #4: No SO + No PO customer dari SO ter-link pengiriman.
     noSo: d.salesOrder?.noPesanan || '',
     noPo: d.salesOrder?.customerPoNumber || '',
@@ -245,13 +245,12 @@ function mapInvoiceData(d: SalesInvoiceResponse): InvoiceData {
     tanggal: d.tanggal || '',
     kepada: d.pelanggan?.nama || '',
     alamatPenerima: d.alamatPengiriman || '',
-    syaratPembayaran: d.syaratBayar?.nama || '',
-    ekspedisi: d.ekspedisi || '',
-    tanggalPengiriman: d.tanggalPengiriman || '',
-    // Update #4: No SO + No PO customer dari SO ter-link + No Surat Jalan ter-link invoice.
+    // Update #004: Syarat Pembayaran / Ekspedisi / Tanggal Pengiriman dihapus
+    //     dari dokumen invoice.
+    // Update #4: No SO + No PO customer dari SO ter-link + No DO ter-link invoice.
     noSo: d.salesOrder?.noPesanan || '',
     noPo: d.salesOrder?.customerPoNumber || '',
-    noSuratJalan: d.noSuratJalan || '',
+    noDo: d.noSuratJalan || '',
     mataUang: d.mataUang || 'IDR',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,

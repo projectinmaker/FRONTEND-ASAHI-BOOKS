@@ -1134,6 +1134,35 @@ export interface SalesOrderSisaResponse {
   details: SalesOrderSisaDetail[];
 }
 
+// ── Update #004: sisa DO (tarik No DO di form Invoice — mirror pola No SO) ──
+export interface PengirimanSisaDetail {
+  deliveryDetailId: string;
+  salesOrderDetailId?: string | null;
+  barangId: string;
+  kodeBarang: string | null;
+  namaBarang: string | null;
+  satuanId?: string | null;
+  satuanNama?: string | null;
+  qtyKirim: number;
+  qtyTerfaktur: number;
+  sisaFaktur: number;
+  harga: number;
+  diskon: number;
+}
+
+export interface PengirimanSisaResponse {
+  pengirimanId: string;
+  noSuratJalan: string;
+  tanggal: string;
+  salesOrderId: string;
+  noPesanan?: string | null;
+  pelangganId: string;
+  pelangganNama?: string | null;
+  alamatPengiriman?: string | null;
+  gudangId?: string | null;
+  details: PengirimanSisaDetail[];
+}
+
 export interface PurchaseOrderSisaDetail {
   purchaseOrderDetailId: string;
   barangId: string;
@@ -1487,13 +1516,12 @@ export interface SalesInvoiceDetailResponse extends SalesInvoiceDetailCreate {
 export interface SalesInvoiceCreate {
   tanggal: string;
   pelangganId: string;
-  syaratBayarId?: string | null;
+  // === Update #004: syaratBayarId / ekspedisi / tanggalPengiriman / diskonGlobal
+  //     dihapus dari form invoice (field dokumen dihapus sesuai catatan user).
+  //     Backend tetap menerima field tsb (opsional) demi kompatibilitas. ===
   salesOrderId?: string | null;
-  ekspedisi?: string | null;
-  tanggalPengiriman?: string | null;
   alamatPengiriman?: string | null;
   mataUang?: string;
-  diskonGlobal?: number | null;
   ppn?: number;
   // === Update ASAHI — pilihan PPh23/PPN (bisa keduanya/salah satu/tidak sama sekali) ===
   ppnApplicable?: boolean;
@@ -1508,13 +1536,10 @@ export interface SalesInvoiceCreate {
 export interface SalesInvoiceUpdate {
   tanggal?: string;
   pelangganId?: string;
-  syaratBayarId?: string | null;
+  // === Update #004: field berikut tidak lagi dikirim form (lihat SalesInvoiceCreate) ===
   salesOrderId?: string | null;
-  ekspedisi?: string | null;
-  tanggalPengiriman?: string | null;
   alamatPengiriman?: string | null;
   mataUang?: string;
-  diskonGlobal?: number | null;
   ppn?: number;
   // === Update ASAHI — pilihan PPh23/PPN ===
   ppnApplicable?: boolean;
@@ -1662,7 +1687,7 @@ export interface PengirimanBarangCreate {
   salesOrderId: string;
   pelangganId: string;
   gudangId?: string | null;
-  ekspedisi?: string | null;
+  // === Update #004: field Ekspedisi dihapus dari form DO (backend tetap opsional) ===
   alamatPengiriman?: string | null;
   keterangan?: string | null;
   details: PengirimanBarangDetailCreate[];
@@ -1673,7 +1698,6 @@ export interface PengirimanBarangUpdate {
   salesOrderId?: string;
   pelangganId?: string;
   gudangId?: string | null;
-  ekspedisi?: string | null;
   alamatPengiriman?: string | null;
   keterangan?: string | null;
 }

@@ -43,7 +43,7 @@ import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workfl
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { useInvoiceSaldos } from '@/lib/use-invoice-saldos';
-import type { SalesOrderResponse, SalesOrderSisaResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+import type { SalesOrderResponse, SalesOrderSisaResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PengirimanSisaResponse, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -134,6 +134,8 @@ interface FormDetailRow {
   satuanNama: string;
   // === Fix persist salesOrderDetailId: link baris DO ke line SO ===
   salesOrderDetailId?: string;
+  // === Update #004: link baris invoice ke line DO (tarik No DO) ===
+  deliveryDetailId?: string;
 }
 
 interface FormBiayaRow {
@@ -157,7 +159,7 @@ interface PengirimanDraftData {
   pelangganId: string;
   gudangId: string;
   tanggal: string;
-  ekspedisi: string;
+  // Update #004: ekspedisi dihapus dari form DO
   alamatPengiriman: string;
   keterangan: string;
   detail: FormDetailRow[];
@@ -166,12 +168,12 @@ interface PengirimanDraftData {
 interface InvoicePenjualanDraftData {
   pelangganId: string;
   salesOrderId: string;
+  // Update #004: No DO terpilih (tarik data DO → invoice)
+  pengirimanId: string;
   tanggal: string;
-  syaratBayarId: string;
-  ekspedisi: string;
-  tanggalPengiriman: string;
+  // Update #004: syaratBayarId / ekspedisi / tanggalPengiriman / diskonGlobal
+  //     dihapus dari form invoice
   alamatPengiriman: string;
-  diskonGlobal: string;
   ppn: string;
   // === Update ASAHI — pilihan PPh23/PPN (bisa keduanya/salah satu/tidak sama sekali) ===
   ppnApplicable: boolean;
@@ -197,7 +199,9 @@ interface ReturPenjualanDraftData {
 
 // ─── Detail Table With Price (for SO / Invoice / Retur forms) ──────────────
 
-function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[] }) {
+function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean }) {
+  // Update #004: hideDiskon — invoice tidak lagi menampilkan kolom Diskon %
+  // (dokumen invoice tanpa diskon; payload mengirim diskon null).
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
   const updateRow = useCallback(
@@ -222,6 +226,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDeta
   const subtotal = rows.reduce((s, r) => {
     const q = parseFloat(r.qty) || 0;
     const h = parseFloat(r.harga) || 0;
+    if (hideDiskon) return s + q * h;
     const d = parseFloat(r.diskon) || 0;
     return s + q * h * (1 - d / 100);
   }, 0);
@@ -236,7 +241,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDeta
               <TableHead className="min-w-[200px]">Nama Barang</TableHead>
               <TableHead className="w-[120px] text-right">Harga Satuan</TableHead>
               <TableHead className="w-[80px] text-right">Qty</TableHead>
-              <TableHead className="w-[90px] text-right">Diskon %</TableHead>
+              {!hideDiskon && <TableHead className="w-[90px] text-right">Diskon %</TableHead>}
               <TableHead className="w-[140px] text-right">Subtotal</TableHead>
               <TableHead className="w-[40px]" />
             </TableRow>
@@ -245,7 +250,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDeta
             {rows.map((row) => {
               const q = parseFloat(row.qty) || 0;
               const h = parseFloat(row.harga) || 0;
-              const d = parseFloat(row.diskon) || 0;
+              const d = hideDiskon ? 0 : parseFloat(row.diskon) || 0;
               const rowSub = q * h * (1 - d / 100);
               return (
                 <TableRow key={row.id}>
@@ -259,9 +264,11 @@ function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDeta
                   <TableCell>
                     <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} />
                   </TableCell>
-                  <TableCell>
-                    <Input type="number" className="h-8 text-right text-xs" value={row.diskon} min={0} max={100} onChange={(e) => updateRow(row.id, 'diskon', e.target.value)} />
-                  </TableCell>
+                  {!hideDiskon && (
+                    <TableCell>
+                      <Input type="number" className="h-8 text-right text-xs" value={row.diskon} min={0} max={100} onChange={(e) => updateRow(row.id, 'diskon', e.target.value)} />
+                    </TableCell>
+                  )}
                   <TableCell className="text-right font-mono text-xs font-medium">{formatRp(rowSub)}</TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
@@ -273,7 +280,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions }: { rows: FormDeta
             })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="h-16 text-center text-muted-foreground">
+                <TableCell colSpan={hideDiskon ? 6 : 7} className="h-16 text-center text-muted-foreground">
                   Belum ada item. Klik "+ Tambah Baris" untuk menambahkan.
                 </TableCell>
               </TableRow>
@@ -372,6 +379,10 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
 
   const totalQty = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
   const jumlahBarang = rows.length;
+  // Update #004: Total Kuantitas & Jumlah Barang tidak lagi ditampilkan di form DO
+  // (disimpan hanya untuk kompatibilitas linter; tidak dirender).
+  void totalQty;
+  void jumlahBarang;
 
   return (
     <div className="space-y-3">
@@ -423,18 +434,10 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center">
         <Button variant="outline" size="sm" className="h-8 text-xs" onClick={addRow}>
           <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Baris
         </Button>
-        <div className="flex gap-6 text-sm">
-          <span>
-            Total Kuantitas: <strong>{totalQty}</strong>
-          </span>
-          <span>
-            Jumlah Barang: <strong>{jumlahBarang}</strong>
-          </span>
-        </div>
       </div>
     </div>
   );
@@ -576,7 +579,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
   const [fPelangganId, setFPelangganId] = useState('');
   const [fGudangId, setFGudangId] = useState('');
   const [fTanggal, setFTanggal] = useState(todayStr());
-  const [fEkspedisi, setFEkspedisi] = useState('');
+  // Update #004: field Ekspedisi dihapus dari form DO.
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
@@ -596,7 +599,6 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     setFPelangganId(d.pelangganId || '');
     setFGudangId(d.gudangId || '');
     setFTanggal(d.tanggal || todayStr());
-    setFEkspedisi(d.ekspedisi || '');
     setFAlamatPengiriman(d.alamatPengiriman || '');
     setFKeterangan(d.keterangan || '');
     setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
@@ -618,12 +620,11 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
       pelangganId: fPelangganId,
       gudangId: fGudangId,
       tanggal: fTanggal,
-      ekspedisi: fEkspedisi,
       alamatPengiriman: fAlamatPengiriman,
       keterangan: fKeterangan,
       detail: fDetail
     });
-  }, [fSalesOrderId, fPelangganId, fGudangId, fTanggal, fEkspedisi, fAlamatPengiriman, fKeterangan, fDetail]);
+  }, [fSalesOrderId, fPelangganId, fGudangId, fTanggal, fAlamatPengiriman, fKeterangan, fDetail]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
@@ -632,7 +633,6 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     setFPelangganId('');
     setFGudangId('');
     setFTanggal(todayStr());
-    setFEkspedisi('');
     setFAlamatPengiriman('');
     setFKeterangan('');
     setFDetail([newDetailRow()]);
@@ -721,7 +721,6 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
         salesOrderId: fSalesOrderId,
         pelangganId: fPelangganId,
         gudangId: fGudangId || null,
-        ekspedisi: fEkspedisi || null,
         alamatPengiriman: fAlamatPengiriman || null,
         keterangan: fKeterangan || null,
         details
@@ -736,7 +735,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     } finally {
       setSubmitting(false);
     }
-  }, [fSalesOrderId, fPelangganId, fGudangId, fTanggal, fEkspedisi, fAlamatPengiriman, fKeterangan, fDetail, subPage, activeTabId, closeTab, refreshListTab, handleStockError]);
+  }, [fSalesOrderId, fPelangganId, fGudangId, fTanggal, fAlamatPengiriman, fKeterangan, fDetail, subPage, activeTabId, closeTab, refreshListTab, handleStockError]);
 
   if (ddLoading) {
     return (
@@ -773,7 +772,8 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Tanggal</Label>
+              {/* Update #004: label "Tanggal" → "Tanggal Pengiriman". */}
+              <Label className="text-xs font-medium">Tanggal Pengiriman</Label>
               <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} />
               {formErrors.tanggal && <p className="text-xs text-destructive">{formErrors.tanggal}</p>}
             </div>
@@ -785,17 +785,12 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               {formErrors.gudangId && <p className="text-xs text-destructive">{formErrors.gudangId}</p>}
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Ekspedisi</Label>
-              <Input className="h-9 text-xs" value={fEkspedisi} onChange={(e) => setFEkspedisi(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-              {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
-              <Textarea className="text-xs min-h-[48px]" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
-              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
-            </div>
+          <div className="space-y-1.5">
+            {/* Update #004: field Ekspedisi dihapus; Alamat Pengiriman jadi baris penuh. */}
+            <Label className="text-xs font-medium">Alamat Pengiriman</Label>
+            {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+            <Textarea className="text-xs min-h-[48px]" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
+            <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
           </div>
           <Separator />
           <div className="space-y-1.5">
@@ -854,7 +849,7 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
   const [editPelangganId, setEditPelangganId] = useState('');
   const [editGudangId, setEditGudangId] = useState('');
   const [editTanggal, setEditTanggal] = useState('');
-  const [editEkspedisi, setEditEkspedisi] = useState('');
+  // Update #004: field Ekspedisi dihapus dari form DO (edit).
   const [editAlamatPengiriman, setEditAlamatPengiriman] = useState('');
   const [editKeterangan, setEditKeterangan] = useState('');
 
@@ -873,7 +868,6 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
         setEditPelangganId(p.pelangganId || '');
         setEditGudangId(p.gudangId || '');
         setEditTanggal(p.tanggal ? p.tanggal.slice(0, 10) : '');
-        setEditEkspedisi(p.ekspedisi || '');
         setEditAlamatPengiriman(p.alamatPengiriman || '');
         setEditKeterangan(p.keterangan || '');
       } catch (e) {
@@ -914,7 +908,6 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
         salesOrderId: editSalesOrderId || undefined,
         pelangganId: editPelangganId,
         gudangId: editGudangId || null,
-        ekspedisi: editEkspedisi || null,
         alamatPengiriman: editAlamatPengiriman || null,
         keterangan: editKeterangan || null
       };
@@ -927,7 +920,7 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
     } finally {
       setEditSubmitting(false);
     }
-  }, [editId, editPelangganId, editGudangId, editTanggal, editSalesOrderId, editEkspedisi, editAlamatPengiriman, editKeterangan, subPage, activeTabId, closeTab, refreshListTab, recordError, handleStockError]);
+  }, [editId, editPelangganId, editGudangId, editTanggal, editSalesOrderId, editAlamatPengiriman, editKeterangan, subPage, activeTabId, closeTab, refreshListTab, recordError, handleStockError]);
 
   return (
     <FormTabShell title="Edit Pengiriman Barang">
@@ -948,7 +941,8 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
               <div className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-4 py-3">
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Info className="h-3.5 w-3.5" />
-                  <span>No Surat Jalan:</span>
+                  {/* Update #004: label "No Surat Jalan" → "No Pengiriman". */}
+                  <span>No Pengiriman:</span>
                   <span className="font-mono font-semibold text-foreground">{editNoSuratJalan}</span>
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -970,7 +964,8 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Tanggal</Label>
+                  {/* Update #004: label "Tanggal" → "Tanggal Pengiriman". */}
+                  <Label className="text-xs font-medium">Tanggal Pengiriman</Label>
                   <Input type="date" className="h-9 text-xs" value={editTanggal} onChange={(e) => setEditTanggal(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
@@ -980,17 +975,12 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                   <SearchableDropdown value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Ekspedisi</Label>
-                  <Input className="h-9 text-xs" value={editEkspedisi} onChange={(e) => setEditEkspedisi(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-                  {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
-                  <Textarea className="text-xs min-h-[48px]" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
-                  <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
-                </div>
+              <div className="space-y-1.5">
+                {/* Update #004: field Ekspedisi dihapus; Alamat Pengiriman jadi baris penuh. */}
+                <Label className="text-xs font-medium">Alamat Pengiriman</Label>
+                {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+                <Textarea className="text-xs min-h-[48px]" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
+                <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
               </div>
               <Separator />
               <div className="space-y-2">
@@ -1054,7 +1044,8 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
 // ═════════════════════════════════════════════════════════════════════════════
 
 function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
-  const { pelangganOptions, syaratBayarOptions, barangOptions, salesOrderOptions, loading: ddLoading } = useDropdowns();
+  // Update #004: + pengirimanOptions (tarik No DO); syaratBayarOptions tidak dipakai lagi.
+  const { pelangganOptions, barangOptions, salesOrderOptions, pengirimanOptions, loading: ddLoading } = useDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -1064,12 +1055,13 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
 
   const [fPelangganId, setFPelangganId] = useState('');
   const [fSalesOrderId, setFSalesOrderId] = useState('');
+  // === Update #004: pilihan No DO — tarik data DO ke table invoice
+  //     (mirror pola Link ke Sales Order; link per baris via deliveryDetailId). ===
+  const [fPengirimanId, setFPengirimanId] = useState('');
   const [fTanggal, setFTanggal] = useState(todayStr());
-  const [fSyaratBayarId, setFSyaratBayarId] = useState('');
-  const [fEkspedisi, setFEkspedisi] = useState('');
-  const [fTanggalPengiriman, setFTanggalPengiriman] = useState('');
+  // Update #004: Syarat Pembayaran / Ekspedisi / Tanggal Pengiriman / Diskon
+  // Global dihapus dari form invoice (sesuai catatan user).
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
-  const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
   const [fPpn, setFPpn] = useState('11');
   // === Update ASAHI — pilihan PPh23/PPN saat input SI (bisa keduanya,
   // salah satu, atau tidak sama sekali) ===
@@ -1080,6 +1072,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
   const [soLoading, setSoLoading] = useState(false);
+  const [doLoading, setDoLoading] = useState(false);
   // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
   const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
 
@@ -1094,14 +1087,14 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     }
   }, []);
 
-  // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis
-  // dari master (memilih SO setelahnya tetap menimpa dengan data SO). ──
+  // ── Update #4: pilih pelanggan → alamat ditarik otomatis
+  // dari master (memilih SO/DO setelahnya tetap menimpa dengan datanya).
+  // Update #004: syarat bayar tidak lagi ditarik (field dihapus dari invoice). ──
   const handlePelangganChange = useCallback(
     (id: string) => {
       setFPelangganId(id);
       const master = findPartyMaster(pelangganOptions, id);
       setFAlamatPengiriman(master?.alamat || '');
-      if (master?.syaratBayarId) setFSyaratBayarId(master.syaratBayarId);
     },
     [pelangganOptions]
   );
@@ -1118,12 +1111,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     if (!d) return;
     setFPelangganId(d.pelangganId || '');
     setFSalesOrderId(d.salesOrderId || '');
+    setFPengirimanId(d.pengirimanId || '');
     setFTanggal(d.tanggal || todayStr());
-    setFSyaratBayarId(d.syaratBayarId || '');
-    setFEkspedisi(d.ekspedisi || '');
-    setFTanggalPengiriman(d.tanggalPengiriman || '');
     setFAlamatPengiriman(d.alamatPengiriman || '');
-    setFDiskonGlobal(d.diskonGlobal ?? '0');
     setFPpn(d.ppn ?? '11');
     setFPpnApplicable(d.ppnApplicable ?? true);
     setFPph23Applicable(d.pph23Applicable ?? false);
@@ -1149,12 +1139,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     draft.saveDraft({
       pelangganId: fPelangganId,
       salesOrderId: fSalesOrderId,
+      pengirimanId: fPengirimanId,
       tanggal: fTanggal,
-      syaratBayarId: fSyaratBayarId,
-      ekspedisi: fEkspedisi,
-      tanggalPengiriman: fTanggalPengiriman,
       alamatPengiriman: fAlamatPengiriman,
-      diskonGlobal: fDiskonGlobal,
       ppn: fPpn,
       ppnApplicable: fPpnApplicable,
       pph23Applicable: fPph23Applicable,
@@ -1163,20 +1150,17 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       detail: fDetail,
       biayaTambahan: fBiayaTambahan
     });
-  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDetail, fBiayaTambahan]);
+  }, [fPelangganId, fSalesOrderId, fPengirimanId, fTanggal, fAlamatPengiriman, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDetail, fBiayaTambahan]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
     draft.clearDraft();
     setFPelangganId('');
     setFSalesOrderId('');
+    setFPengirimanId('');
     setSoRefInfo(null);
     setFTanggal(todayStr());
-    setFSyaratBayarId('');
-    setFEkspedisi('');
-    setFTanggalPengiriman('');
     setFAlamatPengiriman('');
-    setFDiskonGlobal('0');
     setFPpn('11');
     setFPpnApplicable(true);
     setFPph23Applicable(false);
@@ -1197,6 +1181,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const handleSalesOrderChange = useCallback(
     async (soId: string) => {
       setFSalesOrderId(soId);
+      // Update #004: ganti SO → lepas pilihan No DO (sumber baris tabel berubah).
+      setFPengirimanId('');
       if (!soId) {
         setSoRefInfo(null);
         return;
@@ -1218,7 +1204,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               barangNama: d.namaBarang || '',
               harga: String(d.harga ?? 0),
               qty: String(d.sisaFaktur),
-              diskon: String(d.diskon ?? 0),
+              // Update #004: invoice tanpa diskon — kolom Diskon dihapus.
+              diskon: '0',
               satuanId: d.satuanId || '',
               satuanNama: d.satuanNama || '',
               salesOrderDetailId: d.salesOrderDetailId
@@ -1235,13 +1222,73 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     [loadSoRefInfo]
   );
 
+  // === Update #004: Tarik data otomatis No DO → Invoice Penjualan — mirror
+  // pola "Link ke Sales Order": saat No DO dipilih, ambil SISA qty per baris DO
+  // (endpoint /pengiriman/{id}/sisa), auto-set pelanggan + header SO (agar No SO
+  // / No PO tercetak), dan prefill hanya baris dengan sisaFaktur > 0.
+  // Baris ter-link mengirim deliveryDetailId (dan salesOrderDetailId bila ada)
+  // sehingga No DO tercetak di dokumen + validasi over-invoice aktif. ===
+  const handlePengirimanChange = useCallback(
+    async (doId: string) => {
+      setFPengirimanId(doId);
+      if (!doId) return;
+      setDoLoading(true);
+      try {
+        const sisa = await api.get<PengirimanSisaResponse>(`/penjualan/pengiriman/${doId}/sisa`);
+        setFPelangganId(sisa.pelangganId || '');
+        if (sisa.alamatPengiriman) setFAlamatPengiriman(sisa.alamatPengiriman);
+        // Auto-link header SO dari DO (No SO & No PO customer ikut tercetak).
+        if (sisa.salesOrderId) {
+          setFSalesOrderId(sisa.salesOrderId);
+          await loadSoRefInfo(sisa.salesOrderId);
+        } else {
+          setFSalesOrderId('');
+          setSoRefInfo(null);
+        }
+        const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+        if (rows.length === 0) {
+          toast.info('Semua baris DO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk DO ini.' });
+          setFDetail([]);
+        } else {
+          setFDetail(
+            rows.map((d) => ({
+              id: crypto.randomUUID(),
+              barangId: d.barangId,
+              kodeBarang: d.kodeBarang || '',
+              barangNama: d.namaBarang || '',
+              harga: String(d.harga ?? 0),
+              qty: String(d.sisaFaktur),
+              // Update #004: invoice tanpa diskon — kolom Diskon dihapus.
+              diskon: '0',
+              satuanId: d.satuanId || '',
+              satuanNama: d.satuanNama || '',
+              salesOrderDetailId: d.salesOrderDetailId || undefined,
+              deliveryDetailId: d.deliveryDetailId
+            }))
+          );
+        }
+      } catch {
+        // Gagal memuat sisa DO — biarkan user isi baris manual
+      } finally {
+        setDoLoading(false);
+      }
+    },
+    [loadSoRefInfo]
+  );
+
+  // Update #004: opsi No DO difilter per pelanggan terpilih (bila ada).
+  const doOptions = useMemo(
+    () => (fPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === fPelangganId) : pengirimanOptions),
+    [pengirimanOptions, fPelangganId]
+  );
+
   const formSubtotal = useMemo(
     () =>
       fDetail.reduce((s, r) => {
+        // Update #004: invoice tanpa diskon — subtotal baris = qty × harga.
         const q = parseFloat(r.qty) || 0;
         const h = parseFloat(r.harga) || 0;
-        const d = parseFloat(r.diskon) || 0;
-        return s + q * h * (1 - d / 100);
+        return s + q * h;
       }, 0),
     [fDetail]
   );
@@ -1264,9 +1311,10 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         .map((r) => {
           const qty = parseFloat(r.qty) || 0;
           const harga = parseFloat(r.harga) || 0;
-          const diskon = parseFloat(r.diskon) || 0;
-          // Task 16-c2: link per baris ke line SO (bila baris ditarik dari SO).
-          return { barangId: r.barangId, harga, qty, diskon: diskon || null, subTotal: qty * harga * (1 - diskon / 100), salesOrderDetailId: r.salesOrderDetailId || null };
+          // Update #004: invoice tanpa diskon — diskon dikirim null.
+          // Task 16-c2 / #004: link per baris ke line SO dan/atau line DO
+          // (bila baris ditarik dari SO / No DO).
+          return { barangId: r.barangId, harga, qty, diskon: null, subTotal: qty * harga, salesOrderDetailId: r.salesOrderDetailId || null, deliveryDetailId: r.deliveryDetailId || null };
         });
       const biaya: TransaksiBiayaCreate[] = fBiayaTambahan
         .filter((b) => b.nama)
@@ -1278,12 +1326,10 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         autoPostJurnal: false,
         tanggal: fTanggal,
         pelangganId: fPelangganId,
-        syaratBayarId: fSyaratBayarId || null,
+        // Update #004: syaratBayarId / ekspedisi / tanggalPengiriman /
+        // diskonGlobal tidak lagi dikirim (field dihapus dari dokumen invoice).
         salesOrderId: fSalesOrderId || null,
-        ekspedisi: fEkspedisi || null,
-        tanggalPengiriman: fTanggalPengiriman || null,
         alamatPengiriman: fAlamatPengiriman || null,
-        diskonGlobal: parseFloat(fDiskonGlobal) || null,
         ppn: parseFloat(fPpn) || 0,
         // === Update ASAHI — pilihan PPh23/PPN ===
         ppnApplicable: fPpnApplicable,
@@ -1303,7 +1349,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     } finally {
       setSubmitting(false);
     }
-  }, [fPelangganId, fSalesOrderId, fTanggal, fSyaratBayarId, fEkspedisi, fTanggalPengiriman, fAlamatPengiriman, fDiskonGlobal, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [fPelangganId, fSalesOrderId, fTanggal, fAlamatPengiriman, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
 
   if (ddLoading) {
     return (
@@ -1329,17 +1375,14 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
             <div className="space-y-1.5">
+              {/* Update #004: label "Tanggal" → "Tanggal Invoice". */}
               <Label className="text-xs font-medium">
-                Tanggal <span className="text-destructive">*</span>
+                Tanggal Invoice <span className="text-destructive">*</span>
               </Label>
               <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Syarat Pembayaran</Label>
-              <SearchableDropdown value={fSyaratBayarId} onValueChange={setFSyaratBayarId} options={syaratBayarOptions.map((s) => ({ id: s.id, label: s.nama, subtitle: s.hari ? s.hari + ' hari' : undefined }))} placeholder="Pilih..." />
-            </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Link ke Sales Order</Label>
               <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." disabled={soLoading} />
@@ -1353,29 +1396,34 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
                 </div>
               )}
             </div>
+            {/* === Update #004: No DO — tarik data DO seperti No SO; baris DO
+                masuk ke table invoice (link deliveryDetailId). === */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">No DO</Label>
+              <SearchableDropdown value={fPengirimanId} onValueChange={handlePengirimanChange} options={doOptions.map((p) => ({ id: p.id, label: p.noSuratJalan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder={fPelangganId ? 'Pilih No DO...' : 'Pilih pelanggan dulu (atau pilih bebas)...'} disabled={doLoading} />
+              {doLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa DO...</p>}
+              {fPengirimanId && (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  No DO: <span className="font-mono font-medium text-foreground">{doOptions.find((p) => p.id === fPengirimanId)?.noSuratJalan || fPengirimanId}</span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Ekspedisi</Label>
-              <Input className="h-9 text-xs" value={fEkspedisi} onChange={(e) => setFEkspedisi(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Tanggal Pengiriman</Label>
-              <Input type="date" className="h-9 text-xs" value={fTanggalPengiriman} onChange={(e) => setFTanggalPengiriman(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-              {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
-              <Textarea className="text-xs min-h-[48px]" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
-              <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
-            </div>
+          <div className="space-y-1.5">
+            {/* Update #004: Ekspedisi & Tanggal Pengiriman dihapus; Alamat
+                Pengiriman jadi baris penuh. */}
+            <Label className="text-xs font-medium">Alamat Pengiriman</Label>
+            {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+            <Textarea className="text-xs min-h-[48px]" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
+            <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
           </div>
           <Separator />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">
               Detail Barang <span className="text-destructive">*</span>
             </Label>
-            <DetailTableWithPrice rows={fDetail} setRows={setFDetail} barangOptions={barangOptions} />
+            {/* Update #004: kolom Diskon % disembunyikan di invoice. */}
+            <DetailTableWithPrice rows={fDetail} setRows={setFDetail} barangOptions={barangOptions} hideDiskon />
             {formErrors.detail && <p className="text-xs text-destructive mt-1">{formErrors.detail}</p>}
           </div>
           <Separator />
@@ -1384,12 +1432,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             <BiayaTambahanTable rows={fBiayaTambahan} setRows={setFBiayaTambahan} />
           </div>
           <Separator />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Diskon Global %</Label>
-              <Input type="number" className="h-9 text-xs" value={fDiskonGlobal} min={0} max={100} onChange={(e) => setFDiskonGlobal(e.target.value)} />
-            </div>
-          </div>
+          {/* Update #004: blok Diskon Global % dihapus dari form invoice. */}
           {/* ── Update ASAHI (PPh23/PPN opsional) — pilih pajak saat input:
               boleh dua-duanya, salah satu, atau tidak sama sekali.
               PPh23 (jika dipilih) memotong grand total. ── */}
@@ -1425,7 +1468,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               </label>
             </div>
           </div>
-          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} ppnApplicable={fPpnApplicable} pph23Applicable={fPph23Applicable} pph23Pct={parseFloat(fPph23) || 0} />
+          {/* Update #004: tanpa diskon global (baris - Diskon tidak tampil). */}
+          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} ppnApplicable={fPpnApplicable} pph23Applicable={fPph23Applicable} pph23Pct={parseFloat(fPph23) || 0} />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
@@ -1453,7 +1497,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialStatus, initialGrandTotal }: { editId: string; subPage: string; initialNoInvoice?: string; initialStatus?: string; initialGrandTotal?: number }) {
-  const { pelangganOptions, syaratBayarOptions, salesOrderOptions, loading: ddLoading } = useDropdowns();
+  // Update #004: syaratBayarOptions tidak dipakai lagi (field dihapus dari invoice).
+  const { pelangganOptions, salesOrderOptions, loading: ddLoading } = useDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -1466,13 +1511,11 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
 
   const [editPelangganId, setEditPelangganId] = useState('');
   const [editTanggal, setEditTanggal] = useState('');
-  const [editSyaratBayarId, setEditSyaratBayarId] = useState('');
   const [editSalesOrderId, setEditSalesOrderId] = useState('');
-  const [editEkspedisi, setEditEkspedisi] = useState('');
-  const [editTanggalPengiriman, setEditTanggalPengiriman] = useState('');
+  // Update #004: Syarat Pembayaran / Ekspedisi / Tanggal Pengiriman / Diskon
+  // Global dihapus dari form invoice (edit).
   const [editAlamatPengiriman, setEditAlamatPengiriman] = useState('');
   const [editMataUang, setEditMataUang] = useState('IDR');
-  const [editDiskonGlobal, setEditDiskonGlobal] = useState('0');
   const [editPpn, setEditPpn] = useState('11');
   // === Update ASAHI — pilihan PPh23/PPN saat edit SI ===
   const [editPpnApplicable, setEditPpnApplicable] = useState(true);
@@ -1505,13 +1548,9 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         setEditGrandTotal(Number(inv.grandTotal));
         setEditPelangganId(inv.pelangganId || '');
         setEditTanggal(inv.tanggal ? inv.tanggal.slice(0, 10) : '');
-        setEditSyaratBayarId(inv.syaratBayarId || '');
         setEditSalesOrderId(inv.salesOrderId || '');
-        setEditEkspedisi(inv.ekspedisi || '');
-        setEditTanggalPengiriman(inv.tanggalPengiriman ? inv.tanggalPengiriman.slice(0, 10) : '');
         setEditAlamatPengiriman(inv.alamatPengiriman || '');
         setEditMataUang(inv.mataUang || 'IDR');
-        setEditDiskonGlobal(String(inv.diskonGlobal ?? 0));
         setEditPpn(String(inv.ppn ?? 0));
         setEditPpnApplicable(inv.ppnApplicable ?? true);
         setEditPph23Applicable(inv.pph23Applicable ?? false);
@@ -1563,13 +1602,13 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     [loadSoRefInfo]
   );
 
-  // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis dari master ──
+  // ── Update #4: pilih pelanggan → alamat ditarik otomatis dari master
+  // Update #004: syarat bayar tidak lagi ditarik (field dihapus dari invoice). ──
   const handleEditPelangganChange = useCallback(
     (id: string) => {
       setEditPelangganId(id);
       const master = findPartyMaster(pelangganOptions, id);
       setEditAlamatPengiriman(master?.alamat || '');
-      if (master?.syaratBayarId) setEditSyaratBayarId(master.syaratBayarId);
     },
     [pelangganOptions]
   );
@@ -1588,13 +1627,12 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
       const body: SalesInvoiceUpdate = {
         tanggal: editTanggal,
         pelangganId: editPelangganId,
-        syaratBayarId: editSyaratBayarId || null,
+        // Update #004: syaratBayarId / ekspedisi / tanggalPengiriman /
+        // diskonGlobal tidak lagi dikirim — nilai lama dibiarkan tersimpan
+        // di backend (tidak tampil di dokumen invoice).
         salesOrderId: editSalesOrderId || null,
-        ekspedisi: editEkspedisi || null,
-        tanggalPengiriman: editTanggalPengiriman || null,
         alamatPengiriman: editAlamatPengiriman || null,
         mataUang: editMataUang || undefined,
-        diskonGlobal: parseFloat(editDiskonGlobal) || null,
         ppn: parseFloat(editPpn) || 0,
         // === Update ASAHI — pilihan PPh23/PPN ===
         ppnApplicable: editPpnApplicable,
@@ -1611,7 +1649,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     } finally {
       setEditSubmitting(false);
     }
-  }, [editId, editPelangganId, editTanggal, editSyaratBayarId, editSalesOrderId, editEkspedisi, editTanggalPengiriman, editAlamatPengiriman, editMataUang, editDiskonGlobal, editPpn, editPpnApplicable, editPph23Applicable, editPph23, editKeterangan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [editId, editPelangganId, editTanggal, editSalesOrderId, editAlamatPengiriman, editMataUang, editPpn, editPpnApplicable, editPph23Applicable, editPph23, editKeterangan, subPage, activeTabId, closeTab, refreshListTab]);
 
   return (
     <FormTabShell title="Edit Invoice Penjualan">
@@ -1648,17 +1686,14 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                   <SearchableDropdown value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
                 </div>
                 <div className="space-y-1.5">
+                  {/* Update #004: label "Tanggal" → "Tanggal Invoice". */}
                   <Label className="text-xs font-medium">
-                    Tanggal <span className="text-destructive">*</span>
+                    Tanggal Invoice <span className="text-destructive">*</span>
                   </Label>
                   <Input type="date" className="h-9 text-xs" value={editTanggal} onChange={(e) => setEditTanggal(e.target.value)} />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Syarat Pembayaran</Label>
-                  <SearchableDropdown value={editSyaratBayarId} onValueChange={setEditSyaratBayarId} options={syaratBayarOptions.map((s) => ({ id: s.id, label: s.nama, subtitle: s.hari ? s.hari + ' hari' : undefined }))} placeholder="Pilih..." />
-                </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Link ke Sales Order</Label>
                   <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." disabled={soLoading} />
@@ -1672,34 +1707,20 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                     </div>
                   )}
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Ekspedisi</Label>
-                  <Input className="h-9 text-xs" value={editEkspedisi} onChange={(e) => setEditEkspedisi(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Tanggal Pengiriman</Label>
-                  <Input type="date" className="h-9 text-xs" value={editTanggalPengiriman} onChange={(e) => setEditTanggalPengiriman(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-                  {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
-                  <Textarea className="text-xs min-h-[48px]" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
-                  <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
-                </div>
-              </div>
-              <Separator />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Mata Uang</Label>
                   <Input className="h-9 text-xs" value={editMataUang} onChange={(e) => setEditMataUang(e.target.value)} placeholder="e.g. IDR" />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Diskon Global %</Label>
-                  <Input type="number" className="h-9 text-xs" value={editDiskonGlobal} min={0} max={100} onChange={(e) => setEditDiskonGlobal(e.target.value)} />
-                </div>
               </div>
+              <div className="space-y-1.5">
+                {/* Update #004: Ekspedisi & Tanggal Pengiriman dihapus; Alamat
+                    Pengiriman jadi baris penuh. */}
+                <Label className="text-xs font-medium">Alamat Pengiriman</Label>
+                {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
+                <Textarea className="text-xs min-h-[48px]" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
+                <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
+              </div>
+              <Separator />
               {/* ── Update ASAHI (PPh23/PPN opsional) — pilih pajak saat edit:
                   boleh dua-duanya, salah satu, atau tidak sama sekali. ── */}
               <div className="space-y-3 rounded-md border p-4">
@@ -2763,7 +2784,8 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead className="w-[140px]">No Surat Jalan</TableHead>
+                    {/* Update #004: kolom "No Surat Jalan" → "No Pengiriman". */}
+                    <TableHead className="w-[140px]">No Pengiriman</TableHead>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
                     <TableHead>Pelanggan</TableHead>
                     <TableHead>Alamat</TableHead>

@@ -556,24 +556,26 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
 
       {/* ── Signatures ── */}
       {/* Update #002: redesign tanda tangan — tiga pihak: Dibuat Oleh,
-          Disetujui Oleh, Diterima oleh (Vendor). Tiap blok: judul, kolom kotak
-          tanda tangan, lalu tanggal di bawah kolom (sesuai catatan user). */}
+          Disetujui Oleh, Diterima oleh (Vendor). Tiap blok: judul, kolom tanda
+          tangan, lalu tanggal di bawah kolom.
+          Update #004: garis kotak pada space tanda tangan dihapus — cukup
+          ruang kosong (sesuai catatan user). */}
       <div className="grid grid-cols-3 gap-6 mt-10" style={{ textAlign: 'center' }}>
         <div>
           <div style={{ fontWeight: 'bold' }}>Dibuat Oleh</div>
-          {/* kolom tanda tangan */}
-          <div style={{ marginTop: '8px', height: '70px', border: '1px solid #333' }} />
-          {/* tanggal di bawah kolom */}
+          {/* space tanda tangan — tanpa garis kotak */}
+          <div style={{ marginTop: '8px', height: '70px' }} />
+          {/* tanggal di bawah space */}
           <div style={{ marginTop: '6px' }}>Tgl. ____________</div>
         </div>
         <div>
           <div style={{ fontWeight: 'bold' }}>Disetujui Oleh</div>
-          <div style={{ marginTop: '8px', height: '70px', border: '1px solid #333' }} />
+          <div style={{ marginTop: '8px', height: '70px' }} />
           <div style={{ marginTop: '6px' }}>Tgl. ____________</div>
         </div>
         <div>
           <div style={{ fontWeight: 'bold' }}>Diterima oleh (Vendor)</div>
-          <div style={{ marginTop: '8px', height: '70px', border: '1px solid #333' }} />
+          <div style={{ marginTop: '8px', height: '70px' }} />
           <div style={{ marginTop: '6px' }}>Tgl. ____________</div>
         </div>
       </div>

@@ -46,7 +46,6 @@ export interface PengirimanData {
   tanggal: string;
   kepada: string;
   alamatPenerima: string;
-  ekspedisi: string;
   // === Update #4 — ganti poNo tunggal → No SO + No PO customer ===
   noSo: string;
   noPo: string;
@@ -59,13 +58,13 @@ export interface InvoiceData {
   tanggal: string;
   kepada: string;
   alamatPenerima: string;
-  syaratPembayaran: string;
-  ekspedisi: string;
-  tanggalPengiriman: string;
-  // === Update #4 — ganti poNo tunggal → No SO / No PO customer / No Surat Jalan ===
+  // === Update #004: Syarat Pembayaran / Ekspedisi / Tanggal Pengiriman dihapus
+  //     dari dokumen invoice (label Tanggal → Tanggal Invoice). ===
+  // === Update #4 — ganti poNo tunggal → No SO / No PO customer / No DO ===
   noSo: string;
   noPo: string;
-  noSuratJalan: string;
+  /** Update #004: dulu "No Surat Jalan" — nomor DO ter-link via delivery detail. */
+  noDo: string;
   mataUang: string;
   detail: DetailRow[];
   biayaTambahan: BiayaTambahan[];
@@ -150,7 +149,7 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // posisinya dikembalikan ke blok footer kiri template (seperti sebelumnya),
 // tetap menyebut TOTAL.
 
-function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0 }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number }) {
+function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0, hideDiskon = false }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number; hideDiskon?: boolean }) {
   const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = diskonGlobal ? (subTotal * diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
@@ -167,10 +166,13 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable 
           <td style={{ ...cellStyle, width: '160px' }}>Sub Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', width: '140px' }}>{formatNumber(subTotal)}</td>
         </tr>
-        <tr>
-          <td style={cellStyle}>Diskon ({diskonGlobal || 0}%)</td>
-          <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(diskonAmt)}</td>
-        </tr>
+        {/* Update #004: baris Diskon setelah Sub Total dihapus dari invoice (hideDiskon). */}
+        {!hideDiskon && (
+          <tr>
+            <td style={cellStyle}>Diskon ({diskonGlobal || 0}%)</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(diskonAmt)}</td>
+          </tr>
+        )}
         {ppnApplicable && (
           <tr>
             <td style={cellStyle}>PPN ({ppn || 0}%)</td>
@@ -201,7 +203,7 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable 
 // ─── Helper: Detail Table with price columns (Invoice / Retur / Penawaran) ───
 // Update #5: + kolom No urut (40px), label qty → "Qty", + kolom Satuan terpisah.
 
-function DetailTableWithPrice({ detail }: { detail: DetailRow[] }) {
+function DetailTableWithPrice({ detail, hideDiskon = false, hideAt = false }: { detail: DetailRow[]; hideDiskon?: boolean; hideAt?: boolean }) {
   return (
     <table style={tableStyle}>
       <thead>
@@ -210,8 +212,10 @@ function DetailTableWithPrice({ detail }: { detail: DetailRow[] }) {
           <th style={headerCellStyle}>Nama Barang</th>
           <th style={{ ...headerCellStyle, width: '50px' }}>Qty</th>
           <th style={{ ...headerCellStyle, width: '90px' }}>Satuan</th>
-          <th style={{ ...headerCellStyle, width: '100px' }}>@Harga</th>
-          <th style={{ ...headerCellStyle, width: '70px' }}>Diskon (%)</th>
+          {/* Update #004: invoice tanpa prefix "@" pada kolom Harga (hideAt). */}
+          <th style={{ ...headerCellStyle, width: '100px' }}>{hideAt ? 'Harga' : '@Harga'}</th>
+          {/* Update #004: kolom Diskon dihapus dari invoice (hideDiskon). */}
+          {!hideDiskon && <th style={{ ...headerCellStyle, width: '70px' }}>Diskon (%)</th>}
           <th style={{ ...headerCellStyle, width: '110px' }}>Total Harga</th>
         </tr>
       </thead>
@@ -225,7 +229,7 @@ function DetailTableWithPrice({ detail }: { detail: DetailRow[] }) {
               <td style={{ ...cellStyle, textAlign: 'center' }}>{formatNumber(row.qty)}</td>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(row.harga)}</td>
-              <td style={{ ...cellStyle, textAlign: 'center' }}>{row.diskon || 0}</td>
+              {!hideDiskon && <td style={{ ...cellStyle, textAlign: 'center' }}>{row.diskon || 0}</td>}
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(totalHarga)}</td>
             </tr>
           );
@@ -364,9 +368,7 @@ export function PesananPDFTemplate({ data }: { data: PesananData }) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
-  const totalQty = data.detail.reduce((s, r) => s + r.qty, 0);
-  const jumlahBarang = data.detail.length;
-
+  // Update #004: Total Kuantitas & Jumlah Barang dihapus dari dokumen DO.
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
@@ -387,9 +389,10 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
           <div style={{ whiteSpace: 'pre-line' }}>{data.alamatPenerima}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-          <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
-          <InfoCell label="Nomor" value={data.nomor} />
-          <InfoCell label="Ekspedisi" value={data.ekspedisi} />
+          {/* Update #004: label Tanggal → Tanggal Pengiriman, Nomor → Nomor
+              Pengiriman; baris Ekspedisi dihapus dari dokumen DO. */}
+          <InfoCell label="Tanggal Pengiriman" value={formatDate(data.tanggal)} />
+          <InfoCell label="Nomor Pengiriman" value={data.nomor} />
           <InfoCell label="No SO" value={data.noSo} />
           <InfoCell label="No PO" value={data.noPo} />
         </div>
@@ -420,50 +423,42 @@ export function PengirimanPDFTemplate({ data }: { data: PengirimanData }) {
       </div>
 
       {/* ── Footer ── */}
-      <div className="grid grid-cols-2 gap-6 mt-4">
-        {/* Left: Keterangan */}
-        <div>
-          {data.keterangan && (
-            <div>
-              <strong>Keterangan:</strong>
-              <div style={{ whiteSpace: 'pre-wrap' }}>{data.keterangan}</div>
-            </div>
-          )}
-        </div>
-
-        {/* Right: Summary stats */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <span>
-              <strong>Total Kuantitas:</strong>
-            </span>
-            <span>{formatNumber(totalQty)}</span>
+      {/* Update #004: ringkasan Total Kuantitas / Jumlah Barang dihapus —
+          hanya Keterangan (opsional) yang tampil. */}
+      <div className="mt-4">
+        {data.keterangan && (
+          <div>
+            <strong>Keterangan:</strong>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{data.keterangan}</div>
           </div>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <span>
-              <strong>Jumlah Barang:</strong>
-            </span>
-            <span>{jumlahBarang}</span>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* ── Signatures ── */}
-      <div className="grid grid-cols-3 gap-4 mt-10" style={{ textAlign: 'center' }}>
+      {/* Update #004: tiga pihak — Disiapkan Oleh, Dikirim Oleh, Diterima Oleh.
+          Tiap blok: judul, space tanda tangan (tanpa garis kotak), lalu Tgl,
+          lalu Nama Lengkap di bawahnya (sesuai catatan user). */}
+      <div className="grid grid-cols-3 gap-6 mt-10" style={{ textAlign: 'center' }}>
         <div>
-          <div>Finance</div>
-          <div style={{ marginTop: '48px' }}>______</div>
-          <div>Tgl.</div>
+          <div style={{ fontWeight: 'bold' }}>Disiapkan Oleh</div>
+          {/* space tanda tangan */}
+          <div style={{ marginTop: '8px', height: '70px' }} />
+          {/* tanggal di bawah space */}
+          <div>Tgl. ____________</div>
+          {/* nama lengkap di bawah tanggal */}
+          <div style={{ marginTop: '2px' }}>Nama Lengkap</div>
         </div>
         <div>
-          <div>Gudang</div>
-          <div style={{ marginTop: '48px' }}>______</div>
-          <div>Tgl.</div>
+          <div style={{ fontWeight: 'bold' }}>Dikirim Oleh</div>
+          <div style={{ marginTop: '8px', height: '70px' }} />
+          <div>Tgl. ____________</div>
+          <div style={{ marginTop: '2px' }}>Nama Lengkap</div>
         </div>
         <div>
-          <div>Penerima</div>
-          <div style={{ marginTop: '48px' }}>______</div>
-          <div>Tgl.</div>
+          <div style={{ fontWeight: 'bold' }}>Diterima Oleh</div>
+          <div style={{ marginTop: '8px', height: '70px' }} />
+          <div>Tgl. ____________</div>
+          <div style={{ marginTop: '2px' }}>Nama Lengkap</div>
         </div>
       </div>
     </div>
@@ -516,21 +511,22 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
           <div>{data.alamatPenerima}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-          <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
+          {/* Update #004: label Tanggal → Tanggal Invoice; baris Syarat
+              Pembayaran / Ekspedisi / Tanggal Pengiriman dihapus; label
+              "No Surat Jalan" → "No DO". */}
+          <InfoCell label="Tanggal Invoice" value={formatDate(data.tanggal)} />
           <InfoCell label="Nomor" value={data.nomor} />
-          <InfoCell label="Syarat Pembayaran" value={data.syaratPembayaran} />
-          <InfoCell label="Ekspedisi" value={data.ekspedisi} />
-          <InfoCell label="Tanggal Pengiriman" value={formatDate(data.tanggalPengiriman)} />
           <InfoCell label="No SO" value={data.noSo} />
           <InfoCell label="No PO" value={data.noPo} />
-          <InfoCell label="No Surat Jalan" value={data.noSuratJalan} />
+          <InfoCell label="No DO" value={data.noDo} />
           <InfoCell label="Mata Uang" value={data.mataUang} />
         </div>
       </div>
 
       {/* ── Detail Table ── */}
       <div className="mb-4">
-        <DetailTableWithPrice detail={data.detail} />
+        {/* Update #004: kolom Harga tanpa "@"; kolom Diskon dihapus. */}
+        <DetailTableWithPrice detail={data.detail} hideDiskon hideAt />
       </div>
 
       {/* ── Biaya Tambahan ── */}
@@ -577,12 +573,14 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
 
         {/* Right */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          {/* Update ASAHI: pilihan PPh23/PPN dari data invoice */}
-          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} />
+          {/* Update ASAHI: pilihan PPh23/PPN dari data invoice
+              Update #004: baris Diskon setelah Sub Total disembunyikan (hideDiskon). */}
+          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} hideDiskon />
         </div>
       </div>
 
       {/* ── Signatures ── */}
+      {/* Update #004: "Disetujui Oleh" → "Diterima Oleh". */}
       <div className="grid grid-cols-2 gap-8 mt-10" style={{ textAlign: 'center' }}>
         <div>
           <div>Disiapkan Oleh</div>
@@ -590,7 +588,7 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
           <div>Tgl.</div>
         </div>
         <div>
-          <div>Disetujui Oleh</div>
+          <div>Diterima Oleh</div>
           <div style={{ marginTop: '48px' }}>______</div>
           <div>Tgl.</div>
         </div>
