@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
@@ -23,7 +23,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescript
 import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderResponse, PurchaseOrderResponse, MataUangResponse, AlamatPengirimanResponse, PelangganDropdown, SupplierDropdown } from '@/types/api';
 // Update #4 — auto-fill field berkaitan master data saat pelanggan/supplier dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
-import { ORDER_CURRENCY_OPTIONS, buildOrderUpdate, canEditOrder, formatOrderMoney, newOrderHeader, newOrderLine, orderEndpoint, orderHeaderFromResponse, orderLinesFromResponse, persistOrder, serializeOrderHeader, serializeOrderLines, type OrderHeader, type OrderHeaderKey, type OrderKind, type OrderLine, type OrderResponse } from '@/lib/order-documents';
+import { ORDER_CURRENCY_OPTIONS, buildOrderUpdate, canEditOrder, formatOrderMoney, JENIS_PEMBELIAN_OPTIONS, newOrderHeader, newOrderLine, orderEndpoint, orderHeaderFromResponse, orderLinesFromResponse, persistOrder, serializeOrderHeader, serializeOrderLines, type OrderHeader, type OrderHeaderKey, type OrderKind, type OrderLine, type OrderResponse } from '@/lib/order-documents';
 function includeCurrent(options: SearchableDropdownOption[], id?: string | null, label?: string | null) {
   return id && !options.some((option) => option.id === id) ? [...options, { id, label: label || id }] : options;
 }
@@ -55,6 +55,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   // dan alamat pengiriman (gudang tujuan PO, wajib pilih satu). ===
   const [currencyOptions, setCurrencyOptions] = useState<SearchableDropdownOption[]>(ORDER_CURRENCY_OPTIONS);
   const [alamatKirim, setAlamatKirim] = useState<AlamatPengirimanResponse[]>([]);
+  // Update #002: daftar SO untuk kolom "Keterangan SO" per baris PO (tracking
+  // item ke SO — satu PO bisa memuat baris dari beberapa SO berbeda).
+  const [soRows, setSoRows] = useState<SalesOrderResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -123,6 +126,16 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
         })
         .catch(() => {
           /* daftar kosong — user bisa isi manual lewat Pengaturan */
+        });
+      // Update #002: daftar SO (kolom "Keterangan SO" per baris PO) — pola
+      // sama dengan form ROP; SO DIBATALKAN tidak ditawarkan.
+      api
+        .get<PaginatedResponse<SalesOrderResponse>>('/penjualan/sales-order?limit=200')
+        .then((rows) => {
+          if (active) setSoRows(rows.data.filter((so) => so.status !== 'DIBATALKAN'));
+        })
+        .catch(() => {
+          /* daftar kosong — baris tetap bisa "Tanpa SO" */
         });
     }
     return () => {
@@ -274,10 +287,10 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     }
   }
 
-  const input = (key: OrderHeaderKey, label: string, type = 'text') => (
+  const input = (key: OrderHeaderKey, label: string, type = 'text', maxLength?: number) => (
     <div className="space-y-1.5" key={key}>
       <Label htmlFor={`order-${key}`}>{label}</Label>
-      <Input id={`order-${key}`} type={type} step={type === 'number' ? 'any' : undefined} value={header[key]} onChange={(event) => setField(key, event.target.value)} disabled={disabled} />
+      <Input id={`order-${key}`} type={type} step={type === 'number' ? 'any' : undefined} value={header[key]} onChange={(event) => setField(key, event.target.value)} disabled={disabled} maxLength={maxLength} />
     </div>
   );
   const currentParty = original ? (isSales ? (original as SalesOrderResponse).pelanggan : (original as PurchaseOrderResponse).supplier) : null;
@@ -306,6 +319,20 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     }
     return options;
   }, [isSales, alamatKirim, header.alamatPengirimanId, original]);
+
+  // Update #002: opsi SO untuk kolom "Keterangan SO" per baris PO — label
+  // noPesanan. Saat edit PO lama, SO yang ter-link tapi tidak ada di daftar
+  // (mis. sudah dibatalkan) tetap dipertahankan agar label tersimpan tampil.
+  const soOptions = useMemo(() => {
+    if (isSales) return [] as SearchableDropdownOption[];
+    const options: SearchableDropdownOption[] = soRows.map((so) => ({ id: so.id, label: so.noPesanan }));
+    if (original) {
+      for (const line of (original as PurchaseOrderResponse).details) {
+        if (line.salesOrderId && line.salesOrder && !options.some((option) => option.id === line.salesOrderId)) options.push({ id: line.salesOrderId, label: line.salesOrder.noPesanan });
+      }
+    }
+    return options;
+  }, [isSales, soRows, original]);
 
   // ── Update ASAHI (PPh23/PPN opsional) — preview total PO mengikuti
   // pilihan pajak (rumus sama dengan backend: DPP + PPN + biaya − PPh23). ──
@@ -375,7 +402,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                   {/* Update #4: pilih party → alamat/syarat bayar/currency ditarik otomatis dari master */}
                   <SearchableDropdown value={header[partyKey]} onValueChange={handlePartyChange} options={includeCurrent(parties, currentPartyId, currentParty?.nama)} disabled={disabled} placeholder={isSales ? 'Pilih pelanggan' : 'Pilih supplier'} />
                 </div>
-                {input('tanggal', 'Tanggal *', 'date')}
+                {/* Update #002 (PO): label "Tanggal" → "Tanggal PO" — sales tetap "Tanggal". */}
+                {input('tanggal', isSales ? 'Tanggal *' : 'Tanggal PO *', 'date')}
                 <div className="space-y-1.5">
                   <Label>Syarat Bayar</Label>
                   <SearchableDropdown
@@ -423,7 +451,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                   </>
                 ) : (
                   <>
-                    {input('tanggalKirim', 'Tanggal Kirim', 'date')}
+                    {/* Update #002 (PO): "Tanggal Kirim" → "Target Kirim". */}
+                    {input('tanggalKirim', 'Target Kirim', 'date')}
                     <div className="space-y-1.5 md:col-span-2">
                       <Label htmlFor="order-alamat">Alamat</Label>
                       {/* Update #4: auto-fill dari master Supplier saat dipilih */}
@@ -441,7 +470,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                 <div className="space-y-3 rounded-md border p-4">
                   <div>
                     <Label>Alamat Pengiriman (Gudang Tujuan) *</Label>
-                    <p className="text-xs text-muted-foreground">Wajib pilih satu — tampil di bawah tabel barang pada cetak Purchase Order. Daftar diatur di Pengaturan → Profil Perusahaan.</p>
+                    <p className="text-xs text-muted-foreground">Wajib pilih satu — tampil di bawah tabel barang pada cetak Purchase Order bersama PIC Gudang. Daftar diatur di Pengaturan → Profil Perusahaan.</p>
                   </div>
                   {alamatKirimOptions.length === 0 ? (
                     <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Belum ada alamat pengiriman. Tambahkan dulu di Pengaturan → Profil Perusahaan → Alamat Pengiriman.</p>
@@ -451,7 +480,24 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                         const selected = header.alamatPengirimanId === option.id;
                         return (
                           <label key={option.id} className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}>
-                            <Checkbox aria-checked={selected} className="mt-0.5" checked={selected} onCheckedChange={(checked) => setField('alamatPengirimanId', checked ? option.id : '')} disabled={disabled} />
+                            <Checkbox
+                              aria-checked={selected}
+                              className="mt-0.5"
+                              checked={selected}
+                              onCheckedChange={(checked) => {
+                                setField('alamatPengirimanId', checked ? option.id : '');
+                                // Update #002: PIC Gudang terisi otomatis dari
+                                // master gudang yang dicentang — HANYA saat user
+                                // memilih (bukan saat load data edit); setelahnya
+                                // tetap bisa diubah manual.
+                                if (checked) {
+                                  const row = alamatKirim.find((r) => r.id === option.id);
+                                  setField('picGudang', row?.picNama || '');
+                                  setField('picGudangTelepon', row?.picTelepon || '');
+                                }
+                              }}
+                              disabled={disabled}
+                            />
                             <span className="space-y-0.5 text-sm leading-snug">
                               <span className="block text-xs text-muted-foreground">{option.prefix}</span>
                               <span className="font-medium">{option.label}</span>
@@ -467,6 +513,12 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                       PPIC <span className="text-xs text-muted-foreground">(opsional — tampil di bawah alamat pengiriman saat cetak)</span>
                     </Label>
                   </div>
+                  {/* Update #002: PIC Gudang + no. telepon — snapshot untuk cetak PO. */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {input('picGudang', 'PIC Gudang', 'text', 100)}
+                    {input('picGudangTelepon', 'No. Telepon PIC', 'text', 50)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Terisi otomatis dari gudang terpilih — masih bisa diubah.</p>
                 </div>
               )}
 
@@ -481,6 +533,10 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                         <TableHead className="min-w-24">Qty</TableHead>
                         <TableHead className="min-w-32">Harga ({header.currency || '-'})</TableHead>
                         <TableHead className="min-w-24">Diskon %</TableHead>
+                        {/* Update #002 (khusus PO): Total Harga + tracking Keterangan SO & Jenis Belanja per baris. */}
+                        {!isSales && <TableHead className="min-w-32">Total Harga</TableHead>}
+                        {!isSales && <TableHead className="min-w-44">Keterangan SO</TableHead>}
+                        {!isSales && <TableHead className="min-w-36">Jenis Belanja</TableHead>}
                         <TableHead>Aksi</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -496,6 +552,18 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                           {(['qty', 'harga', 'diskon'] as const).map((key) => (
                             <TableCell key={key}>{key === 'harga' ? <CurrencyInput aria-label={`harga baris ${index + 1}`} allowDecimal value={line.harga} onValueChange={(value) => updateLine(line.key, 'harga', value)} disabled={disabled} /> : <Input aria-label={`${key} baris ${index + 1}`} type="number" step="any" value={line[key]} onChange={(event) => updateLine(line.key, key, event.target.value)} disabled={disabled} />}</TableCell>
                           ))}
+                          {/* Update #002 (khusus PO): Total Harga read-only = qty × harga × (1 − diskon%), lalu relasi SO + jenis belanja per baris. */}
+                          {!isSales && <TableCell className="whitespace-nowrap text-right font-mono text-xs">{formatOrderMoney((Number(line.qty) || 0) * (Number(line.harga) || 0) * (1 - (Number(line.diskon) || 0) / 100), header.currency)}</TableCell>}
+                          {!isSales && (
+                            <TableCell>
+                              <SearchableDropdown value={line.salesOrderId || ''} onValueChange={(value) => updateLine(line.key, 'salesOrderId', value)} options={soOptions} allOption={{ id: '', label: 'Tanpa SO' }} placeholder="Tanpa SO" disabled={disabled} compact />
+                            </TableCell>
+                          )}
+                          {!isSales && (
+                            <TableCell>
+                              <SearchableDropdown value={line.jenisPembelian || ''} onValueChange={(value) => updateLine(line.key, 'jenisPembelian', value)} options={JENIS_PEMBELIAN_OPTIONS} allOption={{ id: '', label: 'Tanpa kategori' }} placeholder="Tanpa kategori" disabled={disabled} compact />
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setLines((prev) => prev.filter((item) => item.key !== line.key))} aria-label={`Hapus baris ${index + 1}`}>
                               <Trash2 className="h-4 w-4" />

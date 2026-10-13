@@ -1687,6 +1687,13 @@ export interface PengirimanBarangResponse {
 
 // ── Pembelian ────────────────────────────────────────────────────────
 
+/** Update #002: ringkasan SO ter-link pada baris detail PO (nested, untuk display). */
+export interface SalesOrderMini {
+  id: string;
+  noPesanan: string;
+  pelangganNama: string | null;
+}
+
 export interface PurchaseOrderDetailCreate {
   satuanId?: string | null;
   barangId: string;
@@ -1694,6 +1701,9 @@ export interface PurchaseOrderDetailCreate {
   qty: number;
   diskon?: number | null;
   subTotal?: number;
+  // === Update #002 — tracking per baris: SO asal + jenis belanja ===
+  salesOrderId?: string | null;
+  jenisPembelian?: string | null;
 }
 
 export interface PurchaseOrderDetailResponse extends PurchaseOrderDetailCreate {
@@ -1701,6 +1711,8 @@ export interface PurchaseOrderDetailResponse extends PurchaseOrderDetailCreate {
   subTotal: number;
   id: string;
   barang: BarangSimple | null;
+  /** Update #002: SO ter-link per baris (null bila baris bukan untuk SO tertentu). */
+  salesOrder?: SalesOrderMini | null;
 }
 
 export interface PurchaseOrderCreate {
@@ -1709,6 +1721,9 @@ export interface PurchaseOrderCreate {
   // === Update ASAHI #3 — alamat pengiriman (wajib pilih satu) + PPIC ===
   alamatPengirimanId: string;
   ppic?: boolean;
+  // === Update #002 — snapshot PIC gudang untuk cetak PO ===
+  picGudang?: string | null;
+  picGudangTelepon?: string | null;
 
   tanggal: string;
   supplierId: string;
@@ -1733,6 +1748,9 @@ export interface PurchaseOrderUpdate {
   // === Update ASAHI #3 ===
   alamatPengirimanId?: string | null;
   ppic?: boolean | null;
+  // === Update #002 — snapshot PIC gudang (string kosong = hapus) ===
+  picGudang?: string | null;
+  picGudangTelepon?: string | null;
   details?: PurchaseOrderDetailCreate[];
 
   tanggal?: string;
@@ -1758,6 +1776,9 @@ export interface PurchaseOrderResponse {
   /** Snapshot teks "<prefix>\n<nama>" — dipakai untuk cetak PO. */
   alamatPengiriman?: string | null;
   ppic?: boolean;
+  // === Update #002 — snapshot PIC gudang untuk cetak PO ===
+  picGudang?: string | null;
+  picGudangTelepon?: string | null;
 
   id: string;
   noPesanan: string;
@@ -3795,6 +3816,9 @@ export interface AlamatPengirimanResponse {
   prefix: string;
   nama: string;
   isAktif: boolean;
+  // === Update #002 — PIC gudang: auto-fill form PO & tampil di cetak ===
+  picNama?: string | null;
+  picTelepon?: string | null;
   updatedAt: string | null;
 }
 
@@ -3802,12 +3826,16 @@ export interface AlamatPengirimanCreate {
   prefix: string;
   nama: string;
   isAktif?: boolean;
+  picNama?: string | null;
+  picTelepon?: string | null;
 }
 
 export interface AlamatPengirimanUpdate {
   prefix?: string;
   nama?: string;
   isAktif?: boolean;
+  picNama?: string | null;
+  picTelepon?: string | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

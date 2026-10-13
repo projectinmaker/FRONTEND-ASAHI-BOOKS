@@ -7,6 +7,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Printer, Download, AlertCircle } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { generatePDF, fileSafeNo } from '@/lib/pdf-utils';
+// Update #002: label jenis belanja (CONSUMABLE → "Consumable") untuk kolom cetak PO
+import { jenisPembelianLabel } from '@/lib/order-documents';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { PembelianPDFTemplate, PenerimaanPDFTemplate, InvoicePembelianPDFTemplate, ReturPembelianPDFTemplate, type PembelianData, type PenerimaanData, type InvoicePembelianData, type ReturPembelianData, type PembelianDetailRow, type PenerimaanDetailRow, type ReturDetailRow, type BiayaTambahan } from '@/components/erp/purchasing/pdf-templates';
 import type { PurchaseOrderResponse, PurchaseInvoiceResponse, PurchaseReturResponse, PenerimaanBarangResponse, MataUangResponse } from '@/types/api';
@@ -52,13 +54,19 @@ function mapPembelianData(d: PurchaseOrderResponse): PembelianData {
     mataUang: d.currency || 'IDR',
     alamatPengiriman: d.alamatPengiriman || '',
     ppic: !!d.ppic,
+    // Update #002: snapshot PIC Gudang untuk cetak PO
+    picGudang: d.picGudang || '',
+    picGudangTelepon: d.picGudangTelepon || '',
     detail: (d.details || []).map<PembelianDetailRow>((r) => ({
       id: r.id,
       barang: r.barang?.nama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
       diskon: Number(r.diskon) || 0,
-      satuan: r.satuan?.nama || ''
+      satuan: r.satuan?.nama || '',
+      // Update #002: kolom Ket. SO + Jenis Belanja per baris
+      so: r.salesOrder?.noPesanan || '',
+      jenis: jenisPembelianLabel(r.jenisPembelian)
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,

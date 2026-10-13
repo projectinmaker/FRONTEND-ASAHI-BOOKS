@@ -1,6 +1,6 @@
 import { api } from '@/lib/api';
 import { formatNumberIDR } from '@/lib/money';
-import type { SalesOrderResponse, PurchaseOrderResponse } from '@/types/api';
+import type { SalesOrderResponse, PurchaseOrderResponse, PurchaseOrderDetailResponse } from '@/types/api';
 
 export type OrderKind = 'sales' | 'purchase';
 export type OrderResponse = SalesOrderResponse | PurchaseOrderResponse;
@@ -28,13 +28,31 @@ export interface OrderLine {
   harga: string;
   qty: string;
   diskon: string;
+  // === Update #002 — tracking per baris (khusus PO): SO asal + jenis belanja ===
+  salesOrderId: string;
+  jenisPembelian: string;
 }
-export const newOrderLine = (): OrderLine => ({ key: crypto.randomUUID(), barangId: '', satuanId: '', harga: '', qty: '1', diskon: '0' });
+export const newOrderLine = (): OrderLine => ({ key: crypto.randomUUID(), barangId: '', satuanId: '', harga: '', qty: '1', diskon: '0', salesOrderId: '', jenisPembelian: '' });
 export function orderLinesFromResponse(order: OrderResponse): OrderLine[] {
-  return order.details.map((line) => ({ key: line.id, barangId: line.barangId, satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0) }));
+  return order.details.map((line) => {
+    // Update #002: salesOrderId/jenisPembelian hanya ada di detail PO —
+    // cast aman; sisi sales selalu string kosong.
+    const poLine = line as PurchaseOrderDetailResponse;
+    return { key: line.id, barangId: line.barangId, satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0), salesOrderId: poLine.salesOrderId || '', jenisPembelian: poLine.jenisPembelian || '' };
+  });
 }
 export function serializeOrderLines(lines: OrderLine[]) {
-  return lines.filter((line) => line.barangId).map((line) => ({ barangId: line.barangId, satuanId: line.satuanId || null, harga: Number(line.harga), qty: Number(line.qty), diskon: Number(line.diskon) }));
+  // Update #002: subTotal WAJIB ikut terkirim — backend PUT /purchase-order
+  // membaca d["sub_total"] langsung (KeyError bila absen); salesOrderId &
+  // jenisPembelian untuk tracking item ke SO + tujuan posting per baris.
+  return lines
+    .filter((line) => line.barangId)
+    .map((line) => {
+      const qty = Number(line.qty);
+      const harga = Number(line.harga);
+      const diskon = Number(line.diskon);
+      return { barangId: line.barangId, satuanId: line.satuanId || null, harga, qty, diskon, subTotal: qty * harga * (1 - diskon / 100), salesOrderId: line.salesOrderId || null, jenisPembelian: line.jenisPembelian || null };
+    });
 }
 
 const commonKeys = ['tanggal', 'syaratBayarId', 'currency', 'diskonGlobal', 'ppn', 'keterangan'] as const;
@@ -46,7 +64,18 @@ const salesKeys = ['pelangganId', 'customerCode', 'tanggalPengiriman', 'alamatPe
 // Update ASAHI #3: alamatPengirimanId (gudang tujuan, wajib pilih satu) + ppic.
 // Update ASAHI (PPh23/PPN opsional): pilihan pajak hanya untuk PO — boleh
 // keduanya, salah satu, atau tidak sama sekali.
-const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppic', 'ppnApplicable', 'pph23Applicable', 'pph23'] as const;
+const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppic', 'ppnApplicable', 'pph23Applicable', 'pph23', 'picGudang', 'picGudangTelepon'] as const;
+
+// ── Update #002 — jenis belanja per baris PO (dasar posting COA) ──
+export const JENIS_PEMBELIAN_OPTIONS = [
+  { id: 'CONSUMABLE', label: 'Consumable' },
+  { id: 'PROJECT', label: 'Project' },
+  { id: 'ASSET', label: 'Asset' },
+  { id: 'ATK', label: 'ATK' }
+];
+export function jenisPembelianLabel(v?: string | null) {
+  return JENIS_PEMBELIAN_OPTIONS.find((o) => o.id === v)?.label ?? v ?? '';
+}
 export type OrderHeaderKey = (typeof commonKeys)[number] | (typeof salesKeys)[number] | (typeof purchaseKeys)[number];
 export type OrderHeader = Record<OrderHeaderKey, string>;
 export function newOrderHeader(): OrderHeader {
@@ -72,15 +101,22 @@ export function serializeOrderHeader(kind: OrderKind, header: OrderHeader) {
     } else if (key === 'ppic' || key === 'ppnApplicable' || key === 'pph23Applicable') {
       // Update ASAHI #3 / PPh23-PPN: boolean fields (bukan string).
       result[key] = header[key] === 'true';
+    } else if (key === 'picGudang' || key === 'picGudangTelepon') {
+      // Update #002: kirim string kosong (BUKAN null) — null dianggap "tidak
+      // dikirim" oleh backend sehingga pengosongan PIC saat update tidak
+      // diproses; '' benar-benar menghapus nilai (strip → None di server).
+      result[key] = header[key].trim();
     } else result[key] = header[key].trim() || null;
   }
   return result as Record<string, string | number | boolean | null>;
 }
 
-type DetailLike = { barangId: string; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null };
+type DetailLike = { barangId: string; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null; salesOrderId?: string | null; jenisPembelian?: string | null };
 function detailSignature(lines: DetailLike[]) {
   // There is no sequence field in the API; response ordering is not a detail edit.
-  return JSON.stringify(lines.map((line) => JSON.stringify([line.barangId, line.satuanId || null, Number(line.harga), Number(line.qty), Number(line.diskon ?? 0)])).sort());
+  // Update #002: salesOrderId + jenisPembelian ikut signature — perubahan
+  // relasi SO / jenis belanja dihitung sebagai detail change (payload.details dikirim).
+  return JSON.stringify(lines.map((line) => JSON.stringify([line.barangId, line.satuanId || null, Number(line.harga), Number(line.qty), Number(line.diskon ?? 0), line.salesOrderId || null, line.jenisPembelian || null])).sort());
 }
 export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: OrderLine[], original: OrderResponse) {
   const previous = serializeOrderHeader(kind, orderHeaderFromResponse(original));
@@ -92,7 +128,7 @@ export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: Or
   return payload;
 }
 export function orderSaveMismatches(kind: OrderKind, requested: Record<string, unknown>, saved: OrderResponse): string[] {
-  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppic: 'PPIC', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23' };
+  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppic: 'PPIC', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23', picGudang: 'PIC Gudang', picGudangTelepon: 'No. Telp PIC Gudang' };
   const actual = serializeOrderHeader(kind, orderHeaderFromResponse(saved));
   const issues: string[] = [];
   for (const [key, value] of Object.entries(requested)) {

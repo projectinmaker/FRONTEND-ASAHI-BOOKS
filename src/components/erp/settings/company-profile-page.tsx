@@ -62,6 +62,9 @@ interface AlamatFormState {
   prefix: string;
   nama: string;
   isAktif: boolean;
+  // Update #002: PIC gudang — auto-fill kolom Pengiriman di form PO + cetak
+  picNama: string;
+  picTelepon: string;
 }
 
 // Update ASAHI #6: form dialog rekening bank (cetak Invoice Penjualan)
@@ -202,13 +205,16 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
       toast.error('Prefix dan nama gudang wajib diisi');
       return;
     }
+    // Update #002: PIC gudang — string kosong dikirim sebagai null.
+    const picNama = alamatDialog.picNama.trim() || null;
+    const picTelepon = alamatDialog.picTelepon.trim() || null;
     setAlamatSaving(true);
     try {
       if (alamatDialog.id) {
-        await api.put<AlamatPengirimanResponse>(`/master/alamat-pengiriman/${alamatDialog.id}`, { prefix, nama, isAktif: alamatDialog.isAktif });
+        await api.put<AlamatPengirimanResponse>(`/master/alamat-pengiriman/${alamatDialog.id}`, { prefix, nama, isAktif: alamatDialog.isAktif, picNama, picTelepon });
         toast.success('Alamat pengiriman diperbarui');
       } else {
-        await api.post<AlamatPengirimanResponse>('/master/alamat-pengiriman', { prefix, nama, isAktif: alamatDialog.isAktif });
+        await api.post<AlamatPengirimanResponse>('/master/alamat-pengiriman', { prefix, nama, isAktif: alamatDialog.isAktif, picNama, picTelepon });
         toast.success('Alamat pengiriman ditambahkan');
       }
       setAlamatDialog(null);
@@ -512,7 +518,7 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
             <MapPin className="size-5" /> Alamat Pengiriman
           </CardTitle>
           <CardDescription>
-            Daftar gudang tujuan untuk Purchase Order — saat input PO wajib memilih satu (checkbox). Saat dicetak, alamat tampil di bawah tabel barang sebagai <em>prefix</em> + nama gudang, dengan opsi tambahan PPIC. Mengubah daftar ini tidak mengubah PO yang sudah tersimpan.
+            Daftar gudang tujuan untuk Purchase Order — saat input PO wajib memilih satu (checkbox). Saat dicetak, alamat tampil di bawah tabel barang sebagai <em>prefix</em> + nama gudang, dengan opsi tambahan PPIC. Update #002: PIC Gudang terisi otomatis di form PO saat gudang dicentang dan ikut dicetak. Mengubah daftar ini tidak mengubah PO yang sudah tersimpan.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -525,6 +531,8 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
                   <TableRow>
                     <TableHead>Prefix</TableHead>
                     <TableHead>Nama Gudang</TableHead>
+                    {/* Update #002: PIC Gudang per alamat pengiriman */}
+                    <TableHead>PIC Gudang</TableHead>
                     <TableHead className="w-24">Status</TableHead>
                     <TableHead className="w-24 text-right">Aksi</TableHead>
                   </TableRow>
@@ -532,7 +540,7 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
                 <TableBody>
                   {alamatKirim.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
                         Belum ada alamat pengiriman.
                       </TableCell>
                     </TableRow>
@@ -542,11 +550,16 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
                         <TableCell>{row.prefix}</TableCell>
                         <TableCell className="font-medium">{row.nama}</TableCell>
                         <TableCell>
+                          {/* Update #002: nama PIC + telepon (kecil, di bawahnya) */}
+                          <div>{row.picNama || '-'}</div>
+                          {row.picTelepon ? <div className="text-xs text-muted-foreground">{row.picTelepon}</div> : null}
+                        </TableCell>
+                        <TableCell>
                           <Badge variant={row.isAktif ? 'secondary' : 'outline'}>{row.isAktif ? 'Aktif' : 'Nonaktif'}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" aria-label={`Edit alamat ${row.nama}`} onClick={() => setAlamatDialog({ id: row.id, prefix: row.prefix, nama: row.nama, isAktif: row.isAktif })}>
+                            <Button variant="ghost" size="icon" aria-label={`Edit alamat ${row.nama}`} onClick={() => setAlamatDialog({ id: row.id, prefix: row.prefix, nama: row.nama, isAktif: row.isAktif, picNama: row.picNama || '', picTelepon: row.picTelepon || '' })}>
                               <Pencil className="size-4" />
                             </Button>
                             <Button variant="ghost" size="icon" aria-label={`Hapus alamat ${row.nama}`} onClick={() => setPendingDelete({ kind: 'alamat', id: row.id, label: `Alamat ${row.nama}` })}>
@@ -569,7 +582,9 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
               setAlamatDialog({
                 prefix: form.namaPerusahaan.trim() || 'PT ASAHI SUKSES INDUSTRI',
                 nama: '',
-                isAktif: true
+                isAktif: true,
+                picNama: '',
+                picTelepon: ''
               })
             }>
             <Plus className="size-4" /> Tambah Alamat Pengiriman
@@ -696,6 +711,18 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
               <div className="space-y-2">
                 <Label htmlFor="alamat-nama">Nama Gudang *</Label>
                 <Input id="alamat-nama" value={alamatDialog.nama} maxLength={200} onChange={(e) => setAlamatDialog({ ...alamatDialog, nama: e.target.value })} placeholder="P I - GUDANG ATAS TOOL" />
+              </div>
+              {/* Update #002: PIC Gudang — terisi otomatis di kolom Pengiriman
+                  form PO saat gudang ini dicentang (masih bisa diubah). */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="alamat-pic-nama">PIC Gudang</Label>
+                  <Input id="alamat-pic-nama" value={alamatDialog.picNama} maxLength={100} onChange={(e) => setAlamatDialog({ ...alamatDialog, picNama: e.target.value })} placeholder="mis. Budi Santoso" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="alamat-pic-telepon">No. Telepon PIC</Label>
+                  <Input id="alamat-pic-telepon" value={alamatDialog.picTelepon} maxLength={50} onChange={(e) => setAlamatDialog({ ...alamatDialog, picTelepon: e.target.value })} placeholder="0812-xxxx-xxxx" />
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox id="alamat-aktif" checked={alamatDialog.isAktif} onCheckedChange={(checked) => setAlamatDialog({ ...alamatDialog, isAktif: checked === true })} />
