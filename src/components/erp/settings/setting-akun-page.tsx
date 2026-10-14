@@ -22,13 +22,16 @@ const NEW_SETTINGS: Record<string, { label: string; code: string }> = {
   BANK_CLEARING: { label: 'Clearing / Ayat Silang', code: '111200' },
   HPP_PRODUK_JADI: { label: 'HPP Produk Jadi', code: '531001' },
   LABA_RUGI_TAHUN_BERJALAN: { label: 'Laba/Rugi Tahun Berjalan', code: '322000' },
-  LABA_DITAHAN: { label: 'Laba Ditahan', code: '321000' }
+  LABA_DITAHAN: { label: 'Laba Ditahan', code: '321000' },
+  // ASAHI #006 — PPh 23 untuk invoice penjualan dengan potongan pajak;
+  // placeholder bila belum ada di DB (PUT auto-create), rekomendasi kode 116003.
+  PPH23_DIBAYAR_DIMUKA: { label: 'PPh 23 Dibayar di Muka', code: '116003' }
 };
 const SETTING_GROUPS: { title: string; description: string; keys: string[]; helper?: { key: string; text: string; warningIfEmpty?: boolean }; allowEmpty?: boolean }[] = [
   {
     title: 'Penjualan',
     description: 'Akun default untuk transaksi penjualan (Sales Order, Invoice, Retur)',
-    keys: ['PENDAPATAN_PENJUALAN', 'PENDAPATAN_ANGKUT', 'PPN_KELUARAN', 'RETUR_PENJUALAN', 'HPP_PENJUALAN', 'HPP_PRODUK_JADI', 'PIUTANG_USAHA']
+    keys: ['PENDAPATAN_PENJUALAN', 'PENDAPATAN_ANGKUT', 'PPN_KELUARAN', 'PPH23_DIBAYAR_DIMUKA', 'RETUR_PENJUALAN', 'HPP_PENJUALAN', 'HPP_PRODUK_JADI', 'PIUTANG_USAHA']
   },
   {
     title: 'Pembelian',
