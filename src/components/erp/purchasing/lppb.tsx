@@ -37,15 +37,7 @@ import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
-import type {
-  LppbResponse,
-  LppbCreate,
-  LppbUpdate,
-  LppbDetailCreate,
-  PurchaseOrderResponse,
-  PurchaseOrderSisaResponse,
-  HardDeleteResponse
-} from '@/types/api';
+import type { LppbResponse, LppbCreate, LppbUpdate, LppbDetailCreate, PurchaseOrderResponse, PurchaseOrderSisaResponse, HardDeleteResponse } from '@/types/api';
 
 const PAGE_SIZE = 100;
 
@@ -273,8 +265,12 @@ export function LppbTab({ refreshKey }: { refreshKey?: number }) {
                       <TableCell>{formatDate(d.tanggal)}</TableCell>
                       <TableCell>{d.tanggalTerima ? formatDate(d.tanggalTerima) : '-'}</TableCell>
                       <TableCell>{d.purchaseOrder?.noPesanan || '-'}</TableCell>
-                      <TableCell className="max-w-40 truncate" title={d.supplier?.nama || ''}>{d.supplier?.nama || '-'}</TableCell>
-                      <TableCell className="max-w-40 truncate" title={d.proyek || ''}>{d.proyek || '-'}</TableCell>
+                      <TableCell className="max-w-40 truncate" title={d.supplier?.nama || ''}>
+                        {d.supplier?.nama || '-'}
+                      </TableCell>
+                      <TableCell className="max-w-40 truncate" title={d.proyek || ''}>
+                        {d.proyek || '-'}
+                      </TableCell>
                       <TableCell>
                         <LppbStatusBadge status={d.status} />
                       </TableCell>
@@ -314,12 +310,7 @@ export function LppbTab({ refreshKey }: { refreshKey?: number }) {
                             title="Cetak">
                             <Printer className="h-3.5 w-3.5" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                            onClick={() => setCancelTarget(d)}
-                            title={d.status === 'DRAFT' ? 'Hapus' : 'Batalkan Dokumen'}>
+                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive" onClick={() => setCancelTarget(d)} title={d.status === 'DRAFT' ? 'Hapus' : 'Batalkan Dokumen'}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
@@ -353,14 +344,7 @@ export function LppbTab({ refreshKey }: { refreshKey?: number }) {
         </CardContent>
       </Card>
 
-      <HardDeleteCancelDialog
-        open={!!cancelTarget}
-        onOpenChange={(open) => !open && setCancelTarget(null)}
-        title={cancelTarget?.status === 'DRAFT' ? 'Hapus LPPB?' : 'Batalkan Dokumen LPPB?'}
-        formLabel={`LPPB ${cancelTarget?.noForm || ''}`}
-        submitting={cancelSubmitting}
-        onConfirm={handleCancel}
-      />
+      <HardDeleteCancelDialog open={!!cancelTarget} onOpenChange={(open) => !open && setCancelTarget(null)} title={cancelTarget?.status === 'DRAFT' ? 'Hapus LPPB?' : 'Batalkan Dokumen LPPB?'} formLabel={`LPPB ${cancelTarget?.noForm || ''}`} submitting={cancelSubmitting} onConfirm={handleCancel} />
     </div>
   );
 }
@@ -390,14 +374,14 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
   const activeTabId = useTabStore((s) => s.activeTabId);
 
   // ── Dropdown PO (self-loaded) ──
-  const [poOptions, setPoOptions] = useState<{ id: string; noPesanan: string }[]>([]);
+  const [poOptions, setPoOptions] = useState<{ id: string; noPesanan: string; supplierNama?: string | null }[]>([]);
   const [poOptionsLoading, setPoOptionsLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
     api
       .get<PaginatedResponse<PurchaseOrderResponse>>('/pembelian/purchase-order?limit=200')
       .then((res) => {
-        if (!cancelled) setPoOptions(res.data.map((p) => ({ id: p.id, noPesanan: p.noPesanan })));
+        if (!cancelled) setPoOptions(res.data.map((p) => ({ id: p.id, noPesanan: p.noPesanan, supplierNama: p.supplier?.nama || p.supplierNameSnapshot || null })));
       })
       .catch(() => {
         /* dropdown kosong */
@@ -559,45 +543,42 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
   }, []);
 
   // ── Tarik item PO (pola "No SO"/"No DO": pilih No PO → baris masuk tabel) ──
-  const handlePurchaseOrderChange = useCallback(
-    async (poId: string) => {
-      setFPurchaseOrderId(poId);
-      if (!poId) {
-        setRows([]);
-        return;
+  const handlePurchaseOrderChange = useCallback(async (poId: string) => {
+    setFPurchaseOrderId(poId);
+    if (!poId) {
+      setRows([]);
+      return;
+    }
+    setPoLoading(true);
+    try {
+      const sisa = await api.get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${poId}/sisa`);
+      const poRows = (sisa.details || []).map<LppbRowDraft>((d) => {
+        const qtyPenerimaan = Number(d.sisaTerima) || 0;
+        return {
+          key: nextRowKey(),
+          isJasa: false,
+          barangId: d.barangId,
+          purchaseOrderDetailId: d.purchaseOrderDetailId,
+          kodeMaterial: d.kodeBarang || '',
+          deskripsi: d.namaBarang || '',
+          satuan: d.satuanNama || '',
+          qtyPo: Number(d.qtyPesanan) || 0,
+          qtyDiterimaSebelumnya: Number(d.qtyDiterima) || 0,
+          qtyPenerimaan,
+          qtyBaik: qtyPenerimaan,
+          qtyTidakBaik: 0
+        };
+      });
+      if (poRows.length === 0) {
+        toast.info('PO tidak memiliki baris item', { description: 'Semua baris PO mungkin sudah diterima sepenuhnya — tambahkan baris jasa pengujian manual bila perlu.' });
       }
-      setPoLoading(true);
-      try {
-        const sisa = await api.get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${poId}/sisa`);
-        const poRows = (sisa.details || []).map<LppbRowDraft>((d) => {
-          const qtyPenerimaan = Number(d.sisaTerima) || 0;
-          return {
-            key: nextRowKey(),
-            isJasa: false,
-            barangId: d.barangId,
-            purchaseOrderDetailId: d.purchaseOrderDetailId,
-            kodeMaterial: d.kodeBarang || '',
-            deskripsi: d.namaBarang || '',
-            satuan: d.satuanNama || '',
-            qtyPo: Number(d.qtyPesanan) || 0,
-            qtyDiterimaSebelumnya: Number(d.qtyDiterima) || 0,
-            qtyPenerimaan,
-            qtyBaik: qtyPenerimaan,
-            qtyTidakBaik: 0
-          };
-        });
-        if (poRows.length === 0) {
-          toast.info('PO tidak memiliki baris item', { description: 'Semua baris PO mungkin sudah diterima sepenuhnya — tambahkan baris jasa pengujian manual bila perlu.' });
-        }
-        setRows(poRows);
-      } catch (e) {
-        toast.error(e instanceof ApiError ? e.detail : 'Gagal menarik item PO');
-      } finally {
-        setPoLoading(false);
-      }
-    },
-    []
-  );
+      setRows(poRows);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.detail : 'Gagal menarik item PO');
+    } finally {
+      setPoLoading(false);
+    }
+  }, []);
 
   // ── Row ops ──
   const updateRow = useCallback((idx: number, patch: Partial<LppbRowDraft>) => {
@@ -736,15 +717,7 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
       orig.length !== rows.length ||
       orig.some((o, i) => {
         const r = rows[i];
-        return (
-          (o.kodeMaterial || '') !== r.kodeMaterial.trim() ||
-          o.deskripsiSpesifikasi !== r.deskripsi.trim() ||
-          (o.satuan || '') !== r.satuan.trim() ||
-          Number(o.qtyPo) !== r.qtyPo ||
-          Number(o.qtyPenerimaan) !== r.qtyPenerimaan ||
-          Number(o.qtyBaik) !== r.qtyBaik ||
-          Number(o.qtyTidakBaik) !== r.qtyTidakBaik
-        );
+        return (o.kodeMaterial || '') !== r.kodeMaterial.trim() || o.deskripsiSpesifikasi !== r.deskripsi.trim() || (o.satuan || '') !== r.satuan.trim() || Number(o.qtyPo) !== r.qtyPo || Number(o.qtyPenerimaan) !== r.qtyPenerimaan || Number(o.qtyBaik) !== r.qtyBaik || Number(o.qtyTidakBaik) !== r.qtyTidakBaik;
       });
     if (rowsChanged) payload.details = details;
 
@@ -855,12 +828,7 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
                 onValueChange={(v) => {
                   if (!readOnly) void handlePurchaseOrderChange(v);
                 }}
-                options={[
-                  ...(fPurchaseOrderId && !poOptions.some((p) => p.id === fPurchaseOrderId)
-                    ? [{ id: fPurchaseOrderId, label: detail?.purchaseOrder?.noPesanan || fPurchaseOrderId }]
-                    : []),
-                  ...poOptions.map((p) => ({ id: p.id, label: p.noPesanan }))
-                ]}
+                options={[...(fPurchaseOrderId && !poOptions.some((p) => p.id === fPurchaseOrderId) ? [{ id: fPurchaseOrderId, label: detail?.purchaseOrder?.noPesanan || fPurchaseOrderId }] : []), ...poOptions.map((p) => ({ id: p.id, label: p.noPesanan }))]}
                 placeholder="Pilih PO..."
                 disabled={poOptionsLoading || poLoading || readOnly}
               />
@@ -872,7 +840,7 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
             </div>
             <div className="space-y-2">
               <Label>Supplier</Label>
-              <Input value={detail?.supplier?.nama || (readOnly ? '-' : '— otomatis dari PO —')} disabled />
+              <Input value={(fPurchaseOrderId ? poOptions.find((p) => p.id === fPurchaseOrderId)?.supplierNama : '') || detail?.supplier?.nama || (readOnly ? '-' : '— otomatis dari PO —')} disabled />
             </div>
             <div className="space-y-2">
               <Label>
@@ -920,16 +888,38 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead rowSpan={2} className="w-10 text-center align-middle">NO</TableHead>
-                    <TableHead rowSpan={2} className="min-w-28 align-middle">KODE MATERIAL</TableHead>
-                    <TableHead rowSpan={2} className="min-w-64 align-middle">DESKRIPSI SPESIFIKASI</TableHead>
-                    <TableHead rowSpan={2} className="w-20 align-middle">SATUAN</TableHead>
-                    <TableHead rowSpan={2} className="w-20 text-center align-middle">KUANTITAS PO</TableHead>
-                    <TableHead rowSpan={2} className="w-24 text-center align-middle">KUANTITAS PENERIMAAN</TableHead>
-                    <TableHead colSpan={2} className="bg-slate-100 text-center">HASIL PENGUJIAN</TableHead>
-                    <TableHead rowSpan={2} className="w-20 text-center align-middle">SUDAH DITERIMA</TableHead>
-                    <TableHead rowSpan={2} className="w-20 text-center align-middle">BELUM DITERIMA</TableHead>
-                    {!readOnly && <TableHead rowSpan={2} className="w-16 text-center align-middle">Aksi</TableHead>}
+                    <TableHead rowSpan={2} className="w-10 text-center align-middle">
+                      NO
+                    </TableHead>
+                    <TableHead rowSpan={2} className="min-w-28 align-middle">
+                      KODE MATERIAL
+                    </TableHead>
+                    <TableHead rowSpan={2} className="min-w-64 align-middle">
+                      DESKRIPSI SPESIFIKASI
+                    </TableHead>
+                    <TableHead rowSpan={2} className="w-20 align-middle">
+                      SATUAN
+                    </TableHead>
+                    <TableHead rowSpan={2} className="w-20 text-center align-middle">
+                      KUANTITAS PO
+                    </TableHead>
+                    <TableHead rowSpan={2} className="w-24 text-center align-middle">
+                      KUANTITAS PENERIMAAN
+                    </TableHead>
+                    <TableHead colSpan={2} className="bg-slate-100 text-center">
+                      HASIL PENGUJIAN
+                    </TableHead>
+                    <TableHead rowSpan={2} className="w-20 text-center align-middle">
+                      SUDAH DITERIMA
+                    </TableHead>
+                    <TableHead rowSpan={2} className="w-20 text-center align-middle">
+                      BELUM DITERIMA
+                    </TableHead>
+                    {!readOnly && (
+                      <TableHead rowSpan={2} className="w-16 text-center align-middle">
+                        Aksi
+                      </TableHead>
+                    )}
                   </TableRow>
                   <TableRow>
                     <TableHead className="bg-slate-100 text-center">BAIK</TableHead>
@@ -948,22 +938,10 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
                       <TableRow key={r.key} className={r.isJasa ? 'bg-amber-50/50' : undefined}>
                         <TableCell className="text-center text-xs text-muted-foreground">{r.isJasa ? <CornerDownRight className="mx-auto h-3.5 w-3.5" /> : idx + 1}</TableCell>
                         <TableCell>
-                          <Input
-                            className="h-8 font-mono text-xs"
-                            placeholder={r.isJasa ? '—' : 'Kode'}
-                            value={r.kodeMaterial}
-                            onChange={(e) => updateRow(idx, { kodeMaterial: e.target.value })}
-                            disabled={readOnly || !r.isJasa}
-                          />
+                          <Input className="h-8 font-mono text-xs" placeholder={r.isJasa ? '—' : 'Kode'} value={r.kodeMaterial} onChange={(e) => updateRow(idx, { kodeMaterial: e.target.value })} disabled={readOnly || !r.isJasa} />
                         </TableCell>
                         <TableCell>
-                          <Input
-                            className="h-8"
-                            placeholder={r.isJasa ? 'Jasa pengujian, mis. NDT (Ultrasonic Test)...' : 'Deskripsi barang & acuan spesifikasi'}
-                            value={r.deskripsi}
-                            onChange={(e) => updateRow(idx, { deskripsi: e.target.value })}
-                            disabled={readOnly}
-                          />
+                          <Input className="h-8" placeholder={r.isJasa ? 'Jasa pengujian, mis. NDT (Ultrasonic Test)...' : 'Deskripsi barang & acuan spesifikasi'} value={r.deskripsi} onChange={(e) => updateRow(idx, { deskripsi: e.target.value })} disabled={readOnly} />
                         </TableCell>
                         <TableCell>
                           <Input className="h-8 text-xs" placeholder="SET" value={r.satuan} onChange={(e) => updateRow(idx, { satuan: e.target.value })} disabled={readOnly} />
@@ -1083,9 +1061,7 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Selesaikan dokumen LPPB ini?</AlertDialogTitle>
-            <AlertDialogDescription>
-              LPPB {detail?.noForm} akan difinalisasi (SELESAI) dan tidak bisa diubah lagi. Pastikan hasil pemeriksaan &amp; pengujian sudah benar sebelum menyelesaikan.
-            </AlertDialogDescription>
+            <AlertDialogDescription>LPPB {detail?.noForm} akan difinalisasi (SELESAI) dan tidak bisa diubah lagi. Pastikan hasil pemeriksaan &amp; pengujian sudah benar sebelum menyelesaikan.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={menyelesaikan}>Batal</AlertDialogCancel>
@@ -1096,14 +1072,7 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      <HardDeleteCancelDialog
-        open={cancelOpen}
-        onOpenChange={setCancelOpen}
-        title={readOnly ? 'Batalkan Dokumen LPPB?' : 'Hapus LPPB?'}
-        formLabel={`LPPB ${detail?.noForm || ''}`}
-        submitting={canceling}
-        onConfirm={handleCancelDoc}
-      />
+      <HardDeleteCancelDialog open={cancelOpen} onOpenChange={setCancelOpen} title={readOnly ? 'Batalkan Dokumen LPPB?' : 'Hapus LPPB?'} formLabel={`LPPB ${detail?.noForm || ''}`} submitting={canceling} onConfirm={handleCancelDoc} />
     </FormTabShell>
   );
 }
