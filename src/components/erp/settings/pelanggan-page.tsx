@@ -21,7 +21,9 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { EmptyState } from '@/components/ui/empty-state';
 
 import { api, ApiError } from '@/lib/api';
-import { getSyaratBayarOptions, type SyaratBayarOption } from '@/lib/master-data';
+import { getSyaratBayarOptions, clearMasterDataCache, type SyaratBayarOption } from '@/lib/master-data';
+// Update #007 — quick add syarat bayar langsung dari form pelanggan
+import { QuickAddSyaratBayarButton } from '@/components/erp/quick-add';
 import type { PelangganResponse, PelangganCreate, PelangganUpdate, AkunPerkiraanSimple, PelangganCOAItem, PelangganFromCOACreate, COADropdownResponse, SettingAkunResponse, TaxStatus } from '@/types/api';
 import { TAX_STATUS_OPTIONS } from '@/types/api';
 
@@ -471,18 +473,32 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
           {/* Syarat Bayar (UUID, prefer pakai ini — canonical Phase 2) */}
           <div className="space-y-2">
             <Label>Syarat Bayar</Label>
-            <Select value={form.syaratBayarId} onValueChange={(v) => updateForm('syaratBayarId', v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih syarat bayar" />
-              </SelectTrigger>
-              <SelectContent>
-                {syaratBayarOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-start gap-1.5">
+              <div className="min-w-0 flex-1">
+                <Select value={form.syaratBayarId} onValueChange={(v) => updateForm('syaratBayarId', v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih syarat bayar" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {syaratBayarOptions.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Update #007: quick add syarat bayar */}
+              <QuickAddSyaratBayarButton
+                onCreated={(s) => {
+                  clearMasterDataCache();
+                  getSyaratBayarOptions()
+                    .then(setSyaratBayarOptions)
+                    .catch(() => {});
+                  updateForm('syaratBayarId', s.id);
+                }}
+              />
+            </div>
             <p className="text-[11px] text-muted-foreground">Pilih syarat pembayaran default untuk pelanggan ini.</p>
           </div>
 

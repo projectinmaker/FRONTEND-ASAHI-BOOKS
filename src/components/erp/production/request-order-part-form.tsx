@@ -28,6 +28,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
+// Update #007 — quick add master data langsung dari form transaksi
+import { QuickAddSupplierButton, toSupplierDropdown } from '@/components/erp/quick-add';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -706,7 +708,24 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                           {/* Update #003: QS bertipe data seperti ID PART — input teks. */}
                           {readOnly ? <span className="font-mono text-xs">{it.qs || '-'}</span> : <Input value={it.qs} onChange={(e) => updateItem(idx, { qs: e.target.value })} placeholder="Kode QS" maxLength={100} className="h-9 font-mono text-xs" aria-label={`QS baris ${idx + 1}`} />}
                         </TableCell>
-                        <TableCell className="align-top">{readOnly ? supplierOptions.find((s) => s.id === it.supplierId)?.nama || '-' : <SearchableDropdown value={it.supplierId} onValueChange={(v) => updateItem(idx, { supplierId: v })} options={supplierDropdownOptions} allOption={{ id: '', label: 'Tanpa supplier' }} placeholder="Pilih supplier..." searchPlaceholder="Cari supplier..." loading={dropdownsLoading} compact className="text-left" />}</TableCell>
+                        <TableCell className="align-top">
+                          {readOnly ? (
+                            supplierOptions.find((s) => s.id === it.supplierId)?.nama || '-'
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <SearchableDropdown className="min-w-0 flex-1 text-left" value={it.supplierId} onValueChange={(v) => updateItem(idx, { supplierId: v })} options={supplierDropdownOptions} allOption={{ id: '', label: 'Tanpa supplier' }} placeholder="Pilih supplier..." searchPlaceholder="Cari supplier..." loading={dropdownsLoading} compact />
+                              {/* Update #007: quick add supplier per baris item */}
+                              <QuickAddSupplierButton
+                                compact
+                                onCreated={(sup) => {
+                                  const drop = toSupplierDropdown(sup);
+                                  setSupplierOptions((prev) => (prev.some((row) => row.id === sup.id) ? prev : [...prev, drop]));
+                                  updateItem(idx, { supplierId: sup.id });
+                                }}
+                              />
+                            </div>
+                          )}
+                        </TableCell>
                         {/* ── KETERANGAN — dua sub-kolom: ORDER (kiri) & STOK (kanan) ── */}
                         <TableCell className="align-top">{readOnly ? it.keteranganOrder || '-' : <Input value={it.keteranganOrder} onChange={(e) => updateItem(idx, { keteranganOrder: e.target.value })} placeholder="Keterangan order" className="h-9" aria-label={`KETERANGAN ORDER baris ${idx + 1}`} />}</TableCell>
                         <TableCell className="align-top">{readOnly ? it.keteranganStok || '-' : <Input value={it.keteranganStok} onChange={(e) => updateItem(idx, { keteranganStok: e.target.value })} placeholder="Keterangan stok" className="h-9" aria-label={`KETERANGAN STOK baris ${idx + 1}`} />}</TableCell>

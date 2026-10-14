@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
+// Update #007 — quick add master data langsung dari form transaksi
+import { QuickAddBarangButton, QuickAddGudangButton, toBarangDropdown } from '@/components/erp/quick-add';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useERPStore } from '@/store/erp-store';
@@ -465,7 +467,18 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
                   <Label>
                     Barang <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={formBarangId} onValueChange={handleBarangChange} options={barangDropdownOptions} placeholder="Pilih barang" loading={dropdownsLoading} emptyText={formSalesOrderId ? 'Tidak ada barang pada SO ini.' : 'Tidak ditemukan.'} compact />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={formBarangId} onValueChange={handleBarangChange} options={barangDropdownOptions} placeholder="Pilih barang" loading={dropdownsLoading} emptyText={formSalesOrderId ? 'Tidak ada barang pada SO ini.' : 'Tidak ditemukan.'} compact />
+                    {/* Update #007: quick add barang — SO filter dilepas agar barang baru terlihat */}
+                    <QuickAddBarangButton
+                      compact
+                      onCreated={(b) => {
+                        setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
+                        if (formSalesOrderId) handleSalesOrderChange('');
+                        handleBarangChange(b.id);
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>
@@ -712,22 +725,41 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
                   <Label>
                     Dari Gudang <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown
-                    value={formDariGudangId}
-                    onValueChange={(v) => {
-                      setFormDariGudangId(v);
-                      if (v === formKeGudangId) setFormKeGudangId('');
-                    }}
-                    options={gudangOptions.map((g) => ({ id: g.id, label: g.nama, subtitle: g.kode }))}
-                    placeholder="Pilih gudang"
-                    loading={dropdownsLoading}
-                  />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown
+                      className="min-w-0 flex-1"
+                      value={formDariGudangId}
+                      onValueChange={(v) => {
+                        setFormDariGudangId(v);
+                        if (v === formKeGudangId) setFormKeGudangId('');
+                      }}
+                      options={gudangOptions.map((g) => ({ id: g.id, label: g.nama, subtitle: g.kode }))}
+                      placeholder="Pilih gudang"
+                      loading={dropdownsLoading}
+                    />
+                    {/* Update #007: quick add gudang */}
+                    <QuickAddGudangButton
+                      onCreated={(g) => {
+                        setGudangOptions((prev) => (prev.some((row) => row.id === g.id) ? prev : [...prev, g]));
+                        setFormDariGudangId(g.id);
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>
                     Ke Gudang <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={formKeGudangId} onValueChange={setFormKeGudangId} options={keGudangOptions.map((g) => ({ id: g.id, label: g.nama, subtitle: g.kode }))} placeholder="Pilih gudang" loading={dropdownsLoading} />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={formKeGudangId} onValueChange={setFormKeGudangId} options={keGudangOptions.map((g) => ({ id: g.id, label: g.nama, subtitle: g.kode }))} placeholder="Pilih gudang" loading={dropdownsLoading} />
+                    {/* Update #007: quick add gudang */}
+                    <QuickAddGudangButton
+                      onCreated={(g) => {
+                        setGudangOptions((prev) => (prev.some((row) => row.id === g.id) ? prev : [...prev, g]));
+                        setFormKeGudangId(g.id);
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -735,7 +767,17 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
                   <Label>
                     Barang <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={formBarangId} onValueChange={setFormBarangId} options={barangOptions.filter((b) => isStockItemBarang(b)).map((b) => ({ id: b.id, label: b.kode + ' - ' + b.nama }))} placeholder="Pilih barang" loading={dropdownsLoading} compact />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={formBarangId} onValueChange={setFormBarangId} options={barangOptions.filter((b) => isStockItemBarang(b)).map((b) => ({ id: b.id, label: b.kode + ' - ' + b.nama }))} placeholder="Pilih barang" loading={dropdownsLoading} compact />
+                    {/* Update #007: quick add barang (stok awal diatur via Penyesuaian) */}
+                    <QuickAddBarangButton
+                      compact
+                      onCreated={(b) => {
+                        setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
+                        setFormBarangId(b.id);
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>
@@ -1050,19 +1092,33 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
                   <Label>
                     Barang <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown
-                    value={formBarangId}
-                    onValueChange={(id) => {
-                      setFormBarangId(id);
-                      setFormExpiry('');
-                      setBarangError('');
-                      setBarangDetail(null);
-                    }}
-                    options={barangOptions.filter((b) => isStockItemBarang(b)).map((b) => ({ id: b.id, label: b.kode + ' - ' + b.nama }))}
-                    placeholder="Pilih barang"
-                    loading={dropdownsLoading}
-                    compact
-                  />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown
+                      className="min-w-0 flex-1"
+                      value={formBarangId}
+                      onValueChange={(id) => {
+                        setFormBarangId(id);
+                        setFormExpiry('');
+                        setBarangError('');
+                        setBarangDetail(null);
+                      }}
+                      options={barangOptions.filter((b) => isStockItemBarang(b)).map((b) => ({ id: b.id, label: b.kode + ' - ' + b.nama }))}
+                      placeholder="Pilih barang"
+                      loading={dropdownsLoading}
+                      compact
+                    />
+                    {/* Update #007: quick add barang */}
+                    <QuickAddBarangButton
+                      compact
+                      onCreated={(b) => {
+                        setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
+                        setFormBarangId(b.id);
+                        setFormExpiry('');
+                        setBarangError('');
+                        setBarangDetail(null);
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1070,7 +1126,17 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
                   <Label>
                     Gudang <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={formGudangId} onValueChange={setFormGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)" loading={dropdownsLoading} compact />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={formGudangId} onValueChange={setFormGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)" loading={dropdownsLoading} compact />
+                    {/* Update #007: quick add gudang */}
+                    <QuickAddGudangButton
+                      compact
+                      onCreated={(g) => {
+                        setGudangOptions((prev) => (prev.some((row) => row.id === g.id) ? prev : [...prev, g]));
+                        setFormGudangId(g.id);
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label>

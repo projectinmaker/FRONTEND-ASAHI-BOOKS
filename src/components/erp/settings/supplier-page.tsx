@@ -23,7 +23,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { loadSupplierRows, supplierFoundationKeys, supplierFoundationPayload, saveSupplier } from '@/lib/phase-a';
 import { api, ApiError } from '@/lib/api';
-import { getSyaratBayarOptions, type SyaratBayarOption } from '@/lib/master-data';
+import { getSyaratBayarOptions, clearMasterDataCache, type SyaratBayarOption } from '@/lib/master-data';
+// Update #007 — quick add syarat bayar langsung dari form supplier
+import { QuickAddSyaratBayarButton } from '@/components/erp/quick-add';
 import type { SupplierResponse, SupplierCreate, SupplierUpdate, SupplierCOAItem, TaxStatus } from '@/types/api';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -306,7 +308,19 @@ function SupplierForm({ mode, editId, initialData, preselectedCoaId, preselected
                 <TabsContent value="commercial" className="space-y-4">
                   <div className="space-y-2">
                     <Label>Syarat Bayar</Label>
-                    <SearchableDropdown value={form.syaratBayarId} onValueChange={(v) => updateForm('syaratBayarId', v)} options={syaratBayarOptions.map((o) => ({ id: o.value, label: o.label }))} allOption={{ id: '', label: 'Tidak dipilih' }} placeholder="Pilih syarat bayar" />
+                    <div className="flex items-start gap-1.5">
+                      <SearchableDropdown className="min-w-0 flex-1" value={form.syaratBayarId} onValueChange={(v) => updateForm('syaratBayarId', v)} options={syaratBayarOptions.map((o) => ({ id: o.value, label: o.label }))} allOption={{ id: '', label: 'Tidak dipilih' }} placeholder="Pilih syarat bayar" />
+                      {/* Update #007: quick add syarat bayar */}
+                      <QuickAddSyaratBayarButton
+                        onCreated={(s) => {
+                          clearMasterDataCache();
+                          getSyaratBayarOptions()
+                            .then((value) => setSyaratBayarOptions(value))
+                            .catch(() => {});
+                          updateForm('syaratBayarId', s.id);
+                        }}
+                      />
+                    </div>
                   </div>
                   {suggestedField('currency', 'Currency', 'Kode mata uang (opsional)')}
                   <div className="space-y-2">

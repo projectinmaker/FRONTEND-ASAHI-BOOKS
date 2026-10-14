@@ -52,6 +52,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
+// Update #007 — quick add kategori & satuan langsung dari form barang
+import { QuickAddKategoriButton, QuickAddSatuanButton } from '@/components/erp/quick-add';
 import type { BarangResponse, BarangCreate, BarangUpdate, BarangSatuanResponse, BarangSatuanCreate, BarangSatuanUpdate, KategoriBarangResponse, SatuanResponse, BarangAkunPersediaanItem, BarangAkunPilihan, BarangAkunPilihanResponse, AkunPersediaanSimple, ItemTypeBarang } from '@/types/api';
 import { ITEM_TYPE_OPTIONS } from '@/types/api';
 
@@ -1001,14 +1003,34 @@ export default function BarangForm({ mode, editId }: BarangFormProps) {
                   <Label>
                     Kategori <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={form.kategoriId} onValueChange={(v) => updateForm('kategoriId', v)} options={kategoriOptions.map((k) => ({ id: k.id, label: k.nama }))} placeholder="Pilih kategori" loading={loadingLookups} />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={form.kategoriId} onValueChange={(v) => updateForm('kategoriId', v)} options={kategoriOptions.map((k) => ({ id: k.id, label: k.nama }))} placeholder="Pilih kategori" loading={loadingLookups} />
+                    {/* Update #007: quick add kategori */}
+                    <QuickAddKategoriButton
+                      onCreated={(k) => {
+                        setKategoriOptions((prev) => (prev.some((row) => row.id === k.id) ? prev : [...prev, k]));
+                        updateForm('kategoriId', k.id);
+                        setFormErrors((prev) => (prev.kategoriId ? { ...prev, kategoriId: '' } : prev));
+                      }}
+                    />
+                  </div>
                   {formErrors.kategoriId && <p className="text-xs text-destructive mt-1">{formErrors.kategoriId}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>
                     Satuan Dasar <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={form.satuanId} onValueChange={(v) => updateForm('satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih satuan" loading={loadingLookups} />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={form.satuanId} onValueChange={(v) => updateForm('satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih satuan" loading={loadingLookups} />
+                    {/* Update #007: quick add satuan */}
+                    <QuickAddSatuanButton
+                      onCreated={(s) => {
+                        setSatuanOptions((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, s]));
+                        updateForm('satuanId', s.id);
+                        setFormErrors((prev) => (prev.satuanId ? { ...prev, satuanId: '' } : prev));
+                      }}
+                    />
+                  </div>
                   {formErrors.satuanId && <p className="text-xs text-destructive mt-1">{formErrors.satuanId}</p>}
                 </div>
               </div>

@@ -28,6 +28,8 @@ import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 // Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
+// Update #007 — quick add master data langsung dari form transaksi
+import { QuickAddPelangganButton, QuickAddGudangButton, QuickAddBarangButton, QuickAddSatuanButton, toPelangganDropdown, toBarangDropdown, satuanFromBarang } from '@/components/erp/quick-add';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
@@ -43,7 +45,7 @@ import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workfl
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { useInvoiceSaldos } from '@/lib/use-invoice-saldos';
-import type { SalesOrderResponse, SalesOrderSisaResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PengirimanSisaResponse, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+import type { SalesOrderResponse, SalesOrderSisaResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PengirimanSisaResponse, PelangganDropdown, SyaratBayarResponse, BarangDropdown, BarangResponse, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -199,28 +201,39 @@ interface ReturPenjualanDraftData {
 
 // ─── Detail Table With Price (for SO / Invoice / Retur forms) ──────────────
 
-function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean }) {
+function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false, onBarangCreated }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean; onBarangCreated?: (barang: BarangResponse) => void }) {
   // Update #004: hideDiskon — invoice tidak lagi menampilkan kolom Diskon %
   // (dokumen invoice tanpa diskon; payload mengirim diskon null).
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
-  const updateRow = useCallback(
-    (id: string, field: keyof FormDetailRow, value: string) => {
+  // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add.
+  const applyBarang = useCallback(
+    (id: string, value: string, found: BarangDropdown | undefined) => {
       setRows((prev) =>
         prev.map((r) => {
           if (r.id !== id) return r;
-          if (field === 'barangId') {
-            const found = barangOptions.find((b) => b.id === value);
-            // Harga jual default (bila diisi di master barang); fallback harga pokok.
-            // Normalisasi via Number() — backend mengirim Decimal sebagai string "20000000.00".
-            const hargaDefault = found ? (Number(found.hargaJual) > 0 ? String(Number(found.hargaJual)) : String(Number(found.hargaPokok))) : r.harga;
-            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', harga: hargaDefault };
-          }
-          return { ...r, [field]: value };
+          // Harga jual default (bila diisi di master barang); fallback harga pokok.
+          // Normalisasi via Number() — backend mengirim Decimal sebagai string "20000000.00".
+          const hargaDefault = found ? (Number(found.hargaJual) > 0 ? String(Number(found.hargaJual)) : String(Number(found.hargaPokok))) : r.harga;
+          return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', harga: hargaDefault };
         })
       );
     },
-    [setRows, barangOptions]
+    [setRows]
+  );
+  const updateRow = useCallback(
+    (id: string, field: keyof FormDetailRow, value: string) => {
+      if (field === 'barangId') {
+        applyBarang(
+          id,
+          value,
+          barangOptions.find((b) => b.id === value)
+        );
+        return;
+      }
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
+    },
+    [setRows, barangOptions, applyBarang]
   );
 
   const subtotal = rows.reduce((s, r) => {
@@ -256,7 +269,18 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
                 <TableRow key={row.id}>
                   <TableCell className="font-mono text-xs">{row.kodeBarang || '-'}</TableCell>
                   <TableCell>
-                    <SearchableDropdown value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                    <div className="flex items-center gap-1">
+                      <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                      {/* Update #007: quick add barang langsung di baris */}
+                      <QuickAddBarangButton
+                        compact
+                        onCreated={(b) => {
+                          const drop = toBarangDropdown(b);
+                          onBarangCreated?.(b);
+                          applyBarang(row.id, b.id, drop);
+                        }}
+                      />
+                    </div>
                   </TableCell>
                   <TableCell>
                     <CurrencyInput className="h-8 text-right text-xs" value={row.harga} onValueChange={(v) => updateRow(row.id, 'harga', v)} />
@@ -351,21 +375,39 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
 
 // ─── Detail Table Simple (for Pengiriman form) ──────────────────────────────
 
-function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[] }) {
+function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, onBarangCreated, onSatuanCreated }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; onBarangCreated?: (barang: BarangResponse) => void; onSatuanCreated?: (satuan: SatuanResponse) => void }) {
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
-  const updateRow = useCallback(
-    (id: string, field: keyof FormDetailRow, value: string) => {
+  // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add.
+  // satuanNamaOverride: nama satuan dari response create barang (satuan bisa
+  // baru dibuat via nested quick-add, belum ada di satuanOptions host).
+  const applyBarang = useCallback(
+    (id: string, value: string, found: BarangDropdown | undefined, satuanNamaOverride?: string) => {
       setRows((prev) =>
         prev.map((r) => {
           if (r.id !== id) return r;
-          if (field === 'barangId') {
-            const found = barangOptions.find((b) => b.id === value);
-            // Update ASAHI #4: satuan otomatis terpilih dari master barang (base_uom).
-            const satuanDefault = found?.satuanId || '';
-            const satuanFound = satuanOptions.find((s) => s.id === satuanDefault);
-            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', satuanId: satuanDefault, satuanNama: satuanFound?.nama || '' };
-          }
+          // Update ASAHI #4: satuan otomatis terpilih dari master barang (base_uom).
+          const satuanDefault = found?.satuanId || '';
+          const satuanNama = satuanNamaOverride ?? (satuanOptions.find((s) => s.id === satuanDefault)?.nama || '');
+          return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', satuanId: satuanDefault, satuanNama };
+        })
+      );
+    },
+    [setRows, satuanOptions]
+  );
+  const updateRow = useCallback(
+    (id: string, field: keyof FormDetailRow, value: string) => {
+      if (field === 'barangId') {
+        applyBarang(
+          id,
+          value,
+          barangOptions.find((b) => b.id === value)
+        );
+        return;
+      }
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== id) return r;
           if (field === 'satuanId') {
             const found = satuanOptions.find((s) => s.id === value);
             return { ...r, satuanId: value, satuanNama: found?.nama || '' };
@@ -374,7 +416,7 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
         })
       );
     },
-    [setRows, barangOptions, satuanOptions]
+    [setRows, barangOptions, satuanOptions, applyBarang]
   );
 
   const totalQty = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
@@ -409,13 +451,34 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions }: { ro
                   )}
                 </TableCell>
                 <TableCell>
-                  <SearchableDropdown value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                  <div className="flex items-center gap-1">
+                    <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                    {/* Update #007: quick add barang langsung di baris */}
+                    <QuickAddBarangButton
+                      compact
+                      onCreated={(b) => {
+                        const drop = toBarangDropdown(b);
+                        onBarangCreated?.(b);
+                        applyBarang(row.id, b.id, drop, b.satuan?.nama);
+                      }}
+                    />
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} step={1} aria-invalid={!!row.barangId && (!Number.isInteger(Number(row.qty)) || Number(row.qty) < 1)} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} />
                 </TableCell>
                 <TableCell>
-                  <SearchableDropdown value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact />
+                  <div className="flex items-center gap-1">
+                    <SearchableDropdown className="min-w-0 flex-1" value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact />
+                    {/* Update #007: quick add satuan langsung di baris */}
+                    <QuickAddSatuanButton
+                      compact
+                      onCreated={(s) => {
+                        onSatuanCreated?.(s);
+                        updateRow(row.id, 'satuanId', s.id);
+                      }}
+                    />
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
@@ -542,7 +605,7 @@ function useDropdowns() {
     };
   }, []);
 
-  return { pelangganOptions, syaratBayarOptions, barangOptions, satuanOptions, salesOrderOptions, invoiceOptions, pengirimanOptions, gudangOptions, loading };
+  return { pelangganOptions, setPelangganOptions, syaratBayarOptions, setSyaratBayarOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, salesOrderOptions, invoiceOptions, pengirimanOptions, gudangOptions, setGudangOptions, loading };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -567,7 +630,7 @@ function PesananPenjualanEditForm({ editId, subPage }: { editId: string; subPage
 
 function PengirimanCreateForm({ subPage }: { subPage: string }) {
   const { error: stockError, clearError: clearStockError, handleError: handleStockError } = useStockOperationError('pengiriman_barang');
-  const { pelangganOptions, barangOptions, satuanOptions, salesOrderOptions, gudangOptions, loading: ddLoading } = useDropdowns();
+  const { pelangganOptions, setPelangganOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, salesOrderOptions, gudangOptions, setGudangOptions, loading: ddLoading } = useDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -685,9 +748,10 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
   // (dipakai saat pengiriman dibuat tanpa SO, atau pelanggan diganti manual;
   // memilih SO tetap menimpa alamat dengan alamat SO-nya.)
   const handlePelangganChange = useCallback(
-    (id: string) => {
+    (id: string, masterOverride?: PelangganDropdown | null) => {
       setFPelangganId(id);
-      const master = findPartyMaster(pelangganOptions, id);
+      // Update #007: masterOverride dipakai quick-add (state belum ter-update).
+      const master = masterOverride !== undefined ? masterOverride : findPartyMaster(pelangganOptions, id);
       setFAlamatPengiriman(master?.alamat || '');
     },
     [pelangganOptions]
@@ -765,8 +829,19 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
-              {/* Update #4: pilih pelanggan → alamat ditarik otomatis dari master */}
-              <SearchableDropdown value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+              <div className="flex items-start gap-1.5">
+                {/* Update #4: pilih pelanggan → alamat ditarik otomatis dari master */}
+                <SearchableDropdown className="min-w-0 flex-1" value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                {/* Update #007: quick add pelanggan */}
+                <QuickAddPelangganButton
+                  onCreated={(p) => {
+                    const drop = toPelangganDropdown(p);
+                    setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                    handlePelangganChange(p.id, drop);
+                    setFormErrors((prev) => (prev.pelangganId ? { ...prev, pelangganId: '' } : prev));
+                  }}
+                />
+              </div>
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
           </div>
@@ -781,7 +856,17 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">
                 Gudang <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fGudangId} onValueChange={setFGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
+              <div className="flex items-start gap-1.5">
+                <SearchableDropdown className="min-w-0 flex-1" value={fGudangId} onValueChange={setFGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
+                {/* Update #007: quick add gudang */}
+                <QuickAddGudangButton
+                  onCreated={(g) => {
+                    setGudangOptions((prev) => (prev.some((row) => row.id === g.id) ? prev : [...prev, g]));
+                    setFGudangId(g.id);
+                    setFormErrors((prev) => (prev.gudangId ? { ...prev, gudangId: '' } : prev));
+                  }}
+                />
+              </div>
               {formErrors.gudangId && <p className="text-xs text-destructive">{formErrors.gudangId}</p>}
             </div>
           </div>
@@ -797,7 +882,19 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
             <Label className="text-xs font-medium">
               Detail Barang <span className="text-destructive">*</span>
             </Label>
-            <DetailTableSimple rows={fDetail} setRows={setFDetail} barangOptions={barangOptions} satuanOptions={satuanOptions} />
+            <DetailTableSimple
+              rows={fDetail}
+              setRows={setFDetail}
+              barangOptions={barangOptions}
+              satuanOptions={satuanOptions}
+              onBarangCreated={(b) => {
+                setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
+                // Satuan barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan host.
+                const satuan = satuanFromBarang(b);
+                if (satuan) setSatuanOptions((prev) => (prev.some((row) => row.id === satuan.id) ? prev : [...prev, satuan]));
+              }}
+              onSatuanCreated={(s) => setSatuanOptions((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, s]))}
+            />
             <p className="text-[11px] text-muted-foreground">
               Baris bertanda <span className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700 border-emerald-200">SO</span> otomatis ter-link ke line Sales Order — validasi over-delivery aktif. Pilih ulang SO untuk memuat ulang barisnya.
             </p>
@@ -833,7 +930,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
 
 function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatus }: { editId: string; subPage: string; initialNoSuratJalan?: string; initialStatus?: string }) {
   const { error: stockError, clearError: clearStockError, handleError: handleStockError } = useStockOperationError('pengiriman_barang');
-  const { pelangganOptions, salesOrderOptions, gudangOptions, loading: ddLoading } = useDropdowns();
+  const { pelangganOptions, setPelangganOptions, salesOrderOptions, gudangOptions, setGudangOptions, loading: ddLoading } = useDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -884,9 +981,10 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
 
   // ── Update #4: pilih pelanggan → alamat ditarik otomatis dari master ──
   const handleEditPelangganChange = useCallback(
-    (id: string) => {
+    (id: string, masterOverride?: PelangganDropdown | null) => {
       setEditPelangganId(id);
-      const master = findPartyMaster(pelangganOptions, id);
+      // Update #007: masterOverride dipakai quick-add (state belum ter-update).
+      const master = masterOverride !== undefined ? masterOverride : findPartyMaster(pelangganOptions, id);
       setEditAlamatPengiriman(master?.alamat || '');
     },
     [pelangganOptions]
@@ -959,7 +1057,17 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                   <Label className="text-xs font-medium">
                     Pelanggan <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                    {/* Update #007: quick add pelanggan */}
+                    <QuickAddPelangganButton
+                      onCreated={(p) => {
+                        const drop = toPelangganDropdown(p);
+                        setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                        handleEditPelangganChange(p.id, drop);
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -972,7 +1080,16 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                   <Label className="text-xs font-medium">
                     Gudang <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
+                    {/* Update #007: quick add gudang */}
+                    <QuickAddGudangButton
+                      onCreated={(g) => {
+                        setGudangOptions((prev) => (prev.some((row) => row.id === g.id) ? prev : [...prev, g]));
+                        setEditGudangId(g.id);
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -1045,7 +1162,7 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
 
 function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // Update #004: + pengirimanOptions (tarik No DO); syaratBayarOptions tidak dipakai lagi.
-  const { pelangganOptions, barangOptions, salesOrderOptions, pengirimanOptions, loading: ddLoading } = useDropdowns();
+  const { pelangganOptions, setPelangganOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, salesOrderOptions, pengirimanOptions, loading: ddLoading } = useDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -1091,9 +1208,10 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // dari master (memilih SO/DO setelahnya tetap menimpa dengan datanya).
   // Update #004: syarat bayar tidak lagi ditarik (field dihapus dari invoice). ──
   const handlePelangganChange = useCallback(
-    (id: string) => {
+    (id: string, masterOverride?: PelangganDropdown | null) => {
       setFPelangganId(id);
-      const master = findPartyMaster(pelangganOptions, id);
+      // Update #007: masterOverride dipakai quick-add (state belum ter-update).
+      const master = masterOverride !== undefined ? masterOverride : findPartyMaster(pelangganOptions, id);
       setFAlamatPengiriman(master?.alamat || '');
     },
     [pelangganOptions]
@@ -1277,10 +1395,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   );
 
   // Update #004: opsi No DO difilter per pelanggan terpilih (bila ada).
-  const doOptions = useMemo(
-    () => (fPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === fPelangganId) : pengirimanOptions),
-    [pengirimanOptions, fPelangganId]
-  );
+  const doOptions = useMemo(() => (fPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === fPelangganId) : pengirimanOptions), [pengirimanOptions, fPelangganId]);
 
   const formSubtotal = useMemo(
     () =>
@@ -1371,7 +1486,18 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+              <div className="flex items-start gap-1.5">
+                <SearchableDropdown className="min-w-0 flex-1" value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                {/* Update #007: quick add pelanggan */}
+                <QuickAddPelangganButton
+                  onCreated={(p) => {
+                    const drop = toPelangganDropdown(p);
+                    setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                    handlePelangganChange(p.id, drop);
+                    setFormErrors((prev) => (prev.pelangganId ? { ...prev, pelangganId: '' } : prev));
+                  }}
+                />
+              </div>
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -1423,7 +1549,18 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               Detail Barang <span className="text-destructive">*</span>
             </Label>
             {/* Update #004: kolom Diskon % disembunyikan di invoice. */}
-            <DetailTableWithPrice rows={fDetail} setRows={setFDetail} barangOptions={barangOptions} hideDiskon />
+            <DetailTableWithPrice
+              rows={fDetail}
+              setRows={setFDetail}
+              barangOptions={barangOptions}
+              hideDiskon
+              onBarangCreated={(b) => {
+                setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
+                // Satuan barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan host.
+                const satuan = satuanFromBarang(b);
+                if (satuan) setSatuanOptions((prev) => (prev.some((row) => row.id === satuan.id) ? prev : [...prev, satuan]));
+              }}
+            />
             {formErrors.detail && <p className="text-xs text-destructive mt-1">{formErrors.detail}</p>}
           </div>
           <Separator />
@@ -1498,7 +1635,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
 
 function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialStatus, initialGrandTotal }: { editId: string; subPage: string; initialNoInvoice?: string; initialStatus?: string; initialGrandTotal?: number }) {
   // Update #004: syaratBayarOptions tidak dipakai lagi (field dihapus dari invoice).
-  const { pelangganOptions, salesOrderOptions, loading: ddLoading } = useDropdowns();
+  const { pelangganOptions, setPelangganOptions, salesOrderOptions, loading: ddLoading } = useDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -1605,9 +1742,10 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   // ── Update #4: pilih pelanggan → alamat ditarik otomatis dari master
   // Update #004: syarat bayar tidak lagi ditarik (field dihapus dari invoice). ──
   const handleEditPelangganChange = useCallback(
-    (id: string) => {
+    (id: string, masterOverride?: PelangganDropdown | null) => {
       setEditPelangganId(id);
-      const master = findPartyMaster(pelangganOptions, id);
+      // Update #007: masterOverride dipakai quick-add (state belum ter-update).
+      const master = masterOverride !== undefined ? masterOverride : findPartyMaster(pelangganOptions, id);
       setEditAlamatPengiriman(master?.alamat || '');
     },
     [pelangganOptions]
@@ -1683,7 +1821,17 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                   <Label className="text-xs font-medium">
                     Pelanggan <span className="text-destructive">*</span>
                   </Label>
-                  <SearchableDropdown value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                    {/* Update #007: quick add pelanggan */}
+                    <QuickAddPelangganButton
+                      onCreated={(p) => {
+                        const drop = toPelangganDropdown(p);
+                        setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                        handleEditPelangganChange(p.id, drop);
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   {/* Update #004: label "Tanggal" → "Tanggal Invoice". */}
@@ -1782,7 +1930,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
 
 function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
   const { error: returnError, clearError: clearReturnError, handleError: handleReturnError } = useStockOperationError('sales_retur');
-  const { invoiceOptions, pengirimanOptions, gudangOptions, loading: ddLoading } = useDropdowns();
+  const { invoiceOptions, pengirimanOptions, gudangOptions, setGudangOptions, loading: ddLoading } = useDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -1990,7 +2138,17 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Gudang</Label>
-              <SearchableDropdown value={fGudangId} onValueChange={setFGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (opsional)..." />
+              <div className="flex items-start gap-1.5">
+                <SearchableDropdown className="min-w-0 flex-1" value={fGudangId} onValueChange={setFGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (opsional)..." />
+                {/* Update #007: quick add gudang */}
+                <QuickAddGudangButton
+                  compact
+                  onCreated={(g) => {
+                    setGudangOptions((prev) => (prev.some((row) => row.id === g.id) ? prev : [...prev, g]));
+                    setFGudangId(g.id);
+                  }}
+                />
+              </div>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2065,7 +2223,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
 
 function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus, initialGrandTotal }: { editId: string; subPage: string; initialNoRetur?: string; initialStatus?: string; initialGrandTotal?: number }) {
   const { error: returnError, clearError: clearReturnError, handleError: handleReturnError } = useStockOperationError('sales_retur');
-  const { pelangganOptions, invoiceOptions, pengirimanOptions, gudangOptions, loading: ddLoading } = useDropdowns();
+  const { pelangganOptions, invoiceOptions, pengirimanOptions, gudangOptions, setGudangOptions, loading: ddLoading } = useDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -2197,7 +2355,17 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Gudang</Label>
-                  <SearchableDropdown value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (opsional)..." />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (opsional)..." />
+                    {/* Update #007: quick add gudang */}
+                    <QuickAddGudangButton
+                      compact
+                      onCreated={(g) => {
+                        setGudangOptions((prev) => (prev.some((row) => row.id === g.id) ? prev : [...prev, g]));
+                        setEditGudangId(g.id);
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

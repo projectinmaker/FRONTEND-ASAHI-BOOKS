@@ -24,6 +24,8 @@ import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderRes
 // Update #4 — auto-fill field berkaitan master data saat pelanggan/supplier dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { ORDER_CURRENCY_OPTIONS, buildOrderUpdate, canEditOrder, formatOrderMoney, JENIS_PEMBELIAN_OPTIONS, newOrderHeader, newOrderLine, orderEndpoint, orderHeaderFromResponse, orderLinesFromResponse, persistOrder, serializeOrderHeader, serializeOrderLines, type OrderHeader, type OrderHeaderKey, type OrderKind, type OrderLine, type OrderResponse } from '@/lib/order-documents';
+// Update #007 — quick add master data langsung dari form transaksi
+import { QuickAddPelangganButton, QuickAddSupplierButton, QuickAddBarangButton, QuickAddSatuanButton, QuickAddSyaratBayarButton, toPelangganDropdown, toSupplierDropdown, toBarangDropdown, satuanFromBarang } from '@/components/erp/quick-add';
 function includeCurrent(options: SearchableDropdownOption[], id?: string | null, label?: string | null) {
   return id && !options.some((option) => option.id === id) ? [...options, { id, label: label || id }] : options;
 }
@@ -197,9 +199,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   // bayar ditarik bila party punya default; PO juga menarik mata uang default
   // supplier (bila valid di daftar mata uang). Field tetap bisa disunting
   // setelahnya untuk kasus khusus.
-  const handlePartyChange = (value: string) => {
+  const handlePartyChange = (value: string, masterOverride?: PelangganDropdown | SupplierDropdown | null) => {
     setField(partyKey, value);
-    const master = findPartyMaster(partyRows, value);
+    // Update #007: masterOverride dipakai quick-add — baris master hasil create
+    // belum masuk state partyRows saat callback ini berjalan (stale closure).
+    const master = masterOverride !== undefined ? masterOverride : findPartyMaster(partyRows, value);
     setHeader((prev) => {
       const next = { ...prev };
       if (isSales) {
@@ -219,28 +223,34 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     });
   };
 
-  const updateLine = (key: string, field: keyof OrderLine, value: string) =>
+  // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add
+  // (autofill harga + satuan dasar dari master barang, mirror cabang lama).
+  const applyBarangToLine = (key: string, value: string, found: BarangDropdown | undefined = barang.find((b) => b.id === value)) =>
     setLines((prev) =>
       prev.map((line) => {
         if (line.key !== key) return line;
-        if (field === 'barangId') {
-          // Auto-fill harga saat barang dipilih:
-          // - SO (sales): harga jual default dari master barang, fallback harga pokok.
-          // - PO (purchase): harga beli referensi (harga pokok).
-          // Normalisasi via Number() — backend mengirim Decimal sebagai string "20000000.00".
-          const found = barang.find((b) => b.id === value);
-          let hargaDefault = '';
-          if (found) {
-            if (isSales && Number(found.hargaJual) > 0) hargaDefault = String(Number(found.hargaJual));
-            else if (Number(found.hargaPokok) > 0) hargaDefault = String(Number(found.hargaPokok));
-          }
-          // Update ASAHI #4: satuan otomatis terpilih dari master barang
-          // (base_uom) — sejalan dengan auto-fill harga; user tetap bisa ganti manual.
-          return { ...line, barangId: value, satuanId: found?.satuanId || '', ...(hargaDefault ? { harga: hargaDefault } : {}) };
+        // Auto-fill harga saat barang dipilih:
+        // - SO (sales): harga jual default dari master barang, fallback harga pokok.
+        // - PO (purchase): harga beli referensi (harga pokok).
+        // Normalisasi via Number() — backend mengirim Decimal sebagai string "20000000.00".
+        let hargaDefault = '';
+        if (found) {
+          if (isSales && Number(found.hargaJual) > 0) hargaDefault = String(Number(found.hargaJual));
+          else if (Number(found.hargaPokok) > 0) hargaDefault = String(Number(found.hargaPokok));
         }
-        return { ...line, [field]: value };
+        // Update ASAHI #4: satuan otomatis terpilih dari master barang
+        // (base_uom) — sejalan dengan auto-fill harga; user tetap bisa ganti manual.
+        return { ...line, barangId: value, satuanId: found?.satuanId || '', ...(hargaDefault ? { harga: hargaDefault } : {}) };
       })
     );
+
+  const updateLine = (key: string, field: keyof OrderLine, value: string) => {
+    if (field === 'barangId') {
+      applyBarangToLine(key, value);
+      return;
+    }
+    setLines((prev) => prev.map((line) => (line.key === key ? { ...line, [field]: value } : line)));
+  };
 
   async function save() {
     if (disabled || submittingRef.current) return;
@@ -403,23 +413,58 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                 <div className="space-y-1.5">
                   <Label>{isSales ? 'Pelanggan' : 'Supplier'} *</Label>
                   {/* Update #4: pilih party → alamat/syarat bayar/currency ditarik otomatis dari master */}
-                  <SearchableDropdown value={header[partyKey]} onValueChange={handlePartyChange} options={includeCurrent(parties, currentPartyId, currentParty?.nama)} disabled={disabled} placeholder={isSales ? 'Pilih pelanggan' : 'Pilih supplier'} />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown className="min-w-0 flex-1" value={header[partyKey]} onValueChange={handlePartyChange} options={includeCurrent(parties, currentPartyId, currentParty?.nama)} disabled={disabled} placeholder={isSales ? 'Pilih pelanggan' : 'Pilih supplier'} />
+                    {/* Update #007: quick add pelanggan/supplier tanpa keluar dari form */}
+                    {isSales ? (
+                      <QuickAddPelangganButton
+                        disabled={disabled}
+                        onCreated={(p) => {
+                          const drop = toPelangganDropdown(p);
+                          setPartyRows((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                          setParties((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, { id: p.id, label: p.nama }]));
+                          handlePartyChange(p.id, drop);
+                        }}
+                      />
+                    ) : (
+                      <QuickAddSupplierButton
+                        disabled={disabled}
+                        onCreated={(s) => {
+                          const drop = toSupplierDropdown(s);
+                          setPartyRows((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, drop]));
+                          setParties((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, { id: s.id, label: s.nama }]));
+                          handlePartyChange(s.id, drop);
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
                 {/* Update #002 (PO): label "Tanggal" → "Tanggal PO" — sales tetap "Tanggal". */}
                 {input('tanggal', isSales ? 'Tanggal *' : 'Tanggal PO *', 'date')}
                 <div className="space-y-1.5">
                   <Label>Syarat Bayar</Label>
-                  <SearchableDropdown
-                    value={header.syaratBayarId}
-                    onValueChange={(value) => setField('syaratBayarId', value)}
-                    options={includeCurrent(
-                      terms.map((term) => ({ id: term.id, label: term.nama })),
-                      original?.syaratBayarId,
-                      original?.syaratBayar?.nama
-                    )}
-                    allOption={{ id: '', label: 'Tidak dipilih' }}
-                    disabled={disabled}
-                  />
+                  <div className="flex items-start gap-1.5">
+                    <SearchableDropdown
+                      className="min-w-0 flex-1"
+                      value={header.syaratBayarId}
+                      onValueChange={(value) => setField('syaratBayarId', value)}
+                      options={includeCurrent(
+                        terms.map((term) => ({ id: term.id, label: term.nama })),
+                        original?.syaratBayarId,
+                        original?.syaratBayar?.nama
+                      )}
+                      allOption={{ id: '', label: 'Tidak dipilih' }}
+                      disabled={disabled}
+                    />
+                    {/* Update #007: quick add syarat bayar */}
+                    <QuickAddSyaratBayarButton
+                      disabled={disabled}
+                      onCreated={(term) => {
+                        setTerms((prev) => (prev.some((row) => row.id === term.id) ? prev : [...prev, term]));
+                        setField('syaratBayarId', term.id);
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Currency</Label>
@@ -543,10 +588,36 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                       {lines.map((line, index) => (
                         <TableRow key={line.key}>
                           <TableCell>
-                            <SearchableDropdown value={line.barangId} onValueChange={(value) => updateLine(line.key, 'barangId', value)} options={barangOptions} disabled={disabled} compact />
+                            <div className="flex items-center gap-1">
+                              <SearchableDropdown className="min-w-0 flex-1" value={line.barangId} onValueChange={(value) => updateLine(line.key, 'barangId', value)} options={barangOptions} disabled={disabled} compact />
+                              {/* Update #007: quick add barang langsung di baris */}
+                              <QuickAddBarangButton
+                                compact
+                                disabled={disabled}
+                                onCreated={(b) => {
+                                  const drop = toBarangDropdown(b);
+                                  setBarang((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, drop]));
+                                  // Satuan dasar barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan form.
+                                  const satuan = satuanFromBarang(b);
+                                  if (satuan) setUnits((prev) => (prev.some((row) => row.id === satuan.id) ? prev : [...prev, satuan]));
+                                  applyBarangToLine(line.key, b.id, drop);
+                                }}
+                              />
+                            </div>
                           </TableCell>
                           <TableCell>
-                            <SearchableDropdown value={line.satuanId} onValueChange={(value) => updateLine(line.key, 'satuanId', value)} options={unitOptions} allOption={{ id: '', label: 'Tidak dipilih' }} disabled={disabled} compact />
+                            <div className="flex items-center gap-1">
+                              <SearchableDropdown className="min-w-0 flex-1" value={line.satuanId} onValueChange={(value) => updateLine(line.key, 'satuanId', value)} options={unitOptions} allOption={{ id: '', label: 'Tidak dipilih' }} disabled={disabled} compact />
+                              {/* Update #007: quick add satuan langsung di baris */}
+                              <QuickAddSatuanButton
+                                compact
+                                disabled={disabled}
+                                onCreated={(s) => {
+                                  setUnits((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, s]));
+                                  updateLine(line.key, 'satuanId', s.id);
+                                }}
+                              />
+                            </div>
                           </TableCell>
                           {(['qty', 'harga', 'diskon'] as const).map((key) => (
                             <TableCell key={key}>{key === 'harga' ? <CurrencyInput aria-label={`harga baris ${index + 1}`} allowDecimal value={line.harga} onValueChange={(value) => updateLine(line.key, 'harga', value)} disabled={disabled} /> : <Input aria-label={`${key} baris ${index + 1}`} type="number" step="any" value={line[key]} onChange={(event) => updateLine(line.key, key, event.target.value)} disabled={disabled} />}</TableCell>

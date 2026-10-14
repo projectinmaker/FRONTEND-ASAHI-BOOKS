@@ -29,9 +29,11 @@ import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 import { PenawaranPDFTemplate, type PenawaranData, type DetailRow, type BiayaTambahan } from '@/components/erp/sales/pdf-templates';
-import type { PenawaranResponse, PenawaranCreate, PenawaranDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, SatuanResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+import type { PenawaranResponse, PenawaranCreate, PenawaranDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, BarangResponse, SatuanResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
 // Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
+// Update #007 — quick add master data langsung dari form transaksi
+import { QuickAddPelangganButton, QuickAddSyaratBayarButton, QuickAddBarangButton, QuickAddSatuanButton, toPelangganDropdown, toBarangDropdown, satuanFromBarang } from '@/components/erp/quick-add';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -140,27 +142,45 @@ function includeCurrent(options: SearchableDropdownOption[], id?: string | null,
 
 // ─── Detail Table (barang + satuan + harga + diskon + subtotal) ─────────────
 
-function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions }: { rows: PenawaranFormRow[]; setRows: Dispatch<SetStateAction<PenawaranFormRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[] }) {
+function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions, onBarangCreated, onSatuanCreated }: { rows: PenawaranFormRow[]; setRows: Dispatch<SetStateAction<PenawaranFormRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; onBarangCreated?: (barang: BarangResponse) => void; onSatuanCreated?: (satuan: SatuanResponse) => void }) {
   const addRow = useCallback(() => setRows((p) => [...p, newFormRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
-  const updateRow = useCallback(
-    (id: string, field: keyof PenawaranFormRow, value: string) => {
+  // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add.
+  // satuanNamaOverride: nama satuan dari response create barang (satuan bisa
+  // baru dibuat via nested quick-add, belum ada di satuanOptions host).
+  const applyBarang = useCallback(
+    (id: string, value: string, found: BarangDropdown | undefined, satuanNamaOverride?: string) => {
       setRows((prev) =>
         prev.map((r) => {
           if (r.id !== id) return r;
-          if (field === 'barangId') {
-            const found = barangOptions.find((b) => b.id === value);
-            // Auto-fill harga saat barang dipilih (mirror DetailTableWithPrice
-            // di sales/index.tsx): harga jual default, fallback harga pokok.
-            // Normalisasi via Number() — backend mengirim Decimal sebagai string.
-            const hargaJual = Number(found?.hargaJual);
-            const hargaPokok = Number(found?.hargaPokok);
-            const hargaDefault = found ? (hargaJual > 0 ? String(hargaJual) : hargaPokok > 0 ? String(hargaPokok) : '') : r.harga;
-            // Update ASAHI #4: satuan otomatis terpilih dari master barang (base_uom).
-            const satuanDefault = found?.satuanId || '';
-            const satuanFound = satuanOptions.find((s) => s.id === satuanDefault);
-            return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', satuanId: satuanDefault, satuanNama: satuanFound?.nama || '', ...(hargaDefault ? { harga: hargaDefault } : {}) };
-          }
+          // Auto-fill harga saat barang dipilih (mirror DetailTableWithPrice
+          // di sales/index.tsx): harga jual default, fallback harga pokok.
+          // Normalisasi via Number() — backend mengirim Decimal sebagai string.
+          const hargaJual = Number(found?.hargaJual);
+          const hargaPokok = Number(found?.hargaPokok);
+          const hargaDefault = found ? (hargaJual > 0 ? String(hargaJual) : hargaPokok > 0 ? String(hargaPokok) : '') : r.harga;
+          // Update ASAHI #4: satuan otomatis terpilih dari master barang (base_uom).
+          const satuanDefault = found?.satuanId || '';
+          const satuanNama = satuanNamaOverride ?? (satuanOptions.find((s) => s.id === satuanDefault)?.nama || '');
+          return { ...r, barangId: value, kodeBarang: found?.kode || '', barangNama: found?.nama || '', satuanId: satuanDefault, satuanNama, ...(hargaDefault ? { harga: hargaDefault } : {}) };
+        })
+      );
+    },
+    [setRows, satuanOptions]
+  );
+  const updateRow = useCallback(
+    (id: string, field: keyof PenawaranFormRow, value: string) => {
+      if (field === 'barangId') {
+        applyBarang(
+          id,
+          value,
+          barangOptions.find((b) => b.id === value)
+        );
+        return;
+      }
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== id) return r;
           if (field === 'satuanId') {
             const found = satuanOptions.find((s) => s.id === value);
             return { ...r, satuanId: value, satuanNama: found?.nama || '' };
@@ -169,7 +189,7 @@ function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions }: {
         })
       );
     },
-    [setRows, barangOptions, satuanOptions]
+    [setRows, barangOptions, satuanOptions, applyBarang]
   );
 
   return (
@@ -198,10 +218,31 @@ function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions }: {
                 <TableRow key={row.id}>
                   <TableCell className="font-mono text-xs">{row.kodeBarang || '-'}</TableCell>
                   <TableCell>
-                    <SearchableDropdown value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                    <div className="flex items-center gap-1">
+                      <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                      {/* Update #007: quick add barang langsung di baris */}
+                      <QuickAddBarangButton
+                        compact
+                        onCreated={(b) => {
+                          const drop = toBarangDropdown(b);
+                          onBarangCreated?.(b);
+                          applyBarang(row.id, b.id, drop, b.satuan?.nama);
+                        }}
+                      />
+                    </div>
                   </TableCell>
                   <TableCell>
-                    <SearchableDropdown value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} allOption={{ id: '', label: 'Tidak dipilih' }} placeholder="Pilih..." compact />
+                    <div className="flex items-center gap-1">
+                      <SearchableDropdown className="min-w-0 flex-1" value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} allOption={{ id: '', label: 'Tidak dipilih' }} placeholder="Pilih..." compact />
+                      {/* Update #007: quick add satuan langsung di baris */}
+                      <QuickAddSatuanButton
+                        compact
+                        onCreated={(s) => {
+                          onSatuanCreated?.(s);
+                          updateRow(row.id, 'satuanId', s.id);
+                        }}
+                      />
+                    </div>
                   </TableCell>
                   <TableCell>
                     <CurrencyInput className="h-8 text-right text-xs" value={row.harga} onValueChange={(v) => updateRow(row.id, 'harga', v)} />
@@ -950,17 +991,35 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               <Label className="text-xs font-medium">
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown
-                value={fPelangganId}
-                onValueChange={handlePelangganChange}
-                options={includeCurrent(
-                  pelangganOptions.map((p) => ({ id: p.id, label: p.nama })),
-                  fPelangganId,
-                  editPelangganNama
-                )}
-                placeholder="Pilih pelanggan..."
-                disabled={readOnly}
-              />
+              <div className="flex items-start gap-1.5">
+                <SearchableDropdown
+                  className="min-w-0 flex-1"
+                  value={fPelangganId}
+                  onValueChange={handlePelangganChange}
+                  options={includeCurrent(
+                    pelangganOptions.map((p) => ({ id: p.id, label: p.nama })),
+                    fPelangganId,
+                    editPelangganNama
+                  )}
+                  placeholder="Pilih pelanggan..."
+                  disabled={readOnly}
+                />
+                {/* Update #007: quick add pelanggan — field & simpan sama seperti master data */}
+                <QuickAddPelangganButton
+                  disabled={readOnly}
+                  onCreated={(p) => {
+                    const drop = toPelangganDropdown(p);
+                    setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                    // Mirror handlePelangganChange — dari response segar (state belum ter-update).
+                    setFPelangganId(p.id);
+                    setFAlamatPengiriman(p.alamat || '');
+                    setFCustomerCode(p.singkatan || '');
+                    const syaratId = p.syaratBayarId || p.syaratBayar?.id;
+                    if (syaratId) setFSyaratBayarId(syaratId);
+                    setFormErrors((prev) => (prev.pelangganId ? { ...prev, pelangganId: '' } : prev));
+                  }}
+                />
+              </div>
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
             <div className="space-y-1.5">
@@ -978,18 +1037,29 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Syarat Bayar</Label>
-              <SearchableDropdown
-                value={fSyaratBayarId}
-                onValueChange={setFSyaratBayarId}
-                options={includeCurrent(
-                  syaratBayarOptions.map((s) => ({ id: s.id, label: s.nama, subtitle: s.hari ? s.hari + ' hari' : undefined })),
-                  fSyaratBayarId,
-                  editSyaratNama
-                )}
-                allOption={{ id: '', label: 'Tidak dipilih' }}
-                placeholder="Pilih..."
-                disabled={readOnly}
-              />
+              <div className="flex items-start gap-1.5">
+                <SearchableDropdown
+                  className="min-w-0 flex-1"
+                  value={fSyaratBayarId}
+                  onValueChange={setFSyaratBayarId}
+                  options={includeCurrent(
+                    syaratBayarOptions.map((s) => ({ id: s.id, label: s.nama, subtitle: s.hari ? s.hari + ' hari' : undefined })),
+                    fSyaratBayarId,
+                    editSyaratNama
+                  )}
+                  allOption={{ id: '', label: 'Tidak dipilih' }}
+                  placeholder="Pilih..."
+                  disabled={readOnly}
+                />
+                {/* Update #007: quick add syarat bayar */}
+                <QuickAddSyaratBayarButton
+                  disabled={readOnly}
+                  onCreated={(s) => {
+                    setSyaratBayarOptions((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, s]));
+                    setFSyaratBayarId(s.id);
+                  }}
+                />
+              </div>
             </div>
           </div>
           {/* ── Update #003: Nomor PO + Singkatan Customer — supaya SO hasil
@@ -1019,7 +1089,19 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
             <Label className="text-xs font-medium">
               Detail Barang <span className="text-destructive">*</span>
             </Label>
-            <PenawaranDetailTable rows={fDetail} setRows={setFDetail} barangOptions={effectiveBarangOptions} satuanOptions={effectiveSatuanOptions} />
+            <PenawaranDetailTable
+              rows={fDetail}
+              setRows={setFDetail}
+              barangOptions={effectiveBarangOptions}
+              satuanOptions={effectiveSatuanOptions}
+              onBarangCreated={(b) => {
+                setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
+                // Satuan barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan host.
+                const satuan = satuanFromBarang(b);
+                if (satuan) setSatuanOptions((prev) => (prev.some((row) => row.id === satuan.id) ? prev : [...prev, satuan]));
+              }}
+              onSatuanCreated={(s) => setSatuanOptions((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, s]))}
+            />
             {formErrors.detail && <p className="text-xs text-destructive mt-1">{formErrors.detail}</p>}
           </div>
           <Separator />
