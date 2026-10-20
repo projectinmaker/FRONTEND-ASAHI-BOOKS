@@ -40,7 +40,6 @@ import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { useERPStore } from '@/store/erp-store';
 import { PesananCetakTab, PengirimanCetakTab, InvoiceCetakTab, ReturCetakTab } from '@/components/erp/sales/cetak-tabs';
 import { PenawaranTab, PenawaranCreateForm, PenawaranCetakTab } from '@/components/erp/sales/penawaran';
-import { PelunasanPiutangView } from '@/components/erp/pelunasan';
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
@@ -3741,12 +3740,10 @@ export default function Sales({ subPage: subPageProp, refreshKey, formMode, form
   const activeSubPage = useERPStore((s) => s.activeSubPage);
   const subPage = subPageProp || activeSubPage || 'pesanan';
 
-  // ── Pelunasan Piutang: dipindahkan dari modul Pelunasan mandiri ──
-  // Dirutekan SEBELUM SalesList agar dropdown SO/invoice/barang tidak dimuat
-  // (pelunasan memuat referensinya sendiri: pelanggan + kas/bank + tagihan).
-  if (!formMode && subPage === 'pelunasan-piutang') {
-    return <PelunasanPiutangView refreshKey={refreshKey} />;
-  }
+  // ── Update #01 — Pelunasan Piutang pindah ke modul Kas & Bank ──
+  // Routing subPage 'pelunasan-piutang' kini di-handle page.tsx (modul
+  // cash-bank); tab lama otomatis di-remap, jadi Sales tidak lagi
+  // merender halaman pelunasan.
 
   // ── Form mode: render the appropriate form component in a tab ──
   if (formMode) {

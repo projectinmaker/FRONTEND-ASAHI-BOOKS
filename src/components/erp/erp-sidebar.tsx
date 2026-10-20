@@ -49,7 +49,12 @@ const modules: NavModule[] = [
       { id: 'pembayaran', label: 'Pembayaran', icon: CreditCard },
       { id: 'penerimaan', label: 'Penerimaan', icon: ArrowDownToLine },
       { id: 'transfer-bank', label: 'Transfer Bank', icon: ArrowLeftRight },
-      { id: 'rekonsiliasi-bank', label: 'Rekonsiliasi Bank', icon: GitCompareArrows }
+      { id: 'rekonsiliasi-bank', label: 'Rekonsiliasi Bank', icon: GitCompareArrows },
+      // Update #01 — Pelunasan Piutang & Hutang diintegrasikan ke Kas & Bank
+      // (sebelumnya di modul Penjualan / Pembelian). Alur: pilih pelanggan/
+      // supplier → invoice outstanding → nilai → posting.
+      { id: 'pelunasan-piutang', label: 'Pelunasan Piutang', icon: HandCoins },
+      { id: 'pelunasan-hutang', label: 'Pelunasan Hutang', icon: HandCoins }
     ]
   },
   {
@@ -63,9 +68,9 @@ const modules: NavModule[] = [
       { id: 'invoice', label: 'Invoice', icon: Receipt },
       // Tukar Faktur / Tanda Terima (proof of receipt) — update #4, di bawah Invoice
       { id: 'tukar-faktur', label: 'Tukar Faktur', icon: FileCheck },
-      { id: 'retur', label: 'Retur', icon: RotateCcw },
-      // Pelunasan Piutang dipindahkan dari modul Pelunasan ke modul Penjualan
-      { id: 'pelunasan-piutang', label: 'Pelunasan Piutang', icon: HandCoins }
+      { id: 'retur', label: 'Retur', icon: RotateCcw }
+      // Update #01 — Pelunasan Piutang dipindahkan ke modul Kas & Bank
+      // (alur penerimaan kas dari pelanggan kini terintegrasi di sana).
     ]
   },
   {
@@ -78,9 +83,9 @@ const modules: NavModule[] = [
       { id: 'lppb', label: 'LPPB', icon: ClipboardCheck },
       { id: 'penerimaan', label: 'Penerimaan', icon: Package },
       { id: 'invoice', label: 'Invoice', icon: Receipt },
-      { id: 'retur', label: 'Retur', icon: RotateCcw },
-      // Pelunasan Hutang dipindahkan dari modul Pelunasan ke modul Pembelian
-      { id: 'pelunasan-hutang', label: 'Pelunasan Hutang', icon: HandCoins }
+      { id: 'retur', label: 'Retur', icon: RotateCcw }
+      // Update #01 — Pelunasan Hutang dipindahkan ke modul Kas & Bank
+      // (alur pembayaran kas ke supplier kini terintegrasi di sana).
     ]
   },
   {
@@ -224,7 +229,11 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     pembayaran: 'finance.cash_payment.view',
     penerimaan: 'finance.cash_receipt.view',
     'transfer-bank': 'finance.bank_transfer.view',
-    'rekonsiliasi-bank': 'finance.bank_reconciliation.view'
+    'rekonsiliasi-bank': 'finance.bank_reconciliation.view',
+    // Update #01 — menu pelunasan pindah ke Kas & Bank; kode permission
+    // tetap pakai registry settlement (sales.ar_settlement / purchase.ap_settlement).
+    'pelunasan-piutang': 'sales.ar_settlement.view',
+    'pelunasan-hutang': 'purchase.ap_settlement.view'
   },
   sales: {
     penawaran: 'sales.penawaran.view',
@@ -232,16 +241,14 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     pengiriman: 'sales.delivery.view',
     invoice: 'sales.sales_invoice.view',
     'tukar-faktur': 'sales.tukar_faktur.view',
-    retur: 'sales.sales_return.view',
-    'pelunasan-piutang': 'sales.ar_settlement.view'
+    retur: 'sales.sales_return.view'
   },
   purchasing: {
     pesanan: 'purchase.purchase_order.view',
     lppb: 'purchase.lppb.view',
     penerimaan: 'purchase.goods_receipt.view',
     invoice: 'purchase.purchase_invoice.view',
-    retur: 'purchase.purchase_return.view',
-    'pelunasan-hutang': 'purchase.ap_settlement.view'
+    retur: 'purchase.purchase_return.view'
   },
   'fixed-assets': {
     'kategori-aset': 'master.kategori_aset.view',

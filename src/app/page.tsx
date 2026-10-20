@@ -27,6 +27,11 @@ const WorkflowQueue = dynamic(() => import('@/components/erp/workflow-queue'), {
 // Tukar Faktur (update #4) — routing subPage 'tukar-faktur' di-render langsung di sini
 // (mirror pola Penawaran; sales/index.tsx tidak disentuh).
 const TukarFakturModule = dynamic(() => import('@/components/erp/sales/tukar-faktur').then((m) => m.TukarFakturModule), { ssr: false });
+// Update #01 — Pelunasan Piutang & Hutang diintegrasikan ke modul Kas & Bank
+// (sebelumnya subPage modul Penjualan / Pembelian; routing lama di-remap di bawah
+// supaya tab tersimpan sebelum update tetap menampilkan halaman yang benar).
+const PelunasanPiutangView = dynamic(() => import('@/components/erp/pelunasan').then((m) => m.PelunasanPiutangView), { ssr: false });
+const PelunasanHutangView = dynamic(() => import('@/components/erp/pelunasan').then((m) => m.PelunasanHutangView), { ssr: false });
 
 const moduleLabels: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -108,10 +113,23 @@ const subPageLabels: Record<string, string> = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: { moduleId: string; subPage?: string; refreshKey?: number; formMode?: string; formProps?: Record<string, unknown> }) {
-  switch (moduleId) {
+  // Update #01 — Pelunasan Piutang/Hutang pindah ke modul Kas & Bank; remap
+  // module lama (sales/purchasing) untuk tab tersimpan sebelum update.
+  let activeModule = moduleId;
+  if (activeModule === 'sales' && subPage === 'pelunasan-piutang') activeModule = 'cash-bank';
+  if (activeModule === 'purchasing' && subPage === 'pelunasan-hutang') activeModule = 'cash-bank';
+  switch (activeModule) {
     case 'dashboard':
       return <Dashboard />;
     case 'cash-bank':
+      // Update #01 — subPage pelunasan dirender view pelunasan (alur pilih
+      // pihak → invoice outstanding → nilai → posting), bukan list Kas & Bank.
+      if (subPage === 'pelunasan-piutang') {
+        return <PelunasanPiutangView refreshKey={refreshKey} />;
+      }
+      if (subPage === 'pelunasan-hutang') {
+        return <PelunasanHutangView refreshKey={refreshKey} />;
+      }
       return <CashBank subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'sales':
       // Tukar Faktur (update #4): list + form + cetak di-handle modul mandiri

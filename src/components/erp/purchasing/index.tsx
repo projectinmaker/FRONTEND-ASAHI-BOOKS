@@ -42,7 +42,6 @@ import { toast } from 'sonner';
 import { PesananPembelianCetakTab, PenerimaanCetakTab, InvoicePembelianCetakTab, ReturPembelianCetakTab, LppbCetakTab } from '@/components/erp/purchasing/cetak-tabs';
 // Update ASAHI #005 — modul LPPB (list + form) sebagai file mandiri
 import { LppbTab, LppbForm } from '@/components/erp/purchasing/lppb';
-import { PelunasanHutangView } from '@/components/erp/pelunasan';
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
@@ -3909,12 +3908,10 @@ export default function Purchasing(props: PurchasingPageProps) {
   const activeSubPage = useERPStore((s) => s.activeSubPage);
   const subPage = props.subPage || activeSubPage || 'pesanan';
 
-  // ── Pelunasan Hutang: dipindahkan dari modul Pelunasan mandiri ──
-  // Dirutekan SEBELUM PurchasingListContent agar dropdown PO/barang tidak dimuat
-  // (pelunasan memuat referensinya sendiri: supplier + kas/bank + tagihan).
-  if (!props.formMode && subPage === 'pelunasan-hutang') {
-    return <PelunasanHutangView refreshKey={props.refreshKey} />;
-  }
+  // ── Update #01 — Pelunasan Hutang pindah ke modul Kas & Bank ──
+  // Routing subPage 'pelunasan-hutang' kini di-handle page.tsx (modul
+  // cash-bank); tab lama otomatis di-remap, jadi Purchasing tidak lagi
+  // merender halaman pelunasan.
 
   // ── Form mode: render form in tab ──
   if (props.formMode) {

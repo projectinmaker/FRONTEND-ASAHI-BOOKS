@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { useAuthStore } from '@/store/auth-store';
+import { useTabStore } from '@/store/tab-store';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
@@ -136,6 +137,8 @@ function parseRupiahInput(v: string): string {
 // ─── Draft Otomatis (localStorage) — bentuk data form alokasi pelunasan ─────
 
 interface PelunasanDraftData {
+  /** Update #01 — pihak dipilih DULU sebelum daftar invoice termuat (alur Kas & Bank) */
+  pihakId?: string;
   tanggal: string;
   kasBankId: string;
   noNukti: string;
@@ -149,7 +152,8 @@ interface PelunasanDraftData {
   jumlahCek?: string;
   mataUang?: string;
   nilaiTukar?: string;
-  alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string }[];
+  /** Update #01 — pph23Display per baris (potongan PPh 23 saat pelunasan) */
+  alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string; pph23Display?: string }[];
 }
 
 function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey?: number }) {
@@ -189,6 +193,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     nilaiDisplay: string; // formatted display
     /** Update cetak "Bayar Pemasok" — diskon pelunasan per faktur (hutang) */
     diskonDisplay?: string;
+    /** Update #01 — PPh 23 per faktur: piutang (dipotong pelanggan) / hutang (ditahan dari supplier) */
+    pph23Display?: string;
   }
   const [selected, setSelected] = useState<Record<string, AllocationRow>>({});
 
@@ -245,7 +251,16 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   }, [fetchDropdowns]);
 
   // ── Fetch tagihan list ──
+  // Update #01 — alur integrasi Kas & Bank: pihak dipilih DULU; tanpa pihak
+  // terpilih, daftar invoice tidak dimuat (tabel dibiarkan kosong + petunjuk).
   const fetchTagihan = useCallback(async () => {
+    if (!pihakFilter) {
+      setData([]);
+      setTotal(0);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -292,7 +307,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
         next[inv.invoiceId] = {
           invoice: inv,
           nilaiDisplay: initial > 0 ? sanitizeRupiahInput(String(initial)) : '',
-          diskonDisplay: ''
+          diskonDisplay: '',
+          pph23Display: ''
         };
       }
       return next;
@@ -313,6 +329,29 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       const row = prev[invoiceId];
       if (!row) return prev;
       return { ...prev, [invoiceId]: { ...row, diskonDisplay: sanitizeRupiahInput(val) } };
+    });
+  }, []);
+
+  // Update #01 — input PPh 23 per faktur (piutang & hutang): potongan pajak
+  // atas pembayaran. Piutang: dipotong pelanggan dari setoran tunai.
+  // Hutang: ditahan perusahaan dari pembayaran ke supplier.
+  const updatePph23 = useCallback((invoiceId: string, val: string) => {
+    setSelected((prev) => {
+      const row = prev[invoiceId];
+      if (!row) return prev;
+      return { ...prev, [invoiceId]: { ...row, pph23Display: sanitizeRupiahInput(val) } };
+    });
+  }, []);
+
+  // Update #01 — shortcut isi PPh 23 = 2% dari nilai pembayaran faktur
+  // (tarif umum PPh 23 atas jasa; dapat dikoreksi manual setelahnya).
+  const setPph23DuaPersen = useCallback((invoiceId: string) => {
+    setSelected((prev) => {
+      const row = prev[invoiceId];
+      if (!row) return prev;
+      const n = parseNum(parseRupiahInput(row.nilaiDisplay));
+      const pph = Math.round(n * 0.02);
+      return { ...prev, [invoiceId]: { ...row, pph23Display: pph > 0 ? sanitizeRupiahInput(String(pph)) : '' } };
     });
   }, []);
 
@@ -362,11 +401,16 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   const totalAllocation = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.nilaiDisplay)), 0), [selectedList]);
   // Update cetak "Bayar Pemasok" — Σ diskon pelunasan; kas keluar = Σ nilai − Σ diskon
   const totalDiskon = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.diskonDisplay || '')), 0), [selectedList]);
+  // Update #01 — Σ PPh 23 pelunasan; kas = Σ nilai − Σ pph23 (piutang) /
+  // Σ nilai − Σ diskon − Σ pph23 (hutang).
+  const totalPPh23 = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.pph23Display || '')), 0), [selectedList]);
 
   // ── Penalti (Update #5): subtotal alokasi + penalti = total pembayaran ──
   const penaltiNum = useMemo(() => parseNum(parseRupiahInput(penaltiDisplay)), [penaltiDisplay]);
   const penaltiMissingAkun = penaltiNum > 0 && !akunPenaltiId;
-  const totalPembayaran = totalAllocation - totalDiskon + penaltiNum;
+  // Update #01 — total kas = Σ nilai − Σ diskon − Σ PPh 23 + penalti
+  // (diskon hanya muncul di hutang; untuk piutang Σ diskon = 0).
+  const totalPembayaran = totalAllocation - totalDiskon - totalPPh23 + penaltiNum;
 
   // Akun penalti: piutang → utamakan akun PENDAPATAN; hutang → utamakan akun BEBAN.
   // Prefilter kosong → fallback seluruh akun AKTIF bertingkat DETAIL.
@@ -407,6 +451,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     restoredHeaderRef.current = true;
     const d = draft.draft;
     if (!d) return;
+    // Update #01 — pihak terpilih ikut dipulihkan (alur pilih pihak dulu)
+    if (d.pihakId) setPihakFilter(d.pihakId);
     if (d.tanggal) setTanggal(d.tanggal);
     if (d.kasBankId) setKasBankId(d.kasBankId);
     if (d.noNukti) setNoNukti(d.noNukti);
@@ -434,7 +480,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     const restored: Record<string, AllocationRow> = {};
     for (const a of d.alokasi) {
       const inv = map.get(a.invoiceId);
-      if (inv) restored[a.invoiceId] = { invoice: inv, nilaiDisplay: a.nilaiDisplay || '', diskonDisplay: a.diskonDisplay || '' };
+      if (inv) restored[a.invoiceId] = { invoice: inv, nilaiDisplay: a.nilaiDisplay || '', diskonDisplay: a.diskonDisplay || '', pph23Display: a.pph23Display || '' };
     }
     if (Object.keys(restored).length > 0) {
       setSelected(restored);
@@ -455,6 +501,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     }
     if (!restoredAlokasiRef.current) return;
     draft.saveDraft({
+      // Update #01 — pihak terpilih ikut tersimpan di draft (alur pilih pihak dulu)
+      pihakId: pihakFilter,
       tanggal,
       kasBankId,
       noNukti,
@@ -466,14 +514,15 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       jumlahCek,
       mataUang,
       nilaiTukar,
-      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '' }))
+      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '', pph23Display: r.pph23Display || '' }))
     });
-  }, [tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, selected]);
+  }, [pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, selected]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
     draft.clearDraft();
     setSelected({});
+    setPihakFilter('');
     setNoNukti('');
     setCatatan('');
     setTanggal(todayStr());
@@ -502,6 +551,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   const validate = useCallback((): boolean => {
     const e: Record<string, string> = {};
     if (selectedList.length > 0 && !selectedPihakId) e.pihak = `Semua invoice yang dipilih harus dari satu ${pihakLabel.toLowerCase()} yang sama`;
+    if (!pihakFilter) e.pihak = `Pilih ${pihakLabel.toLowerCase()} terlebih dahulu`;
     if (!tanggal) e.tanggal = 'Tanggal wajib diisi';
     if (!kasBankId) e.kasBank = 'Kas/Bank wajib dipilih';
     if (!noNukti.trim()) e.noNukti = 'No. referensi wajib diisi';
@@ -509,6 +559,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     let hasInvalid = false;
     let hasOver = false;
     let hasDiskonOver = false;
+    let hasPph23Over = false;
     for (const row of selectedList) {
       const n = parseNum(parseRupiahInput(row.nilaiDisplay));
       if (n <= 0) {
@@ -526,10 +577,18 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
         hasDiskonOver = true;
         break;
       }
+      // Update #01 — diskon + PPh 23 tidak boleh melebihi nilai pembayaran
+      // (keduanya memotong kas; sinkron dengan validasi backend).
+      const pph = parseNum(parseRupiahInput(row.pph23Display || ''));
+      if (disk + pph > n + 0.01) {
+        hasPph23Over = true;
+        break;
+      }
     }
     if (hasInvalid) e.alokasi = 'Semua nilai pembayaran harus lebih dari 0';
     if (!e.alokasi && hasOver) e.alokasi = 'Nilai pembayaran tidak boleh melebihi sisa tagihan';
     if (!e.alokasi && hasDiskonOver) e.alokasi = 'Diskon tidak boleh melebihi nilai pembayaran invoice terkait';
+    if (!e.alokasi && hasPph23Over) e.alokasi = 'Diskon + PPh 23 tidak boleh melebihi nilai pembayaran invoice terkait';
     // Update #5 — penalti
     if (penaltiNum < 0) e.penalti = 'Penalti tidak boleh negatif';
     if (penaltiNum > 0 && !akunPenaltiId) e.penalti = 'Akun penalti wajib dipilih bila penalti > 0';
@@ -537,7 +596,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     if (!isPiutang && !(parseFloat(nilaiTukar.replace(',', '.')) > 0)) e.nilaiTukar = 'Nilai tukar harus lebih dari 0';
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId, isPiutang, nilaiTukar]);
+  }, [pihakFilter, tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId, isPiutang, nilaiTukar]);
 
   // ── Submit draft ──
   const handleSubmit = useCallback(async () => {
@@ -545,7 +604,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
     setSubmitting(true);
     try {
       const payload: PelunasanCreate = {
-        pihakId: selectedPihakId,
+        pihakId: selectedPihakId || pihakFilter,
         tanggal,
         kasBankId,
         noNukti: noNukti.trim(),
@@ -554,7 +613,10 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
           invoiceId: r.invoice.invoiceId,
           nilai: parseRupiahInput(r.nilaiDisplay),
           // Update cetak "Bayar Pemasok" — diskon pelunasan per faktur
-          diskon: parseRupiahInput(r.diskonDisplay || '')
+          diskon: parseRupiahInput(r.diskonDisplay || ''),
+          // Update #01 — PPh 23 per faktur: piutang (dipotong pelanggan) /
+          // hutang (ditahan dari pembayaran supplier). Kas = nilai − diskon − pph23.
+          pph23: parseRupiahInput(r.pph23Display || '')
         })),
         // Update #5 — penalti di level header; totalNilai (Σ alokasi + penalti) dihitung backend.
         penalti: parseRupiahInput(penaltiDisplay),
@@ -594,12 +656,16 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       setTanggal(todayStr());
       setKasBankId('');
       void fetchTagihan();
+      // Update #01 — integrasi Kas & Bank: refresh juga daftar Penerimaan/
+      // Pembayaran di modul Kas & Bank supaya dokumen settlement langsung
+      // terlihat di list kas/bank (tab terbuka ikut memuat ulang).
+      useTabStore.getState().refreshListTab('cash-bank', isPiutang ? 'penerimaan' : 'pembayaran');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.detail : 'Gagal membuat draft pembayaran');
     } finally {
       setSubmitting(false);
     }
-  }, [validate, selectedPihakId, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft]);
+  }, [validate, selectedPihakId, pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft]);
 
   // ── Export Excel daftar tagihan (Update #5) — ikut filter aktif ──
   const handleExport = useCallback(async () => {
@@ -731,7 +797,7 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <CardTitle className="text-base">Daftar Tagihan {isPiutang ? 'Piutang' : 'Hutang'}</CardTitle>
-              <CardDescription>Pilih {pihakLabel.toLowerCase()} dan filter tagihan untuk dilunasi</CardDescription>
+              <CardDescription>Pilih {pihakLabel.toLowerCase()} terlebih dahulu — invoice dengan saldo piutang/hutang tampil otomatis</CardDescription>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={exporting} className="h-9">
@@ -745,8 +811,12 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             <div className="w-full sm:w-64">
-              <Label className="text-xs text-muted-foreground">{pihakLabel}</Label>
+              <Label className="text-xs text-muted-foreground">
+                {pihakLabel} <span className="text-destructive">*</span>
+              </Label>
               <div className="mt-1">
+                {/* Update #01 — pihak wajib dipilih DULU (alur integrasi Kas & Bank);
+                    tanpa pihak, daftar invoice tidak dimuat. */}
                 <SearchableDropdown
                   value={pihakFilter}
                   onValueChange={(v) => {
@@ -758,7 +828,6 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                   loading={pihakLoading}
                   placeholder={`Pilih ${pihakLabel.toLowerCase()}`}
                   searchPlaceholder={`Cari ${pihakLabel.toLowerCase()}...`}
-                  allOption={{ id: '', label: `Semua ${pihakLabel}` }}
                 />
               </div>
             </div>
@@ -826,7 +895,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                   ) : data.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={9} className="h-0 p-0">
-                        <EmptyState icon={HandCoins} title={`Tidak ada tagihan ${isPiutang ? 'piutang' : 'hutang'}`} description={pihakFilter ? `${pihakLabel} ini tidak memiliki tagihan dengan filter saat ini.` : `Pilih ${pihakLabel.toLowerCase()} untuk menampilkan tagihan, atau klik "Semua ${pihakLabel}".`} />
+                        {/* Update #01 — empty state baru: alur pilih pihak dulu */}
+                        <EmptyState icon={HandCoins} title={pihakFilter ? `Tidak ada tagihan ${isPiutang ? 'piutang' : 'hutang'}` : `Pilih ${pihakLabel} terlebih dahulu`} description={pihakFilter ? `${pihakLabel} ini tidak memiliki tagihan dengan filter saat ini.` : `Pilih ${pihakLabel.toLowerCase()} di atas — sistem akan menampilkan invoice ${isPiutang ? 'penjualan' : 'pembelian'} yang masih memiliki sisa ${isPiutang ? 'piutang' : 'hutang'}.`} />
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -915,6 +985,14 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                     Draft pembayaran akan dibuat dengan status <strong>DRAFT</strong>. Untuk menyelesaikan pelunasan, lakukan workflow: <strong>Submit → Approve → Post</strong> melalui kolom Workflow pada daftar dokumen atau modul <strong>Antrean Persetujuan</strong>.
                   </>
                 )}
+              </p>
+            </div>
+
+            {/* Update #01 — info PPh 23 & akun yang dipakai saat posting */}
+            <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-3">
+              <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground">
+                <strong>PPh 23 per faktur (opsional):</strong> {isPiutang ? 'potongan PPh 23 yang dipotong pelanggan dari setoran — kas masuk berkurang, selisihnya didebit ke akun PPh 23 Dibayar di Muka.' : 'PPh 23 yang ditahan dari pembayaran supplier — kas keluar berkurang, selisihnya dikredit ke akun Hutang PPh 23.'} Tombol <strong>2%</strong> mengisi otomatis 2% dari nilai pembayaran. Sisa tagihan tetap berkurang sebesar nilai penuh (tidak ada pencatatan ganda). Setelah diposting, dokumen otomatis muncul di daftar {isPiutang ? 'Penerimaan' : 'Pembayaran'} Kas &amp; Bank.
               </p>
             </div>
 
@@ -1017,6 +1095,8 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                       <TableHead>No Invoice</TableHead>
                       <TableHead className="text-right w-[140px]">Sisa Tagihan</TableHead>
                       <TableHead className="text-right w-[180px]">Nilai Pembayaran</TableHead>
+                      {/* Update #01 — PPh 23 per faktur (piutang & hutang) */}
+                      <TableHead className="text-right w-[160px]">PPh 23</TableHead>
                       {/* Update cetak "Bayar Pemasok" — diskon pelunasan per faktur (hutang) */}
                       {!isPiutang && <TableHead className="text-right w-[160px]">Diskon</TableHead>}
                       <TableHead className="w-12" />
@@ -1030,6 +1110,10 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                       const sisaSetelah = sisa - n;
                       const disk = parseNum(parseRupiahInput(row.diskonDisplay || ''));
                       const diskonOver = disk > n + 0.01;
+                      // Update #01 — PPh 23 per faktur: diskon + pph23 ≤ nilai
+                      const pph = parseNum(parseRupiahInput(row.pph23Display || ''));
+                      const pph23Over = disk + pph > n + 0.01;
+                      const netTunai = n - disk - pph;
                       return (
                         <TableRow key={row.invoice.invoiceId}>
                           <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
@@ -1038,6 +1122,22 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                           <TableCell className="text-right">
                             <Input type="text" inputMode="numeric" placeholder="0" value={row.nilaiDisplay} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${over ? 'border-destructive' : ''}`} />
                             {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">Melebihi sisa tagihan</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">Lunas</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
+                          </TableCell>
+                          {/* Update #01 — input PPh 23 per faktur + shortcut 2% */}
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Input type="text" inputMode="numeric" placeholder="0" value={row.pph23Display || ''} onChange={(e) => updatePph23(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm w-24 ${pph23Over ? 'border-destructive' : ''}`} aria-label={`PPh 23 pelunasan ${row.invoice.noDokumen}`} />
+                              <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-[11px] shrink-0" onClick={() => setPph23DuaPersen(row.invoice.invoiceId)} title="Isi otomatis 2% dari nilai pembayaran">
+                                2%
+                              </Button>
+                            </div>
+                            {pph23Over ? (
+                              <p className="mt-1 text-[11px] leading-tight text-destructive">Diskon + PPh 23 melebihi nilai</p>
+                            ) : pph > 0 ? (
+                              <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
+                                {isPiutang ? 'Diterima tunai' : 'Dibayar tunai'}: {formatRp(netTunai)}
+                              </p>
+                            ) : null}
                           </TableCell>
                           {!isPiutang && (
                             <TableCell className="text-right">
@@ -1072,6 +1172,11 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
                     <span className="font-mono">−{formatRp(totalDiskon)}</span>
                   </div>
                 )}
+                {/* Update #01 — PPh 23 memotong kas */}
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">PPh 23</span>
+                  <span className="font-mono">−{formatRp(totalPPh23)}</span>
+                </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Penalti</span>
                   <span className="font-mono">{formatRp(penaltiNum)}</span>
@@ -1118,17 +1223,18 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
   );
 }
 
-// ─── Standalone Views (embed di modul Penjualan / Pembelian) ─────────────────
-// Pelunasan Piutang & Hutang dipindahkan dari modul Pelunasan mandiri:
-//   - Pelunasan Piutang → modul Penjualan (subPage "pelunasan-piutang")
-//   - Pelunasan Hutang  → modul Pembelian  (subPage "pelunasan-hutang")
+// ─── Standalone Views ────────────────────────────────────────────────────────
+// Update #01 — Pelunasan Piutang & Hutang diintegrasikan ke modul Kas & Bank
+// (routing subPage "pelunasan-piutang" / "pelunasan-hutang" di page.tsx):
+//   - Pelunasan Piutang → Kas & Bank (penerimaan kas dari pelanggan)
+//   - Pelunasan Hutang  → Kas & Bank (pembayaran kas ke supplier)
 
 export function PelunasanPiutangView({ refreshKey }: { refreshKey?: number }) {
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Pelunasan Piutang</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Alokasikan penerimaan pembayaran pelanggan ke invoice penjualan yang belum lunas</p>
+        <p className="text-muted-foreground mt-1 text-sm">Pilih pelanggan terlebih dahulu, lalu alokasikan penerimaan kas ke invoice penjualan yang masih bersaldo — mendukung partial, multi-invoice, dan PPh 23</p>
       </div>
       <PelunasanTab jenis="piutang" refreshKey={refreshKey} />
     </div>
@@ -1140,7 +1246,7 @@ export function PelunasanHutangView({ refreshKey }: { refreshKey?: number }) {
     <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Pelunasan Hutang</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Alokasikan pembayaran ke supplier untuk invoice pembelian yang belum lunas</p>
+        <p className="text-muted-foreground mt-1 text-sm">Pilih supplier terlebih dahulu, lalu alokasikan pembayaran kas ke invoice pembelian yang masih bersaldo — mendukung partial, multi-invoice, diskon, dan PPh 23</p>
       </div>
       <PelunasanTab jenis="hutang" refreshKey={refreshKey} />
     </div>
