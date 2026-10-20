@@ -196,8 +196,6 @@ export interface SettingAkunResponse {
   key: string;
   label: string;
   akunPerkiraanId: string;
-  /** AUD-17 (update #05): null = baris GLOBAL; terisi = override milik perusahaan tsb. */
-  companyId?: string | null;
   akunPerkiraan: COASimple | null;
   createdAt: string;
   updatedAt: string;
@@ -205,8 +203,6 @@ export interface SettingAkunResponse {
 
 export interface SettingAkunUpdate {
   akunPerkiraanId: string;
-  /** AUD-17 (update #05): kirim companyId untuk membuat/mengubah override perusahaan; tanpa = baris global. */
-  companyId?: string;
 }
 
 // ── Setting Aplikasi Global (non-COA, mis. METODE_VALUASI) ──
@@ -770,8 +766,6 @@ export interface KasBankAkunResponse {
   akunPerkiraan: COASimple;
   // === Phase 2 — field baru ===
   currency: string; // ISO 4217, default "IDR"
-  /** AUD-17 (update #05): null = GLOBAL (semua perusahaan), terisi = milik perusahaan tsb. */
-  companyId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -783,8 +777,6 @@ export interface KasBankAkunCreate {
   akunPerkiraanId: string;
   // === Phase 2 — field baru (opsional, default "IDR") ===
   currency?: string;
-  /** AUD-17 (update #05): opsional — null/global = dipakai semua perusahaan. */
-  companyId?: string | null;
 }
 
 export interface KasBankAkunUpdate {
@@ -794,8 +786,6 @@ export interface KasBankAkunUpdate {
   status?: string;
   // === Phase 2 — field baru (opsional) ===
   currency?: string;
-  /** AUD-17 (update #05): pindahkan kepemilikan akun (null = global). */
-  companyId?: string | null;
 }
 
 export interface COADropdownResponse {
@@ -1261,9 +1251,6 @@ export interface PaymentAllocationItem {
   // === Update #01 — PPh 23 pelunasan per faktur (piutang: dipotong pelanggan;
   // hutang: ditahan dari pembayaran supplier). Kas = nilai − diskon − pph23. ===
   pph23?: number | string;
-  // === AUD-08 (update #04) — bukti potong (BUPTI) + masa pajak 'YYYY-MM' ===
-  noBuktiPotong?: string | null;
-  masaPajak?: string | null;
   terutang?: number | string | null;
   noFaktur?: string | null;
   tanggalFaktur?: string | null;
@@ -1379,14 +1366,12 @@ export interface PenerimaanKasResponse {
 // 2. TRANSAKSI_LAINNYA — akun lawan bebas dari COA (non-invoice).
 // 3. BELUM_TERIDENTIFIKASI — mutasi belum diketahui asalnya → akun penampung,
 //    kemudian Identifikasi & Alokasi.
-export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA' | 'BELUM_TERIDENTIFIKASI' | 'PELUNASAN_PAJAK';
+export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA' | 'BELUM_TERIDENTIFIKASI';
 
 export const JENIS_TRANSAKSI_KAS_LABELS: Record<JenisTransaksiKas, string> = {
   PELUNASAN_INVOICE: 'Pelunasan Invoice',
   TRANSAKSI_LAINNYA: 'Transaksi Lainnya',
-  BELUM_TERIDENTIFIKASI: 'Belum Teridentifikasi',
-  // AUD-11 (update #04) — pembayaran hutang pajak (akun lawan wajib TAX_PAYABLE)
-  PELUNASAN_PAJAK: 'Pelunasan Pajak'
+  BELUM_TERIDENTIFIKASI: 'Belum Teridentifikasi'
 };
 
 // ── Update #02 — Identifikasi & Alokasi kas Belum Teridentifikasi ──────────
@@ -1460,9 +1445,6 @@ export interface IdentifikasiPiutangAlokasiCreate {
   /** String desimal (mis. "100000.00") — pola PelunasanCreate. */
   nilai: string;
   pph23?: string;
-  /** AUD-08 (update #04) — bukti potong + masa pajak 'YYYY-MM' */
-  noBuktiPotong?: string;
-  masaPajak?: string;
 }
 
 export interface IdentifikasiPiutangCreate {
@@ -1477,9 +1459,6 @@ export interface IdentifikasiHutangAlokasiCreate {
   nilai: string;
   diskon?: string;
   pph23?: string;
-  /** AUD-08 (update #04) — bukti potong + masa pajak 'YYYY-MM' */
-  noBuktiPotong?: string;
-  masaPajak?: string;
 }
 
 export interface IdentifikasiHutangCreate {
@@ -1833,15 +1812,10 @@ export interface SalesReturResponse {
   noPengembalian: string | null;
   diskonGlobal: number;
   ppn: number;
-  /** AUD-12 (update #05): derived dari invoice sumber (bukan input user) — retur membalik PPh23 Dibayar di Muka. */
-  pph23Applicable?: boolean;
-  pph23?: string;
-  totalPph23?: string;
   keterangan: string | null;
   autoPostJurnal: boolean;
   subTotal: number;
   totalPpn: number;
-  /** AUD-12 (update #05): grand total NET-of-PPh23 untuk invoice sumber ber-PPh23. */
   grandTotal: number;
   status: StatusPenjualan;
   jurnalUmumId: string | null;
@@ -2072,9 +2046,6 @@ export interface PurchaseInvoiceCreate {
   alamat?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
-  /** AUD-09 (update #04) — PPh 23 pada PI: hutang net + Cr Hutang PPh 23 saat posting */
-  pph23?: number;
-  pph23Applicable?: boolean;
   keterangan?: string | null;
   autoPostJurnal?: false;
   details: PurchaseInvoiceDetailCreate[];
@@ -2089,9 +2060,6 @@ export interface PurchaseInvoiceUpdate {
   noFaktur?: string | null;
   alamat?: string | null;
   diskonGlobal?: number | null;
-  /** AUD-09 (update #04) — PPh 23 PI (draft only) */
-  pph23?: number;
-  pph23Applicable?: boolean;
   ppn?: number;
   keterangan?: string | null;
   autoPostJurnal?: boolean;
@@ -2109,10 +2077,6 @@ export interface PurchaseInvoiceResponse {
   alamat: string | null;
   diskonGlobal: number;
   ppn: number;
-  /** AUD-09 (update #04) — PPh 23 pada PI */
-  pph23?: number;
-  pph23Applicable?: boolean;
-  totalPph23?: number;
   keterangan: string | null;
   autoPostJurnal: boolean;
   subTotal: number;
@@ -2188,15 +2152,10 @@ export interface PurchaseReturResponse {
   gudangId: string | null;
   alamat: string | null;
   ppn: number;
-  /** AUD-12 (update #05): derived dari invoice sumber (bukan input user) — retur membalik Hutang PPh23. */
-  pph23Applicable?: boolean;
-  pph23?: string;
-  totalPph23?: string;
   keterangan: string | null;
   autoPostJurnal: boolean;
   subTotal: number;
   totalPpn: number;
-  /** AUD-12 (update #05): grand total NET-of-PPh23 untuk invoice sumber ber-PPh23. */
   grandTotal: number;
   status: StatusPenjualan;
   jurnalUmumId: string | null;
@@ -3162,9 +3121,6 @@ export interface SaldoAwalRequest {
 export interface SaldoAwalResponse {
   sudahDiset: boolean;
   tanggal: string | null;
-  // AUD-15 (update #04) — set saldo awal per tahun buku (SA-{tahun})
-  tahun?: number | null;
-  tahunTersedia?: number[];
   items: SaldoAwalItem[];
   totalDebit: number;
   totalKredit: number;
@@ -3191,8 +3147,6 @@ export interface PenutupanPeriodeResponse {
   labaRugi: number | null;
   keterangan: string | null;
   jurnalPenutupanId: string | null;
-  /** AUD-17 (update #05): null = penutupan global; terisi = khusus perusahaan tsb. */
-  companyId?: string | null;
   closedBy: string | null;
   closedAt: string | null;
   reopenedBy: string | null;
@@ -3210,16 +3164,12 @@ export interface TutupPeriodeRequest {
   bulan: number;
   keterangan?: string;
   withClosingEntry?: boolean;
-  /** AUD-17 (update #05): scope perusahaan — tanpa ini = global (mengunci semua). */
-  companyId?: string;
 }
 
 export interface BukaPeriodeRequest {
   tahun: number;
   bulan: number;
   alasan?: string;
-  /** AUD-17 (update #05): scope perusahaan — tanpa ini = global. */
-  companyId?: string;
 }
 
 export interface PeriodeStatusResponse {
@@ -3509,10 +3459,6 @@ export interface PelunasanAlokasiCreate {
   /** Update #01 — PPh 23 per faktur (piutang & hutang): potongan pajak atas
    * pembayaran; kas = nilai − diskon − pph23; sisa tagihan turun penuh. */
   pph23?: string;
-  /** AUD-08 (update #04) — no bukti potong (BUPTI) per faktur (opsional) */
-  noBuktiPotong?: string;
-  /** AUD-08 (update #04) — masa pajak 'YYYY-MM' per faktur (opsional) */
-  masaPajak?: string;
 }
 
 export interface PelunasanCreate {
@@ -4038,22 +3984,13 @@ export interface AuditLogListResponse {
 // HARD DELETE (pembatalan = hapus permanen + histori)
 // ============================================================
 
-/** Respons endpoint /cancel (AUD-01 update #05 — reversal-first: POSTED → jurnal
- *  pembalik + status BATAL; DRAFT tanpa jurnal → hard delete + snapshot histori). */
+/** Respons endpoint /cancel (kini hard delete dengan jejak histori). */
 export interface HardDeleteResponse {
   success: boolean;
-  /** Mode pembatalan: REVERSAL = jurnal pembalik (audit trail utuh); HARD_DELETE = hapus permanen + snapshot. */
-  mode?: 'REVERSAL' | 'HARD_DELETE';
   documentType: string;
   documentId: string;
   documentNumber: string | null;
-  /** Status akhir dokumen (BATAL/DIBATALKAN untuk REVERSAL; DELETED untuk HARD_DELETE). */
-  status?: string;
-  /** Daftar jurnal pembalik yang dibuat (mode REVERSAL saja). */
-  reversalJurnalIds?: Array<{ id: string; noJurnal: string; reversalOf?: string }>;
-  /** Field lama (kompatibel) — HARD_DELETE: waktu hapus; REVERSAL: waktu pembatalan. */
   deletedAt: string;
-  cancelledAt?: string;
   message: string;
 }
 
@@ -4077,38 +4014,6 @@ export interface DeletedDocumentLogDetailResponse extends DeletedDocumentLogResp
 
 export interface DeletedDocumentLogListResponse {
   data: DeletedDocumentLogResponse[];
-  total: number;
-  skip: number;
-  limit: number;
-}
-
-// ── AUD-01 (update #05): histori pembatalan dokumen (reversal & hard delete) ──
-
-/** Satu jurnal pembalik yang dibuat saat pembatalan mode REVERSAL. */
-export interface PembatalanReversalJurnal {
-  id: string;
-  noJurnal: string;
-  reversalOf?: string | null;
-}
-
-/** Baris GET /histori/pembatalan. */
-export interface PembatalanHistoriRow {
-  id: string;
-  documentType: string;
-  documentId: string;
-  documentNumber: string | null;
-  documentDate: string | null;
-  documentStatus: string | null;
-  totalAmount: string | null;
-  reason: string | null;
-  mode: 'REVERSAL' | 'HARD_DELETE';
-  reversalJurnalIds: PembatalanReversalJurnal[];
-  cancelledBy: string | null;
-  cancelledAt: string | null;
-}
-
-export interface PembatalanHistoriListResponse {
-  data: PembatalanHistoriRow[];
   total: number;
   skip: number;
   limit: number;
@@ -4330,136 +4235,80 @@ export interface RequestOrderPartUpdate {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// UPDATE #04 — Temuan audit: rekap pajak, bukti potong, PPh 23 PI, closing
-// tahunan, saldo awal per tahun buku, monitoring hutang pajak.
+// Update AUD-01 — Pembatalan non-destruktif (jurnal pembalik)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── AUD-07: Rekap Pajak PPN ────────────────────────────────────────────────
-export interface PajakPpnBaris {
+/** Response POST /{dokumen}/{id}/cancel — dua mode:
+ *  - mode REVERSAL: dokumen posted dibatalkan dengan jurnal pembalik
+ *    (dokumen & jurnal asli tetap tersimpan; status BATAL/DIBATALKAN).
+ *  - tanpa mode (hard delete): dokumen draft dihapus permanen + snapshot
+ *    ke log dokumen terhapus (perilaku lama).
+ */
+export interface CancelDocumentResponse extends HardDeleteResponse {
+  mode?: 'REVERSAL';
+  status?: string;
+  reversalJournalId?: string;
+  reversalJournalNo?: string;
+  cancelledAt?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Update AUD-17 — Rekap Pajak PPN & PPh 23
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface RekapPpnItem {
   tanggal: string;
-  noJurnal: string;
-  noDokumen?: string | null;
-  jenis: string; // FAKTUR_KELUARAN | RETUR_PENJUALAN | FAKTUR_MASUKAN | RETUR_PEMBELIAN | LAINNYA
-  pihak?: string | null;
-  dpp?: number | string | null;
-  ppn: number | string;
+  noDokumen: string;
+  pihak: string | null;
+  jenis: 'KELUARAN' | 'MASUKAN' | 'RETUR_KELUARAN' | 'RETUR_MASUKAN';
+  dpp: string | number;
+  ppn: string | number;
 }
 
-export interface PajakPpnPerMasa {
-  masaPajak: string; // YYYY-MM
-  keluaran: number | string;
-  masukan: number | string;
-  netto: number | string;
+export interface RekapPpnMasaItem {
+  masa: string;
+  dppKeluaran: string | number;
+  ppnKeluaran: string | number;
+  dppMasukan: string | number;
+  ppnMasukan: string | number;
+  dppReturKeluaran: string | number;
+  ppnReturKeluaran: string | number;
+  dppReturMasukan: string | number;
+  ppnReturMasukan: string | number;
+  ppnNeto: string | number;
 }
 
-export interface PajakPpnResponse {
+export interface RekapPpnResponse {
   periode: { dari: string; sampai: string };
-  keluaran: PajakPpnBaris[];
-  totalKeluaran: number | string;
-  masukan: PajakPpnBaris[];
-  totalMasukan: number | string;
-  ppnNetto: number | string;
-  perMasa: PajakPpnPerMasa[];
-  akun?: Record<string, string[]>;
+  ringkasanMasa: RekapPpnMasaItem[];
+  rincian: RekapPpnItem[];
+  total: RekapPpnMasaItem | null;
 }
 
-// ── AUD-07/AUD-08: Rekap Pajak PPh 23 ─────────────────────────────────────
-export interface PajakPph23Baris {
+export interface RekapPph23Item {
   tanggal: string;
-  noDokumen?: string | null;
-  noInvoice?: string | null;
-  pihak?: string | null;
-  nilai?: number | string | null;
-  pph23: number | string;
-  noBuktiPotong?: string | null;
-  masaPajak?: string | null;
-  sumber?: string | null; // PELUNASAN | IDENTIFIKASI | INVOICE
-}
-
-export interface PajakPph23PerMasa {
-  masaPajak: string;
-  dipotongPihakLain: number | string;
-  dipotongDariSupplier: number | string;
-}
-
-export interface PajakPph23Response {
-  periode: { dari: string; sampai: string };
-  dipotongPihakLain: PajakPph23Baris[];
-  totalDipotongPihakLain: number | string;
-  dipotongDariSupplier: PajakPph23Baris[];
-  totalDipotongDariSupplier: number | string;
-  pph23InvoicePenjualan: PajakPph23Baris[];
-  totalPph23InvoicePenjualan: number | string;
-  /** AUD-12 (update #05): retur penjualan membalik PPh23 (nilai pph23 NEGATIF) — total accrual penjualan SUDAH termasuk netting ini. */
-  pph23ReturPenjualan?: PajakPph23Baris[];
-  totalPph23ReturPenjualan?: number | string;
-  pph23InvoicePembelian: PajakPph23Baris[];
-  totalPph23InvoicePembelian: number | string;
-  /** AUD-12 (update #05): retur pembelian membalik PPh23 (nilai pph23 NEGATIF) — total accrual pembelian SUDAH termasuk netting ini. */
-  pph23ReturPembelian?: PajakPph23Baris[];
-  totalPph23ReturPembelian?: number | string;
-  perMasa: PajakPph23PerMasa[];
-}
-
-// ── AUD-11: Monitoring hutang pajak ────────────────────────────────────────
-export interface PajakAkunMonitoring {
-  id: string;
-  kode: string;
-  nama: string;
-  saldoGl: number | string; // debit − kredit (POSTED)
-  hutang: number | string; // positif = masih harus dibayar
-  dibayarLebih: number | string;
-}
-
-export interface PajakPelunasanRiwayat {
-  id: string;
+  pihak: string | null;
+  npwp: string | null;
   noBukti: string;
-  noNukti: string;
-  tanggal: string;
-  totalNilai: number | string;
-  catatan?: string | null;
-  kasBank?: { id: string; kode: string; nama: string } | null;
-  status: string;
-  jurnalUmumId?: string | null;
-  akun: { id: string; nilai: number | string }[];
+  noInvoice: string | null;
+  dasar: string | number;
+  pph23: string | number;
+  sumber: 'PELUNASAN' | 'IDENTIFIKASI';
+  sisi: 'DIPOTONG_DARI_KITA' | 'KITA_POTONG';
 }
 
-export interface PajakMonitoringResponse {
-  akunPajak: PajakAkunMonitoring[];
-  totalHutang: number | string;
-  totalDibayarLebih: number | string;
-  riwayatPelunasan: PajakPelunasanRiwayat[];
+export interface RekapPph23PihakItem {
+  pihak: string | null;
+  npwp: string | null;
+  sisi: string;
+  totalDasar: string | number;
+  totalPph23: string | number;
 }
 
-// ── AUD-17 (update #05): daftar perusahaan untuk filter laporan ───────────
-/** Baris GET /laporan/companies (organization_unit kind=COMPANY, AKTIF). */
-export interface LaporanCompanyOption {
-  id: string;
-  code: string;
-  name: string;
-}
-
-// ── AUD-14: Penutupan tahunan ──────────────────────────────────────────────
-export interface PenutupanTahunItem {
-  tahun: number;
-  status: string; // DITUTUP | DIBUKA | TERBUKA
-  labaRugi?: string | null;
-  bulanDitutup: number;
-  semuaBulanDitutup: boolean;
-  keterangan?: string | null;
-  /** AUD-17 (update #05): null = penutupan tahun global; terisi = khusus perusahaan. */
-  companyId?: string | null;
-  closedAt?: string | null;
-  reopenedAt?: string | null;
-  jurnalPenutupanId?: string | null;
-}
-
-// ── AUD-08: alokasi settlement + bukti potong ──────────────────────────────
-export interface PelunasanAlokasiCreate04 {
-  invoiceId: string;
-  nilai: number | string;
-  diskon?: number | string;
-  pph23?: number | string;
-  noBuktiPotong?: string | null;
-  masaPajak?: string | null;
+export interface RekapPph23Response {
+  periode: { dari: string; sampai: string };
+  rincian: RekapPph23Item[];
+  perPihak: RekapPph23PihakItem[];
+  totalDipotongDariKita: string | number;
+  totalKitaPotong: string | number;
 }

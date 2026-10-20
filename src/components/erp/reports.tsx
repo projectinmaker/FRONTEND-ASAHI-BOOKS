@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,13 +9,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
-import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse, LaporanAkunItem } from '@/types/api';
-import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight, Receipt } from 'lucide-react';
+import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse, LaporanAkunItem, RekapPpnResponse, RekapPpnMasaItem, RekapPph23Response } from '@/types/api';
+import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
 import dynamic from 'next/dynamic';
@@ -31,30 +30,6 @@ const AssetReconciliationPage = dynamic(() => import('@/components/erp/reports/a
 const AccountingHealthPage = dynamic(() => import('@/components/erp/reports/accounting-health'), { ssr: false });
 const HistoriDokumenTerhapusPage = dynamic(() => import('@/components/erp/reports/histori-dokumen-terhapus'), { ssr: false });
 const ReconciliationDetailPage = dynamic(() => import('@/components/erp/reports/reconciliation-detail'), { ssr: false });
-// Update #04 (AUD-07/08/11) — Rekap Pajak: PPN, PPh 23, hutang & pelunasan pajak
-const RekapPajakPage = dynamic(() => import('@/components/erp/reports/rekap-pajak'), { ssr: false });
-// AUD-17 (update #05) — filter Perusahaan bersama (cache module-level)
-import { PerusahaanFilter, companyScopeQuery, type PerusahaanFilterValue } from '@/components/erp/perusahaan-filter';
-
-// ─── AUD-17: shared props untuk sub-laporan yang di-scope perusahaan ────────
-
-interface CompanyScopedProps {
-  /** 'ALL' | 'UNASSIGNED' | companyId — dari state level halaman Laporan. */
-  companyFilter?: PerusahaanFilterValue;
-  onCompanyChange: (v: PerusahaanFilterValue) => void;
-}
-
-/** Refetch saat company filter berubah — tanpa mereset filter tanggal user. */
-function useCompanyRefetch(companyFilter: PerusahaanFilterValue | undefined, fetchData: () => void) {
-  const prev = useRef<string>(companyFilter ?? 'ALL');
-  useEffect(() => {
-    const current = companyFilter ?? 'ALL';
-    if (prev.current !== current) {
-      prev.current = current;
-      fetchData();
-    }
-  }, [companyFilter, fetchData]);
-}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -73,6 +48,11 @@ const formatDate = (d: string | null | undefined) => {
     return d;
   }
 };
+
+function getFirstDayOfYear(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-01-01`;
+}
 
 function getFirstDayOfMonth(): string {
   const now = new Date();
@@ -115,7 +95,6 @@ const subPageTitles: Record<string, string> = {
   'mutasi-kas': 'Mutasi Kas',
   'mutasi-bank': 'Mutasi Bank',
   'rekap-kas-bank': 'Rekap Kas & Bank',
-  'rekap-pajak': 'Rekap Pajak (PPN & PPh 23)',
   'penutupan-periode': 'Penutupan Periode',
   'rekonsiliasi-persediaan': 'Rekonsiliasi Persediaan',
   'audit-persediaan': 'Audit Persediaan',
@@ -125,7 +104,10 @@ const subPageTitles: Record<string, string> = {
   'rekonsiliasi-grni': 'GRNI vs GL',
   'rekonsiliasi-cf-bs': 'Cash Flow vs Neraca',
   'rekonsiliasi-eq-bs': 'Ekuitas vs Neraca',
-  'laporan-lainnya': 'Laporan Lainnya'
+  'laporan-lainnya': 'Laporan Lainnya',
+  // === Update AUD-17 — rekap pajak ===
+  'rekap-ppn': 'Rekap PPN (Masa Pajak)',
+  'rekap-pph23': 'Rekap PPh 23'
 };
 
 // ─── Shared: Report Actions (Print / Export) ────────────────────────────────
@@ -292,38 +274,9 @@ function TotalRow({ label, value, colSpan = 2 }: { label: string; value: number;
 // Sub-page: Laba / Rugi
 // ═════════════════════════════════════════════════════════════════════════════
 
-// AUD-15 (update #04) — pemilih mode tahun buku: "" = kontinu (semua histori);
-// angka = saldo awal diambil dari set SA-{tahun} + mutasi mulai 1 Jan tahun itu.
-function TahunBukuFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const years: number[] = [];
-  const y = new Date().getFullYear();
-  for (let i = 0; i < 8; i++) years.push(y - i);
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Label className="text-xs font-medium text-muted-foreground">Tahun Buku</Label>
-      <Select value={value || 'kontinu'} onValueChange={(v) => onChange(v === 'kontinu' ? '' : v)}>
-        <SelectTrigger className="w-44">
-          <SelectValue placeholder="Kontinu (semua)" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="kontinu">Kontinu (semua histori)</SelectItem>
-          {years.map((yr) => (
-            <SelectItem key={yr} value={String(yr)}>
-              Tahun buku {yr}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <p className="text-[10px] text-muted-foreground">Kosong = gabung semua tahun; pilih tahun = potong buku per tahun (saldo awal SA-{'{tahun}'})</p>
-    </div>
-  );
-}
-
-function LabaRugiReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function LabaRugiReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
-  // AUD-15 (update #04) — mode tahun buku (saldo awal = SA-{tahun})
-  const [tahunBuku, setTahunBuku] = useState('');
   const [data, setData] = useState<LabaRugiLaporanResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -332,9 +285,7 @@ function LabaRugiReport({ companyFilter, onCompanyChange }: CompanyScopedProps) 
     setLoading(true);
     setError(null);
     try {
-      const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<LabaRugiLaporanResponse>(`/laporan/laba-rugi?dari=${dari}&sampai=${sampai}${tb}${cs}`);
+      const res = await api.get<LabaRugiLaporanResponse>(`/laporan/laba-rugi?dari=${dari}&sampai=${sampai}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data laporan.';
@@ -343,12 +294,11 @@ function LabaRugiReport({ companyFilter, onCompanyChange }: CompanyScopedProps) 
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, tahunBuku, companyFilter]);
+  }, [dari, sampai]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   // ── M-02 (Update #7): section & total baru dari backend ──
   // `pendapatanLain` = akun pendapatan report_group OTHER_INCOME (bunga, pendapatan
@@ -369,12 +319,7 @@ function LabaRugiReport({ companyFilter, onCompanyChange }: CompanyScopedProps) 
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
-        <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
 
       {loading && <ReportSkeleton rows={8} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -526,10 +471,8 @@ function LabaRugiReport({ companyFilter, onCompanyChange }: CompanyScopedProps) 
 // Sub-page: Neraca
 // ═════════════════════════════════════════════════════════════════════════════
 
-function NeracaReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function NeracaReport() {
   const [tanggal, setTanggal] = useState(getToday());
-  // AUD-15 (update #04) — mode tahun buku (saldo = SA-{tahun} + mutasi tahun)
-  const [tahunBuku, setTahunBuku] = useState('');
   const [data, setData] = useState<NeracaLaporanResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -538,9 +481,7 @@ function NeracaReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
     setLoading(true);
     setError(null);
     try {
-      const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<NeracaLaporanResponse>(`/laporan/neraca?tanggal=${tanggal}${tb}${cs}`);
+      const res = await api.get<NeracaLaporanResponse>(`/laporan/neraca?tanggal=${tanggal}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data neraca.';
@@ -549,20 +490,15 @@ function NeracaReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
     } finally {
       setLoading(false);
     }
-  }, [tanggal, tahunBuku, companyFilter]);
+  }, [tanggal]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, []);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
-        <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
 
       {loading && <ReportSkeleton rows={8} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -830,7 +766,7 @@ function ArusKasSection({ title, items, total, warning = false, note }: { title:
   );
 }
 
-function ArusKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function ArusKasReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<ArusKasLaporanResponse | null>(null);
@@ -841,8 +777,7 @@ function ArusKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
     setLoading(true);
     setError(null);
     try {
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<ArusKasLaporanResponse>(`/laporan/arus-kas?dari=${dari}&sampai=${sampai}${cs}`);
+      const res = await api.get<ArusKasLaporanResponse>(`/laporan/arus-kas?dari=${dari}&sampai=${sampai}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data arus kas.';
@@ -851,12 +786,11 @@ function ArusKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, companyFilter]);
+  }, [dari, sampai]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   const belumDiklasifikasi = data?.belumDiklasifikasikan;
   const jumlahJurnalBelumDiklasifikasi = data?.jumlahJurnalBelumDiklasifikasi ?? 0;
@@ -869,11 +803,7 @@ function ArusKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
 
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -937,12 +867,10 @@ function ArusKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
 // Sub-page: Rincian Buku Besar
 // ═════════════════════════════════════════════════════════════════════════════
 
-function BukuBesarReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function BukuBesarReport() {
   const [akunId, setAkunId] = useState('');
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
-  // AUD-15 (update #04) — mode tahun buku (saldo awal = SA-{tahun})
-  const [tahunBuku, setTahunBuku] = useState('');
   const [coaOptions, setCoaOptions] = useState<COADropdownResponse[]>([]);
   const [coaLoading, setCoaLoading] = useState(false);
   const [data, setData] = useState<BukuBesarLaporanResponse | null>(null);
@@ -971,9 +899,7 @@ function BukuBesarReport({ companyFilter, onCompanyChange }: CompanyScopedProps)
     setError(null);
     setFetched(true);
     try {
-      const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<BukuBesarLaporanResponse>(`/laporan/buku-besar?akun_id=${akunId}&dari=${dari}&sampai=${sampai}${tb}${cs}`);
+      const res = await api.get<BukuBesarLaporanResponse>(`/laporan/buku-besar?akun_id=${akunId}&dari=${dari}&sampai=${sampai}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data buku besar.';
@@ -982,14 +908,11 @@ function BukuBesarReport({ companyFilter, onCompanyChange }: CompanyScopedProps)
     } finally {
       setLoading(false);
     }
-  }, [akunId, dari, sampai, tahunBuku, companyFilter]);
+  }, [akunId, dari, sampai]);
 
   useEffect(() => {
     fetchCOA();
   }, [fetchCOA]);
-  useCompanyRefetch(companyFilter, () => {
-    if (akunId) void fetchData();
-  });
 
   const dropdownOptions = coaOptions.map((c) => ({
     id: c.id,
@@ -1012,9 +935,6 @@ function BukuBesarReport({ companyFilter, onCompanyChange }: CompanyScopedProps)
           <Label className="text-xs font-medium text-muted-foreground">Sampai Tanggal</Label>
           <Input type="date" value={sampai} onChange={(e) => setSampai(e.target.value)} className="w-44" />
         </div>
-        <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
         <Button onClick={fetchData} disabled={loading || !akunId} size="sm">
           {loading ? 'Memuat...' : 'Tampilkan'}
         </Button>
@@ -1118,7 +1038,7 @@ function BukuBesarReport({ companyFilter, onCompanyChange }: CompanyScopedProps)
 // Sub-page: Mutasi Kas (raw snake_case response)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function MutasiKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function MutasiKasReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<MutasiRawResponse | null>(null);
@@ -1129,8 +1049,7 @@ function MutasiKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps)
     setLoading(true);
     setError(null);
     try {
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<MutasiRawResponse>(`/laporan/mutasi-kas?dari=${dari}&sampai=${sampai}${cs}`);
+      const res = await api.get<MutasiRawResponse>(`/laporan/mutasi-kas?dari=${dari}&sampai=${sampai}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data mutasi kas.';
@@ -1139,20 +1058,15 @@ function MutasiKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps)
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, companyFilter]);
+  }, [dari, sampai]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
 
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -1218,7 +1132,7 @@ function MutasiKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps)
 // Sub-page: Mutasi Bank (raw snake_case response)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function MutasiBankReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function MutasiBankReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<MutasiRawResponse | null>(null);
@@ -1229,8 +1143,7 @@ function MutasiBankReport({ companyFilter, onCompanyChange }: CompanyScopedProps
     setLoading(true);
     setError(null);
     try {
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<MutasiRawResponse>(`/laporan/mutasi-bank?dari=${dari}&sampai=${sampai}${cs}`);
+      const res = await api.get<MutasiRawResponse>(`/laporan/mutasi-bank?dari=${dari}&sampai=${sampai}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data mutasi bank.';
@@ -1239,20 +1152,15 @@ function MutasiBankReport({ companyFilter, onCompanyChange }: CompanyScopedProps
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, companyFilter]);
+  }, [dari, sampai]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
 
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -1318,7 +1226,7 @@ function MutasiBankReport({ companyFilter, onCompanyChange }: CompanyScopedProps
 // Sub-page: Rekap Kas & Bank
 // ═════════════════════════════════════════════════════════════════════════════
 
-function RekapKasBankReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function RekapKasBankReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<RekapKasBankLaporanResponse | null>(null);
@@ -1329,8 +1237,7 @@ function RekapKasBankReport({ companyFilter, onCompanyChange }: CompanyScopedPro
     setLoading(true);
     setError(null);
     try {
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<RekapKasBankLaporanResponse>(`/laporan/rekap-kas-bank?dari=${dari}&sampai=${sampai}${cs}`);
+      const res = await api.get<RekapKasBankLaporanResponse>(`/laporan/rekap-kas-bank?dari=${dari}&sampai=${sampai}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat rekap kas & bank.';
@@ -1339,12 +1246,11 @@ function RekapKasBankReport({ companyFilter, onCompanyChange }: CompanyScopedPro
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, companyFilter]);
+  }, [dari, sampai]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   // B-03: field API (saldoAwal/totalMasuk/totalKeluar/saldoAkhir) dikirim sebagai string
   // Decimal — reduce tanpa Number() menyebabkan konkatenasi string pada baris Total.
@@ -1355,11 +1261,7 @@ function RekapKasBankReport({ companyFilter, onCompanyChange }: CompanyScopedPro
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
 
       {loading && <ReportSkeleton rows={4} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -1438,11 +1340,9 @@ function RekapKasBankReport({ companyFilter, onCompanyChange }: CompanyScopedPro
 // Sub-page: Neraca Saldo (Trial Balance)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function NeracaSaldoReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function NeracaSaldoReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
-  // AUD-15 (update #04) — mode tahun buku (saldo awal = SA-{tahun})
-  const [tahunBuku, setTahunBuku] = useState('');
   const [data, setData] = useState<NeracaSaldoResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1451,9 +1351,7 @@ function NeracaSaldoReport({ companyFilter, onCompanyChange }: CompanyScopedProp
     setLoading(true);
     setError(null);
     try {
-      const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<NeracaSaldoResponse>(`/laporan/neraca-saldo?dari=${dari}&sampai=${sampai}${tb}${cs}`);
+      const res = await api.get<NeracaSaldoResponse>(`/laporan/neraca-saldo?dari=${dari}&sampai=${sampai}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat neraca saldo.';
@@ -1462,24 +1360,18 @@ function NeracaSaldoReport({ companyFilter, onCompanyChange }: CompanyScopedProp
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, tahunBuku, companyFilter]);
+  }, [dari, sampai]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   // Selisih dikirim backend sebagai string Decimal — koersi agar cek balance tidak selalu false.
   const isBalanced = data ? Number(data.selisih) === 0 : true;
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
-        <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
       {!loading && !error && data && (
@@ -1554,7 +1446,7 @@ function NeracaSaldoReport({ companyFilter, onCompanyChange }: CompanyScopedProp
 // Sub-page: Perubahan Modal (Statement of Changes in Equity)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PerubahanModalReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function PerubahanModalReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<PerubahanModalResponse | null>(null);
@@ -1565,8 +1457,7 @@ function PerubahanModalReport({ companyFilter, onCompanyChange }: CompanyScopedP
     setLoading(true);
     setError(null);
     try {
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<PerubahanModalResponse>(`/laporan/perubahan-modal?dari=${dari}&sampai=${sampai}${cs}`);
+      const res = await api.get<PerubahanModalResponse>(`/laporan/perubahan-modal?dari=${dari}&sampai=${sampai}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat perubahan modal.';
@@ -1575,20 +1466,15 @@ function PerubahanModalReport({ companyFilter, onCompanyChange }: CompanyScopedP
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, companyFilter]);
+  }, [dari, sampai]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
       {!loading && !error && data && (
@@ -1663,7 +1549,7 @@ function PerubahanModalReport({ companyFilter, onCompanyChange }: CompanyScopedP
 // Sub-page: Umur Piutang (Aging Receivables)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function UmurPiutangReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function UmurPiutangReport() {
   const [tanggal, setTanggal] = useState(getToday());
   const [data, setData] = useState<UmurPiutangResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1673,8 +1559,7 @@ function UmurPiutangReport({ companyFilter, onCompanyChange }: CompanyScopedProp
     setLoading(true);
     setError(null);
     try {
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<UmurPiutangResponse>(`/laporan/umur-piutang?as_of=${tanggal}${cs}`);
+      const res = await api.get<UmurPiutangResponse>(`/laporan/umur-piutang?as_of=${tanggal}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat umur piutang.';
@@ -1683,20 +1568,15 @@ function UmurPiutangReport({ companyFilter, onCompanyChange }: CompanyScopedProp
     } finally {
       setLoading(false);
     }
-  }, [tanggal, companyFilter]);
+  }, [tanggal]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
       {!loading && !error && data && (
@@ -1777,7 +1657,7 @@ function UmurPiutangReport({ companyFilter, onCompanyChange }: CompanyScopedProp
 // Sub-page: Umur Hutang (Aging Payables)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function UmurHutangReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
+function UmurHutangReport() {
   const [tanggal, setTanggal] = useState(getToday());
   const [data, setData] = useState<UmurHutangResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1787,8 +1667,7 @@ function UmurHutangReport({ companyFilter, onCompanyChange }: CompanyScopedProps
     setLoading(true);
     setError(null);
     try {
-      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
-      const res = await api.get<UmurHutangResponse>(`/laporan/umur-hutang?as_of=${tanggal}${cs}`);
+      const res = await api.get<UmurHutangResponse>(`/laporan/umur-hutang?as_of=${tanggal}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat umur hutang.';
@@ -1797,20 +1676,15 @@ function UmurHutangReport({ companyFilter, onCompanyChange }: CompanyScopedProps
     } finally {
       setLoading(false);
     }
-  }, [tanggal, companyFilter]);
+  }, [tanggal]);
 
   useEffect(() => {
     fetchData();
   }, []);
-  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
-        {/* AUD-17 — scope perusahaan */}
-        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
-      </div>
+      <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
       {!loading && !error && data && (
@@ -1904,12 +1778,13 @@ function LaporanLainnya() {
     { id: 'mutasi-kas', title: 'Mutasi Kas', desc: 'Mutasi transaksi kas per periode', icon: ArrowLeftRight },
     { id: 'mutasi-bank', title: 'Mutasi Bank', desc: 'Mutasi transaksi bank per periode', icon: ArrowLeftRight },
     { id: 'rekap-kas-bank', title: 'Rekap Kas & Bank', desc: 'Rekapitulasi saldo dan mutasi kas/bank', icon: FileSpreadsheet },
-    { id: 'rekap-pajak', title: 'Rekap Pajak', desc: 'PPN keluaran/masukan & PPh 23 per masa pajak + hutang pajak', icon: Receipt },
     { id: 'penutupan-periode', title: 'Penutupan Periode', desc: 'Tutup/buka periode akuntansi bulanan', icon: Calendar },
     { id: 'rekonsiliasi-aset', title: 'Rekonsiliasi Aset', desc: 'Rekonsiliasi Asset Register vs GL', icon: Scale },
     { id: 'rekonsiliasi-grni', title: 'GRNI vs GL', desc: 'Rekonsiliasi Open GRNI vs GRNI GL', icon: Scale },
     { id: 'rekonsiliasi-cf-bs', title: 'Cash Flow vs Neraca', desc: 'Cash Flow Ending vs Balance Sheet Cash', icon: Scale },
     { id: 'rekonsiliasi-eq-bs', title: 'Ekuitas vs Neraca', desc: 'Equity Closing vs Balance Sheet Equity', icon: Scale },
+    { id: 'rekap-ppn', title: 'Rekap PPN', desc: 'Rekap DPP & PPN keluaran/masukan + koreksi retur per masa pajak', icon: FileBarChart },
+    { id: 'rekap-pph23', title: 'Rekap PPh 23', desc: 'Rekap PPh 23 per pihak — dipotong pelanggan vs dipotong dari supplier', icon: FileBarChart },
     { id: 'accounting-health', title: 'Accounting Health', desc: 'Dashboard 11 reconciliation checks', icon: Activity }
   ];
   return (
@@ -1942,6 +1817,292 @@ function LaporanLainnya() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Update AUD-17 — Rekap PPN per masa pajak
+// ═════════════════════════════════════════════════════════════════════════════
+
+const JENIS_PPN_BADGE: Record<string, { label: string; cls: string }> = {
+  KELUARAN: { label: 'Keluaran', cls: 'border-yellow-200 bg-yellow-100 text-yellow-700' },
+  MASUKAN: { label: 'Masukan', cls: 'border-sky-200 bg-sky-100 text-sky-700' },
+  RETUR_KELUARAN: { label: 'Retur Keluaran', cls: 'border-orange-200 bg-orange-100 text-orange-700' },
+  RETUR_MASUKAN: { label: 'Retur Masukan', cls: 'border-amber-200 bg-amber-100 text-amber-700' }
+};
+
+function RekapPpnReport() {
+  const [dari, setDari] = useState(getFirstDayOfYear());
+  const [sampai, setSampai] = useState(getToday());
+  const [data, setData] = useState<RekapPpnResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<RekapPpnResponse>(`/laporan/rekap-ppn?dari=${dari}&sampai=${sampai}`);
+      setData(res);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.detail : 'Gagal memuat rekap PPN.';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [dari, sampai]);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const total = data?.total;
+
+  return (
+    <div className="space-y-4">
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+      <p className="text-xs text-muted-foreground">Dokumen yang dibatalkan (jurnal pembalik) otomatis dikecualikan. Data terikat perusahaan aktif (ASAHI).</p>
+
+      {loading && <ReportSkeleton rows={6} />}
+      {error && <ReportError message={error} onRetry={fetchData} />}
+      {!loading && !error && data && (
+        <>
+          <Card>
+            <CardContent className="p-0">
+              <div className="max-h-[40vh] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Masa</TableHead>
+                      <TableHead className="text-right">DPP Keluaran</TableHead>
+                      <TableHead className="text-right">PPN Keluaran</TableHead>
+                      <TableHead className="text-right">DPP Masukan</TableHead>
+                      <TableHead className="text-right">PPN Masukan</TableHead>
+                      <TableHead className="text-right">PPN Neto</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.ringkasanMasa.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="p-0">
+                          <EmptyState icon={FileBarChart} title="Belum ada transaksi PPN" description="Tidak ada invoice ber-PPN pada periode ini." />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {data.ringkasanMasa.map((m) => (
+                      <TableRow key={m.masa}>
+                        <TableCell className="font-medium">{m.masa}</TableCell>
+                        <TableCell className="text-right">{formatRpIDR(m.dppKeluaran)}</TableCell>
+                        <TableCell className="text-right text-yellow-700">{formatRpIDR(m.ppnKeluaran)}</TableCell>
+                        <TableCell className="text-right">{formatRpIDR(m.dppMasukan)}</TableCell>
+                        <TableCell className="text-right text-sky-700">{formatRpIDR(m.ppnMasukan)}</TableCell>
+                        <TableCell className="text-right font-semibold">{formatRpIDR(m.ppnNeto)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {total && (
+                      <TableRow className="bg-primary/10 font-bold">
+                        <TableCell>Total</TableCell>
+                        <TableCell className="text-right">{formatRpIDR(total.dppKeluaran)}</TableCell>
+                        <TableCell className="text-right">{formatRpIDR(total.ppnKeluaran)}</TableCell>
+                        <TableCell className="text-right">{formatRpIDR(total.dppMasukan)}</TableCell>
+                        <TableCell className="text-right">{formatRpIDR(total.ppnMasukan)}</TableCell>
+                        <TableCell className="text-right">{formatRpIDR(total.ppnNeto)}</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-0">
+              <div className="max-h-[50vh] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tanggal</TableHead>
+                      <TableHead>No Dokumen</TableHead>
+                      <TableHead>Pihak</TableHead>
+                      <TableHead>Jenis</TableHead>
+                      <TableHead className="text-right">DPP</TableHead>
+                      <TableHead className="text-right">PPN</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.rincian.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="p-0">
+                          <EmptyState icon={FileText} title="Belum ada rincian" description="Rincian dokumen pajak akan tampil di sini." />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {data.rincian.map((r, idx) => {
+                      const b = JENIS_PPN_BADGE[r.jenis] ?? { label: r.jenis, cls: '' };
+                      return (
+                        <TableRow key={idx}>
+                          <TableCell>{formatDate(r.tanggal)}</TableCell>
+                          <TableCell className="font-medium">{r.noDokumen}</TableCell>
+                          <TableCell>{r.pihak ?? '—'}</TableCell>
+                          <TableCell>
+                            <Badge className={b.cls}>{b.label}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">{formatRpIDR(r.dpp)}</TableCell>
+                          <TableCell className="text-right">{formatRpIDR(r.ppn)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Update AUD-17 — Rekap PPh 23 per pihak
+// ═════════════════════════════════════════════════════════════════════════════
+
+function RekapPph23Report() {
+  const [dari, setDari] = useState(getFirstDayOfYear());
+  const [sampai, setSampai] = useState(getToday());
+  const [data, setData] = useState<RekapPph23Response | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<RekapPph23Response>(`/laporan/rekap-pph23?dari=${dari}&sampai=${sampai}`);
+      setData(res);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.detail : 'Gagal memuat rekap PPh 23.';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [dari, sampai]);
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+
+      {loading && <ReportSkeleton rows={6} />}
+      {error && <ReportError message={error} onRetry={fetchData} />}
+      {!loading && !error && data && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">PPh 23 Dipotong Pelanggan dari Kita (Dr PPh23 Dibayar di Muka)</p>
+                <p className="text-xl font-bold text-yellow-700 mt-1">{formatRpIDR(data.totalDipotongDariKita)}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-xs text-muted-foreground">PPh 23 Dipotong Kita dari Supplier (Cr Hutang PPh 23)</p>
+                <p className="text-xl font-bold text-sky-700 mt-1">{formatRpIDR(data.totalKitaPotong)}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardContent className="p-0">
+              <div className="max-h-[40vh] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Pihak</TableHead>
+                      <TableHead>NPWP</TableHead>
+                      <TableHead>Sisi</TableHead>
+                      <TableHead className="text-right">Total Dasar</TableHead>
+                      <TableHead className="text-right">Total PPh 23</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.perPihak.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="p-0">
+                          <EmptyState icon={FileText} title="Belum ada pemotongan PPh 23" description="Tidak ada PPh 23 pada periode ini." />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {data.perPihak.map((p, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium">{p.pihak ?? '(tanpa nama)'}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{p.npwp ?? '—'}</TableCell>
+                        <TableCell>
+                          <Badge className={p.sisi === 'KITA_POTONG' ? 'border-sky-200 bg-sky-100 text-sky-700' : 'border-yellow-200 bg-yellow-100 text-yellow-700'}>{p.sisi === 'KITA_POTONG' ? 'Kita Potong (AP)' : 'Dipotong dari Kita (AR)'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">{formatRpIDR(p.totalDasar)}</TableCell>
+                        <TableCell className="text-right font-semibold">{formatRpIDR(p.totalPph23)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-0">
+              <div className="max-h-[50vh] overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tanggal</TableHead>
+                      <TableHead>Pihak</TableHead>
+                      <TableHead>No Bukti</TableHead>
+                      <TableHead>No Invoice</TableHead>
+                      <TableHead>Sumber</TableHead>
+                      <TableHead className="text-right">Dasar</TableHead>
+                      <TableHead className="text-right">PPh 23</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.rincian.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="p-0">
+                          <EmptyState icon={FileText} title="Belum ada rincian" description="Rincian pemotongan PPh 23 akan tampil di sini." />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {data.rincian.map((r, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>{formatDate(r.tanggal)}</TableCell>
+                        <TableCell>{r.pihak ?? '—'}</TableCell>
+                        <TableCell className="font-medium">{r.noBukti}</TableCell>
+                        <TableCell>{r.noInvoice ?? '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{r.sumber}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">{formatRpIDR(r.dasar)}</TableCell>
+                        <TableCell className="text-right font-semibold">{formatRpIDR(r.pph23)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Main Component
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Main Component
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1949,41 +2110,30 @@ export default function ReportsModule({ subPage: propsSubPage, refreshKey, formM
   const { activeSubPage } = useERPStore();
   const subPage = propsSubPage || activeSubPage || 'laba-rugi';
 
-  // AUD-17 (update #05) — SATU state filter perusahaan di level halaman Laporan,
-  // berlaku untuk semua sub-laporan yang di-scope backend (neraca-saldo, laba-rugi,
-  // neraca, arus-kas, perubahan-modal, buku-besar, umur-piutang, umur-hutang,
-  // mutasi-kas/bank, rekap-kas-bank, rekap-pajak, penutupan-periode).
-  // Sub-laporan rekonsiliasi-persediaan*/accounting-health/rekonsiliasi grni/cf/eq
-  // TIDAK menerima scope (backend menolak) — param tidak dikirim ke sana.
-  const [companyFilter, setCompanyFilter] = useState<PerusahaanFilterValue>('ALL');
-  const handleCompanyChange = useCallback((v: PerusahaanFilterValue) => setCompanyFilter(v), []);
-
   const renderSubPage = () => {
     switch (subPage) {
       case 'laba-rugi':
-        return <LabaRugiReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <LabaRugiReport />;
       case 'neraca':
-        return <NeracaReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <NeracaReport />;
       case 'arus-kas':
-        return <ArusKasReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <ArusKasReport />;
       case 'neraca-saldo':
-        return <NeracaSaldoReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <NeracaSaldoReport />;
       case 'perubahan-modal':
-        return <PerubahanModalReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <PerubahanModalReport />;
       case 'rincian-buku-besar':
-        return <BukuBesarReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <BukuBesarReport />;
       case 'umur-piutang':
-        return <UmurPiutangReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <UmurPiutangReport />;
       case 'umur-hutang':
-        return <UmurHutangReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <UmurHutangReport />;
       case 'mutasi-kas':
-        return <MutasiKasReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <MutasiKasReport />;
       case 'mutasi-bank':
-        return <MutasiBankReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <MutasiBankReport />;
       case 'rekap-kas-bank':
-        return <RekapKasBankReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
-      case 'rekap-pajak':
-        return <RekapPajakPage refreshKey={refreshKey} companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <RekapKasBankReport />;
       case 'penutupan-periode':
         return <PenutupanPeriodePage refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
       case 'rekonsiliasi-persediaan':
@@ -2004,8 +2154,13 @@ export default function ReportsModule({ subPage: propsSubPage, refreshKey, formM
         return <ReconciliationDetailPage subPage="rekonsiliasi-eq-bs" />;
       case 'laporan-lainnya':
         return <LaporanLainnya />;
+      // === Update AUD-17 — rekap pajak ===
+      case 'rekap-ppn':
+        return <RekapPpnReport />;
+      case 'rekap-pph23':
+        return <RekapPph23Report />;
       default:
-        return <LabaRugiReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
+        return <LabaRugiReport />;
     }
   };
 

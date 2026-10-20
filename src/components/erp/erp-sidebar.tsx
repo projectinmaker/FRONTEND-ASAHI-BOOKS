@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory, HelpCircle } from 'lucide-react';
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory, HelpCircle } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -159,17 +159,20 @@ const modules: NavModule[] = [
         ]
       },
       {
+        label: 'Pajak',
+        items: [
+          // === Update AUD-17 — rekap pajak PPN & PPh 23 ===
+          { id: 'rekap-ppn', label: 'Rekap PPN', icon: Percent },
+          { id: 'rekap-pph23', label: 'Rekap PPh 23', icon: FileBarChart }
+        ]
+      },
+      {
         label: 'Kas & Bank',
         items: [
           { id: 'mutasi-kas', label: 'Mutasi Kas', icon: Banknote },
           { id: 'mutasi-bank', label: 'Mutasi Bank', icon: FileSpreadsheet },
           { id: 'rekap-kas-bank', label: 'Rekap Kas & Bank', icon: FileBarChart }
         ]
-      },
-      {
-        // Update #04 — AUD-07/AUD-08/AUD-11
-        label: 'Pajak',
-        items: [{ id: 'rekap-pajak', label: 'Rekap Pajak (PPN & PPh 23)', icon: Receipt }]
       },
       {
         label: 'Laporan Lainnya',
