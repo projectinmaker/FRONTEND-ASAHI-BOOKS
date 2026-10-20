@@ -18,6 +18,9 @@ import { api, ApiError } from '@/lib/api';
 import { formatRp } from '@/lib/pdf-utils';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import type { KasBankAkunResponse, KasBankAkunCreate, KasBankAkunUpdate, COADropdownResponse } from '@/types/api';
+// AUD-17 (update #05) — field perusahaan kas/bank (global vs milik perusahaan)
+import { useCompanyOptions } from '@/components/erp/perusahaan-filter';
+import { Badge } from '@/components/ui/badge';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -48,9 +51,11 @@ interface FormState {
   jenis: string;
   akunPerkiraanId: string;
   currency: string;
+  /** AUD-17 (update #05): '' = Global; selain itu = companyId pemilik akun. */
+  companyId: string;
 }
 
-const emptyForm: FormState = { kode: '', nama: '', jenis: 'KAS', akunPerkiraanId: '', currency: 'IDR' };
+const emptyForm: FormState = { kode: '', nama: '', jenis: 'KAS', akunPerkiraanId: '', currency: 'IDR', companyId: '' };
 
 interface KasBankAkunPageProps {
   subPage?: string;
@@ -71,6 +76,8 @@ function KasBankAkunForm({ mode, editId, initialData }: { mode: FormMode; editId
   const refreshListTab = useTabStore((s) => s.refreshListTab);
 
   const [coaOptions, setCoaOptions] = useState<COADropdownResponse[]>([]);
+  // AUD-17 (update #05) — opsi perusahaan untuk kepemilikan akun kas/bank
+  const { companies: companyOptions } = useCompanyOptions();
 
   const title = mode === 'create' ? 'Tambah Akun Kas / Bank' : 'Edit Akun Kas / Bank';
 
@@ -100,7 +107,8 @@ function KasBankAkunForm({ mode, editId, initialData }: { mode: FormMode; editId
           nama: res.nama,
           jenis: res.jenis,
           akunPerkiraanId: res.akunPerkiraan?.id || prev.akunPerkiraanId,
-          currency: res.currency || 'IDR'
+          currency: res.currency || 'IDR',
+          companyId: res.companyId || ''
         }));
       } catch {
         /* silently fail — fall back to initialData */
@@ -133,12 +141,12 @@ function KasBankAkunForm({ mode, editId, initialData }: { mode: FormMode; editId
     setSubmitting(true);
     try {
       if (mode === 'create') {
-        const payload: KasBankAkunCreate = { kode: form.kode.trim(), nama: form.nama.trim(), jenis: form.jenis, akunPerkiraanId: form.akunPerkiraanId, currency: form.currency || 'IDR' };
+        const payload: KasBankAkunCreate = { kode: form.kode.trim(), nama: form.nama.trim(), jenis: form.jenis, akunPerkiraanId: form.akunPerkiraanId, currency: form.currency || 'IDR', companyId: form.companyId || null };
         await api.post<KasBankAkunResponse>('/master/kas-bank-akun', payload);
         toast.success('Akun kas / bank berhasil ditambahkan');
       } else {
         if (!editId) return;
-        const payload: KasBankAkunUpdate = { nama: form.nama.trim(), jenis: form.jenis, akunPerkiraanId: form.akunPerkiraanId, currency: form.currency || 'IDR' };
+        const payload: KasBankAkunUpdate = { nama: form.nama.trim(), jenis: form.jenis, akunPerkiraanId: form.akunPerkiraanId, currency: form.currency || 'IDR', companyId: form.companyId || null };
         await api.put<KasBankAkunResponse>(`/master/kas-bank-akun/${editId}`, payload);
         toast.success('Akun kas / bank berhasil diperbarui');
       }
@@ -191,6 +199,24 @@ function KasBankAkunForm({ mode, editId, initialData }: { mode: FormMode; editId
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="kb-perusahaan">Perusahaan</Label>
+            <Select value={form.companyId || 'GLOBAL'} onValueChange={(v) => updateForm('companyId', v === 'GLOBAL' ? '' : v)}>
+              <SelectTrigger id="kb-perusahaan">
+                <SelectValue placeholder="Global" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="GLOBAL">Global (semua perusahaan)</SelectItem>
+                {companyOptions.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.code ? `${c.code} — ${c.name}` : c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">AUD-17: kosong/global = akun dipakai semua perusahaan; pilih perusahaan untuk akun khusus.</p>
+          </div>
+
+          <div className="space-y-2">
             <Label>Currency</Label>
             <Select value={form.currency} onValueChange={(v) => updateForm('currency', v)} disabled>
               <SelectTrigger>
@@ -239,7 +265,8 @@ export default function KasBankAkunPage({ refreshKey, formMode, formProps }: Kas
                 nama: (formProps?.nama as string) || '',
                 jenis: (formProps?.jenis as string) || 'KAS',
                 akunPerkiraanId: (formProps?.akunPerkiraanId as string) || '',
-                currency: (formProps?.currency as string) || 'IDR'
+                currency: (formProps?.currency as string) || 'IDR',
+                companyId: (formProps?.companyId as string) || ''
               }
             : undefined
         }
@@ -249,8 +276,27 @@ export default function KasBankAkunPage({ refreshKey, formMode, formProps }: Kas
   return <KasBankAkunListContent refreshKey={refreshKey} />;
 }
 
+// Badge kolom Perusahaan (AUD-17) — nama perusahaan bila companyId terisi, "Global" bila null.
+function PerusahaanCell({ companyId, companies }: { companyId?: string | null; companies: { id: string; code: string; name: string }[] }) {
+  if (!companyId)
+    return (
+      <Badge variant="secondary" className="text-xs">
+        Global
+      </Badge>
+    );
+  const nama = companies.find((c) => c.id === companyId)?.name;
+  return (
+    <Badge variant="outline" className="gap-1 border-sky-200 bg-sky-50 text-sky-700 text-xs">
+      <Building2 className="h-3 w-3" />
+      {nama ?? companyId.slice(0, 8)}
+    </Badge>
+  );
+}
+
 function KasBankAkunListContent({ refreshKey }: { refreshKey?: number }) {
   const openFormTab = useTabStore((s) => s.openFormTab);
+  // AUD-17 (update #05) — lookup nama perusahaan untuk kolom Perusahaan
+  const { companies } = useCompanyOptions();
 
   const [data, setData] = useState<KasBankAkunResponse[]>([]);
   const [total, setTotal] = useState(0);
@@ -341,6 +387,9 @@ function KasBankAkunListContent({ refreshKey }: { refreshKey?: number }) {
             <Skeleton className="h-4 w-48" />
           </TableCell>
           <TableCell>
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </TableCell>
+          <TableCell>
             <Skeleton className="h-4 w-20" />
           </TableCell>
           <TableCell>
@@ -402,6 +451,8 @@ function KasBankAkunListContent({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="whitespace-nowrap">Nama</TableHead>
                   <TableHead className="whitespace-nowrap">Jenis</TableHead>
                   <TableHead className="whitespace-nowrap">Akun Perkiraan</TableHead>
+                  {/* AUD-17 — kolom Perusahaan (global vs milik perusahaan) */}
+                  <TableHead className="whitespace-nowrap">Perusahaan</TableHead>
                   <TableHead className="whitespace-nowrap">Currency</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Saldo</TableHead>
                   <TableHead className="whitespace-nowrap">Status</TableHead>
@@ -413,7 +464,7 @@ function KasBankAkunListContent({ refreshKey }: { refreshKey?: number }) {
                   <SkeletonRows />
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
                       {debouncedSearch ? 'Tidak ada akun yang sesuai dengan pencarian.' : 'Belum ada data akun kas & bank.'}
                     </TableCell>
                   </TableRow>
@@ -426,12 +477,16 @@ function KasBankAkunListContent({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {row.akunPerkiraan.kode} — {row.akunPerkiraan.nama}
                       </TableCell>
+                      {/* AUD-17 — kolom Perusahaan */}
+                      <TableCell className="whitespace-nowrap">
+                        <PerusahaanCell companyId={row.companyId} companies={companies} />
+                      </TableCell>
                       <TableCell className="whitespace-nowrap font-mono">{row.currency || 'IDR'}</TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums font-medium">{formatRp(row.saldo)}</TableCell>
                       <TableCell className="whitespace-nowrap">{statusBadge(row.status)}</TableCell>
                       <TableCell className="whitespace-nowrap text-center">
                         <div className="inline-flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openFormTab({ title: `Edit ${row.nama}`, module: 'settings', subPage: 'kas-bank-akun', formKey: 'kas-bank-akun-edit', formProps: { id: row.id, kode: row.kode, nama: row.nama, jenis: row.jenis, akunPerkiraanId: row.akunPerkiraan.id, currency: row.currency || 'IDR' } })} aria-label={`Edit ${row.nama}`}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openFormTab({ title: `Edit ${row.nama}`, module: 'settings', subPage: 'kas-bank-akun', formKey: 'kas-bank-akun-edit', formProps: { id: row.id, kode: row.kode, nama: row.nama, jenis: row.jenis, akunPerkiraanId: row.akunPerkiraan.id, currency: row.currency || 'IDR', companyId: row.companyId || '' } })} aria-label={`Edit ${row.nama}`}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(row)} aria-label={`Hapus ${row.nama}`} disabled={row.status === 'NONAKTIF'}>

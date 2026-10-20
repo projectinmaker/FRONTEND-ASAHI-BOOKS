@@ -22,7 +22,9 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { api, ApiError, downloadFile } from '@/lib/api';
 import { formatRp } from '@/lib/money';
-import type { PajakPpnResponse, PajakPph23Response, PajakMonitoringResponse, PajakAkunMonitoring } from '@/types/api';
+// AUD-17 (update #05) — filter perusahaan (PPN & monitoring scoped; PPh23 global)
+import { PerusahaanFilter, companyScopeQuery, type PerusahaanFilterValue } from '@/components/erp/perusahaan-filter';
+import type { PajakPpnResponse, PajakPph23Response, PajakPph23Baris, PajakMonitoringResponse, PajakAkunMonitoring } from '@/types/api';
 import { Receipt, RefreshCw, FileSpreadsheet, Wallet, Landmark, ArrowDownToLine, ArrowUpFromLine, Scale, AlertCircle, CalendarDays, BadgeCheck } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { toast } from 'sonner';
@@ -59,7 +61,7 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType; desc: string 
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
-export default function RekapPajakPage({ refreshKey }: { refreshKey?: number }) {
+export default function RekapPajakPage({ refreshKey, companyFilter, onCompanyChange }: { refreshKey?: number; companyFilter?: PerusahaanFilterValue; onCompanyChange: (v: PerusahaanFilterValue) => void }) {
   const [tab, setTab] = useState<TabKey>('ppn');
   const [dari, setDari] = useState(firstDayOfYear());
   const [sampai, setSampai] = useState(getToday());
@@ -70,16 +72,22 @@ export default function RekapPajakPage({ refreshKey }: { refreshKey?: number }) 
   const [monitoring, setMonitoring] = useState<PajakMonitoringResponse | null>(null);
   const [bayarOpen, setBayarOpen] = useState(false);
 
+  // AUD-17: scope hanya PPN + monitoring — PPh23 rekap masih GLOBAL (documented limitation)
+  const scoped = !!companyFilter && companyFilter !== 'ALL';
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       if (tab === 'ppn') {
-        setPpn(await api.get<PajakPpnResponse>(`/laporan/pajak/ppn?dari=${dari}&sampai=${sampai}`));
+        const cs = companyScopeQuery(companyFilter);
+        setPpn(await api.get<PajakPpnResponse>(`/laporan/pajak/ppn?dari=${dari}&sampai=${sampai}${cs}`));
       } else if (tab === 'pph23') {
+        // PPh23 rekap belum terfilter perusahaan — jangan kirim param scope.
         setPph23(await api.get<PajakPph23Response>(`/laporan/pajak/pph23?dari=${dari}&sampai=${sampai}`));
       } else {
-        setMonitoring(await api.get<PajakMonitoringResponse>('/kas-bank/pajak/monitoring'));
+        const cs = companyScopeQuery(companyFilter);
+        setMonitoring(await api.get<PajakMonitoringResponse>(`/kas-bank/pajak/monitoring${cs ? `?${cs.slice(1)}` : ''}`));
       }
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Gagal memuat rekap pajak';
@@ -87,7 +95,7 @@ export default function RekapPajakPage({ refreshKey }: { refreshKey?: number }) 
     } finally {
       setLoading(false);
     }
-  }, [tab, dari, sampai]);
+  }, [tab, dari, sampai, companyFilter]);
 
   useEffect(() => {
     void load();
@@ -95,7 +103,9 @@ export default function RekapPajakPage({ refreshKey }: { refreshKey?: number }) 
 
   const exportPajak = async (jenis: 'ppn' | 'pph23') => {
     try {
-      const name = await downloadFile(`/laporan/pajak/${jenis}/export?dari=${dari}&sampai=${sampai}`, `rekap-${jenis}-${dari}-${sampai}.xlsx`);
+      // AUD-17: export PPN mengikuti scope; export PPh23 masih global.
+      const cs = jenis === 'ppn' ? companyScopeQuery(companyFilter) : '';
+      const name = await downloadFile(`/laporan/pajak/${jenis}/export?dari=${dari}&sampai=${sampai}${cs}`, `rekap-${jenis}-${dari}-${sampai}.xlsx`);
       toast.success(`Rekap ${jenis.toUpperCase()} diunduh: ${name}`);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Gagal mengunduh export');
@@ -120,6 +130,8 @@ export default function RekapPajakPage({ refreshKey }: { refreshKey?: number }) 
             <Label className="text-xs">Sampai</Label>
             <Input type="date" value={sampai} onChange={(e) => setSampai(e.target.value)} className="w-40" />
           </div>
+          {/* AUD-17 — scope perusahaan (PPN & hutang pajak; PPh23 masih global) */}
+          <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
           <Button variant="outline" onClick={() => void load()} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Muat
           </Button>
@@ -141,6 +153,14 @@ export default function RekapPajakPage({ refreshKey }: { refreshKey?: number }) 
           </button>
         ))}
       </div>
+
+      {/* AUD-17 — PPh23 rekap belum terfilter perusahaan (documented limitation) */}
+      {tab === 'pph23' && scoped && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-center gap-1.5">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Rekap PPh 23 belum terfilter perusahaan — angka di tab ini masih mencakup semua perusahaan.</span>
+        </div>
+      )}
 
       {error && (
         <Card className="border-destructive/50">
@@ -338,14 +358,63 @@ function Pph23Table({ title, hint, rows }: { title: string; hint?: string; rows:
   );
 }
 
+// ── AUD-12 (update #05): tabel kecil retur → pembalikan PPh23 (nilai NEGATIF) ──
+function Pph23ReturTable({ title, rows, total, hint }: { title: string; rows: PajakPph23Baris[]; total?: number | string; hint?: string }) {
+  if (!rows.length) return null;
+  return (
+    <Card className="border-dashed">
+      <CardHeader>
+        <CardTitle className="text-sm">
+          {title} ({rows.length})
+        </CardTitle>
+        {hint && <CardDescription className="text-xs">{hint}</CardDescription>}
+      </CardHeader>
+      <CardContent className="overflow-x-auto px-0 pb-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="pl-4">Tanggal</TableHead>
+              <TableHead>No Retur</TableHead>
+              <TableHead>No Invoice</TableHead>
+              <TableHead>Pihak</TableHead>
+              <TableHead className="text-right pr-4">Pembalikan PPh 23</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r, i) => (
+              <TableRow key={i}>
+                <TableCell className="pl-4 whitespace-nowrap">{formatDate(r.tanggal)}</TableCell>
+                <TableCell className="font-medium">{r.noDokumen ?? '—'}</TableCell>
+                <TableCell>{r.noInvoice ?? '—'}</TableCell>
+                <TableCell>{r.pihak ?? '—'}</TableCell>
+                <TableCell className="text-right tabular-nums pr-4 font-medium text-red-600">−{formatRp(Math.abs(num(r.pph23)))}</TableCell>
+              </TableRow>
+            ))}
+            {total != null && (
+              <TableRow className="bg-muted/50 font-semibold">
+                <TableCell colSpan={4} className="pl-4 text-right">
+                  Total pembalikan
+                </TableCell>
+                <TableCell className="text-right tabular-nums pr-4 text-red-600">−{formatRp(Math.abs(num(total)))}</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
 function Pph23Tab({ data }: { data: PajakPph23Response }) {
+  const returPenjualan = data.pph23ReturPenjualan ?? [];
+  const returPembelian = data.pph23ReturPembelian ?? [];
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-4">
         <StatCard title="Kita Dipotong Pihak Lain" value={formatRp(data.totalDipotongPihakLain)} icon={ArrowUpFromLine} tone="text-orange-600" hint="Pelanggan memotong PPh 23 dari penjualan kita" />
         <StatCard title="Kita Memotong Supplier" value={formatRp(data.totalDipotongDariSupplier)} icon={ArrowDownToLine} tone="text-emerald-600" hint="PPh 23 ditahan dari pembayaran supplier" />
-        <StatCard title="Accrual Invoice Penjualan" value={formatRp(data.totalPph23InvoicePenjualan)} icon={Receipt} tone="text-muted-foreground" hint="PPh 23 dibayar di muka (Dr 116003) saat SI" />
-        <StatCard title="Accrual Invoice Pembelian" value={formatRp(data.totalPph23InvoicePembelian)} icon={Receipt} tone="text-muted-foreground" hint="Hutang PPh 23 sejak PI (Cr 213002)" />
+        <StatCard title="Accrual Invoice Penjualan" value={formatRp(data.totalPph23InvoicePenjualan)} icon={Receipt} tone="text-muted-foreground" hint="SI ber-PPh 23 (Dr 116003) — SUDAH net retur penjualan" />
+        <StatCard title="Accrual Invoice Pembelian" value={formatRp(data.totalPph23InvoicePembelian)} icon={Receipt} tone="text-muted-foreground" hint="PI ber-PPh 23 (Cr 213002) — SUDAH net retur pembelian" />
       </div>
       {data.perMasa.length > 0 && (
         <Card>
@@ -376,8 +445,12 @@ function Pph23Tab({ data }: { data: PajakPph23Response }) {
       )}
       <Pph23Table title="Dipotong Pihak Lain (kita dipotong pelanggan)" rows={data.dipotongPihakLain} hint="Dari penerimaan pelunasan piutang / identifikasi — kas masuk = nilai − pph23" />
       <Pph23Table title="Dipotong dari Supplier (kita memotong)" rows={data.dipotongDariSupplier} hint="Dari pembayaran pelunasan hutang / identifikasi — kas keluar = nilai − diskon − pph23" />
-      <Pph23Table title="Accrual Invoice Penjualan (PPh 23 Dibayar di Muka)" rows={data.pph23InvoicePenjualan} hint="SI ber-PPh 23 — terbentuk sejak invoice (Dr PPh 23 Dibayar di Muka)" />
-      <Pph23Table title="Accrual Invoice Pembelian (Hutang PPh 23)" rows={data.pph23InvoicePembelian} hint="PI ber-PPh 23 — hutang pajak terbentuk sejak invoice, bukti potong dari alokasi pelunasan" />
+      <Pph23Table title="Accrual Invoice Penjualan (PPh 23 Dibayar di Muka)" rows={data.pph23InvoicePenjualan} hint="SI ber-PPh 23 — terbentuk sejak invoice (Dr PPh 23 Dibayar di Muka); total sudah termasuk netting retur di bawah" />
+      {/* AUD-12 (update #05) — netting retur penjualan (pembalikan Dr 116003) */}
+      <Pph23ReturTable title="Retur Penjualan (pembalikan PPh 23)" rows={returPenjualan} total={data.totalPph23ReturPenjualan} hint="Retur atas SI ber-PPh 23 — membalik PPh 23 Dibayar di Muka (nilai negatif, sudah mengurangi accrual penjualan)" />
+      <Pph23Table title="Accrual Invoice Pembelian (Hutang PPh 23)" rows={data.pph23InvoicePembelian} hint="PI ber-PPh 23 — hutang pajak terbentuk sejak invoice, bukti potong dari alokasi pelunasan; total sudah termasuk netting retur di bawah" />
+      {/* AUD-12 (update #05) — netting retur pembelian (pembalikan Cr 213002) */}
+      <Pph23ReturTable title="Retur Pembelian (pembalikan PPh 23)" rows={returPembelian} total={data.totalPph23ReturPembelian} hint="Retur atas PI ber-PPh 23 — membalik Hutang PPh 23 (nilai negatif, sudah mengurangi accrual pembelian)" />
       {!data.dipotongPihakLain.length && !data.dipotongDariSupplier.length && !data.pph23InvoicePembelian.length && <EmptyState icon={FileSpreadsheet} title="Belum ada data PPh 23" description="Belum ada potongan PPh 23 pada periode ini." />}
     </div>
   );

@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Lock, Unlock, Loader2, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, CalendarClock, LockOpen } from 'lucide-react';
+import { Lock, Unlock, Loader2, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, CalendarClock, LockOpen, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
@@ -20,6 +20,8 @@ import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import type { PenutupanPeriodeResponse, PeriodeStatusResponse, PreCloseReadinessResponse, GlReconciliationResponse, PenutupanTahunItem } from '@/types/api';
+// AUD-17 (update #05) — scope perusahaan untuk penutupan periode/tahun
+import { PerusahaanFilter, useCompanyOptions, type PerusahaanFilterValue } from '@/components/erp/perusahaan-filter';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -57,7 +59,7 @@ interface PenutupanPeriodeProps {
 // Tutup Periode Form (rendered in tab)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function TutupPeriodeForm() {
+function TutupPeriodeForm({ companyId, companyNama }: { companyId?: string; companyNama?: string | null }) {
   const [tutupTahun, setTutupTahun] = useState(new Date().getFullYear());
   const [tutupBulan, setTutupBulan] = useState(new Date().getMonth() + 1);
   const [tutupKeterangan, setTutupKeterangan] = useState('');
@@ -132,9 +134,11 @@ function TutupPeriodeForm() {
         tahun: tutupTahun,
         bulan: tutupBulan,
         keterangan: tutupKeterangan || undefined,
-        withClosingEntry: tutupWithEntry
+        withClosingEntry: tutupWithEntry,
+        // AUD-17 — scope perusahaan (tanpa ini = global, mengunci semua perusahaan)
+        companyId: companyId || undefined
       });
-      toast.success(`Periode ${BULAN_LABELS[tutupBulan - 1]} ${tutupTahun} berhasil ditutup.`);
+      toast.success(`Periode ${BULAN_LABELS[tutupBulan - 1]} ${tutupTahun} berhasil ditutup${companyNama ? ` (${companyNama})` : ''}.`);
       refreshListTab('reports', 'penutupan-periode');
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
@@ -153,6 +157,20 @@ function TutupPeriodeForm() {
             Menutup periode akan mengunci semua transaksi pada bulan tersebut.
             {tutupWithEntry && ' Jurnal penutupan akan otomatis dibuat.'}
           </p>
+
+          {/* AUD-17 — indikator scope perusahaan */}
+          <div className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${companyId ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-muted bg-muted/40 text-muted-foreground'}`}>
+            <CalendarClock className="h-4 w-4" />
+            {companyId ? (
+              <span>
+                Scope: <strong>{companyNama || companyId}</strong> — hanya periode perusahaan ini yang dikunci.
+              </span>
+            ) : (
+              <span>
+                Scope: <strong>Global</strong> — tanpa perusahaan, mengunci semua perusahaan.
+              </span>
+            )}
+          </div>
 
           {/* Status indicator */}
           {currentStatus && (
@@ -314,10 +332,11 @@ function TutupPeriodeForm() {
 // Wrapper: routes formMode to tutup form, delegates list to inner
 // ═══════════════════════════════════════════════════════════════════════════
 
-export default function PenutupanPeriodePage({ refreshKey, formMode }: PenutupanPeriodeProps) {
+export default function PenutupanPeriodePage({ refreshKey, formMode, formProps }: PenutupanPeriodeProps) {
   // ── Form mode routing (before any hooks) ──
   if (formMode === 'tutup-periode') {
-    return <TutupPeriodeForm />;
+    const companyId = formProps?.companyId as string | undefined;
+    return <TutupPeriodeForm companyId={companyId} companyNama={formProps?.companyNama as string | undefined} />;
   }
 
   return <PenutupanPeriodeList refreshKey={refreshKey} />;
@@ -333,6 +352,13 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
   // Phase 8 — hanya manajer/admin yang boleh buka kembali periode
   const user = useAuthStore((s) => s.user);
   const canReopen = user?.role === 'ADMINISTRATOR' || user?.role === 'MANAJER_KEUANGAN';
+
+  // AUD-17 (update #05) — scope perusahaan: tutup/buka/tahun khusus satu perusahaan,
+  // atau global (tanpa perusahaan = mengunci semua).
+  const [companyFilter, setCompanyFilter] = useState<PerusahaanFilterValue>('ALL');
+  const { companies } = useCompanyOptions();
+  const scopeCompanyId = companyFilter !== 'ALL' && companyFilter !== 'UNASSIGNED' ? companyFilter : undefined;
+  const scopeCompanyNama = scopeCompanyId ? (companies.find((c) => c.id === scopeCompanyId)?.name ?? null) : null;
 
   // ── State ──
   const [data, setData] = useState<PenutupanPeriodeResponse[]>([]);
@@ -369,6 +395,8 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
       params.set('limit', String(PAGE_SIZE));
       if (filterTahun) params.set('tahun', filterTahun);
       if (filterStatus) params.set('status', filterStatus);
+      // AUD-17 — scope perusahaan list periode
+      if (scopeCompanyId) params.set('companyId', scopeCompanyId);
 
       const res = await api.get<{ data: PenutupanPeriodeResponse[]; total: number }>(`/periode/penutupan-periode?${params.toString()}`);
       setData(res.data);
@@ -379,17 +407,18 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
     } finally {
       setLoading(false);
     }
-  }, [skip, filterTahun, filterStatus]);
+  }, [skip, filterTahun, filterStatus, scopeCompanyId]);
 
   const fetchTahunList = useCallback(async () => {
     try {
-      const res = await api.get<PenutupanTahunItem[]>('/periode/penutupan-periode/tahun');
+      const cs = scopeCompanyId ? `?companyId=${encodeURIComponent(scopeCompanyId)}` : '';
+      const res = await api.get<PenutupanTahunItem[]>(`/periode/penutupan-periode/tahun${cs}`);
       setTahunList(Array.isArray(res) ? res : []);
     } catch {
       // non-fatal — section tetap tampil kosong
       setTahunList([]);
     }
-  }, []);
+  }, [scopeCompanyId]);
 
   useEffect(() => {
     fetchData();
@@ -403,9 +432,11 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
     try {
       await api.post(`/periode/penutupan-periode/tutup-tahun/${tutupTahunItem.tahun}`, {
         keterangan: `Tutup tahun buku ${tutupTahunItem.tahun}`,
-        withClosingEntry: true
+        withClosingEntry: true,
+        // AUD-17 — scope perusahaan (tanpa companyId = global)
+        companyId: scopeCompanyId || undefined
       });
-      toast.success(`Tahun buku ${tutupTahunItem.tahun} ditutup — saldo Laba (Rugi) Tahun Berjalan ditransfer ke Laba (Rugi) Ditahan.`);
+      toast.success(`Tahun buku ${tutupTahunItem.tahun} ditutup${scopeCompanyNama ? ` (${scopeCompanyNama})` : ''} — saldo Laba (Rugi) Tahun Berjalan ditransfer ke Laba (Rugi) Ditahan.`);
       setTutupTahunItem(null);
       fetchTahunList();
       fetchData();
@@ -427,9 +458,11 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
     setTahunBusy(true);
     try {
       await api.post(`/periode/penutupan-periode/buka-tahun/${bukaTahunItem.tahun}`, {
-        alasan: bukaTahunAlasan.trim()
+        alasan: bukaTahunAlasan.trim(),
+        // AUD-17 — scope perusahaan (tanpa companyId = global)
+        companyId: scopeCompanyId || undefined
       });
-      toast.success(`Tahun buku ${bukaTahunItem.tahun} dibuka kembali — jurnal transfer dibalik.`);
+      toast.success(`Tahun buku ${bukaTahunItem.tahun} dibuka kembali${scopeCompanyNama ? ` (${scopeCompanyNama})` : ''} — jurnal transfer dibalik.`);
       setBukaTahunOpen(false);
       setBukaTahunItem(null);
       setBukaTahunAlasan('');
@@ -459,9 +492,12 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
       await api.post<PenutupanPeriodeResponse>('/periode/penutupan-periode/buka', {
         tahun: bukaItem.tahun,
         bulan: bukaItem.bulan,
-        alasan: bukaAlasan.trim()
+        alasan: bukaAlasan.trim(),
+        // AUD-17 — buka mengikuti scope baris: khusus perusahaan bila baris ber-companyId,
+        // jika tidak mengikuti scope filter (global bila tanpa perusahaan).
+        companyId: bukaItem.companyId || scopeCompanyId || undefined
       });
-      toast.success(`Periode ${BULAN_LABELS[bukaItem.bulan - 1]} ${bukaItem.tahun} berhasil dibuka kembali.`);
+      toast.success(`Periode ${BULAN_LABELS[bukaItem.bulan - 1]} ${bukaItem.tahun} berhasil dibuka kembali${bukaItem.companyId ? ` (${companies.find((c) => c.id === bukaItem.companyId)?.name ?? ''})` : ''}.`);
       setBukaOpen(false);
       setBukaItem(null);
       setBukaAlasan('');
@@ -512,7 +548,9 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
               title: 'Tutup Periode',
               module: 'reports',
               subPage: 'penutupan-periode',
-              formKey: 'tutup-periode'
+              formKey: 'tutup-periode',
+              // AUD-17 — bawa scope perusahaan ke form tutup periode
+              formProps: { companyId: scopeCompanyId, companyNama: scopeCompanyNama }
             })
           }>
           <Lock className="h-4 w-4" />
@@ -557,6 +595,8 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
                 </SelectContent>
               </Select>
             </div>
+            {/* AUD-17 — scope perusahaan (tutup/buka/tahun per perusahaan atau global) */}
+            <PerusahaanFilter value={companyFilter} onChange={setCompanyFilter} label="Scope Perusahaan" allLabel="Semua / Global" includeUnassigned={false} hint="Tutup tanpa perusahaan = global (mengunci semua)" />
             <Button variant="outline" size="sm" onClick={fetchData} className="gap-1">
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
@@ -742,6 +782,12 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
                     <TableRow key={item.id}>
                       <TableCell className="font-medium">
                         {BULAN_LABELS[item.bulan - 1]} {item.tahun}
+                        {item.companyId && (
+                          <Badge variant="outline" className="ml-2 gap-1 border-sky-200 bg-sky-50 text-sky-700 text-[10px]">
+                            <Building2 className="h-3 w-3" />
+                            Perusahaan: {companies.find((c) => c.id === item.companyId)?.name ?? '—'}
+                          </Badge>
+                        )}
                         {item.keterangan && <p className="text-xs text-muted-foreground mt-0.5 max-w-[200px] truncate">{item.keterangan}</p>}
                       </TableCell>
                       <TableCell className="text-center">

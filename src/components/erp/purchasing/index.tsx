@@ -2056,6 +2056,11 @@ function ReturCreateForm() {
   const source = usePurchaseReturnSource(fPurchaseInvoiceId);
   const { options: postedInvoiceOptions, loading: postedInvoiceLoading, error: postedInvoiceError, retry: retryPostedInvoices } = usePostedInvoiceOptions(fSupplierId || null);
 
+  // AUD-12 (update #05) — estimasi PPh23 retur untuk info-card (derived dari invoice
+  // sumber + qty retur; nilai final dihitung backend saat create/post).
+  const returDppEstimate = source.invoice ? source.invoice.details.reduce((s, line) => s + Number(quantities[line.id] ?? 0) * Number(line.harga), 0) : 0;
+  const returPpnEstimate = returDppEstimate * ((parseFloat(fPpn) || 0) / 100);
+
   // Saat invoice sumber termuat: auto-set PO (bila invoice ter-link PO) dan
   // supplier dari invoice. PO tetap bisa diganti manual setelahnya (tidak dipaksa).
   // Update #4: alamat juga ditarik otomatis (dari invoice sumber / master supplier).
@@ -2313,6 +2318,22 @@ function ReturCreateForm() {
             <p className="text-[11px] text-muted-foreground leading-relaxed">Retur tidak bisa diposting tanpa invoice. Pilih invoice supplier yang sudah selesai (posted) agar hutang invoice dapat diperbarui saat posting.</p>
             {formErrors.purchaseInvoiceId && <p className="text-xs text-destructive mt-1">{formErrors.purchaseInvoiceId}</p>}
           </div>
+          {/* AUD-12 (update #05) — info PPh23 derived dari invoice sumber (bukan input user).
+              Retur atas PI ber-PPh23 membalik Hutang PPh 23 (213002);
+              grand total retur menjadi NET-of-PPh23 (dihitung backend dari DPP retur × tarif). */}
+          {source.invoice?.pph23Applicable && Number(source.invoice.totalPph23) > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50/60 px-4 py-3 space-y-1">
+              <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+                <Info className="h-3.5 w-3.5" /> Invoice sumber ber-PPh 23 (tarif {Number(source.invoice.pph23)}%)
+              </p>
+              <p className="text-xs text-amber-800">
+                PPh23 dibatalkan retur: <strong className="font-mono">{formatRp(Math.min(Number(source.invoice.totalPph23), returDppEstimate * (Number(source.invoice.pph23) / 100)))}</strong> — dihitung otomatis dari DPP retur × tarif (maks. PPh23 invoice {formatRp(Number(source.invoice.totalPph23))}), bukan input.
+              </p>
+              <p className="text-xs text-amber-800">
+                Total Retur (net PPh23): <strong className="font-mono">{formatRp(returDppEstimate + returPpnEstimate - Math.min(Number(source.invoice.totalPph23), returDppEstimate * (Number(source.invoice.pph23) / 100)))}</strong> — grand total retur = DPP + PPN − PPh23 retur.
+              </p>
+            </div>
+          )}
           <Separator />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">

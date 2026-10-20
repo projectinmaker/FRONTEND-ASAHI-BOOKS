@@ -10,11 +10,13 @@ import { Badge } from '@/components/ui/badge';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Settings2, Save, Loader2, AlertCircle, CheckCircle2, RefreshCw, AlertTriangle, Boxes, Percent } from 'lucide-react';
+import { Settings2, Save, Loader2, AlertCircle, CheckCircle2, RefreshCw, AlertTriangle, Boxes, Percent, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { invalidateDefaultRates } from '@/lib/use-default-rates';
 import { loadCOA, EXPECTED_SYSTEM_TYPES } from '@/lib/coa';
+// AUD-17 (update #05) — scope perusahaan untuk setting akun (global + override)
+import { PerusahaanFilter, useCompanyOptions, type PerusahaanFilterValue } from '@/components/erp/perusahaan-filter';
 import type { COAResponse } from '@/types/api';
 import type { SettingAkunResponse, SettingAkunUpdate, COADropdownResponse, AppSettingResponse } from '@/types/api';
 
@@ -80,6 +82,12 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({});
   const [syncingKasBank, setSyncingKasBank] = useState(false);
+  // ── AUD-17 (update #05) — scope perusahaan: 'ALL' (global) atau satu companyId.
+  // Scoped → list menampilkan baris GLOBAL + override perusahaan; mengubah nilai
+  // saat scoped = membuat/mengubah override perusahaan tsb (bukan global).
+  const [companyScope, setCompanyScope] = useState<PerusahaanFilterValue>('ALL');
+  const { companies } = useCompanyOptions();
+  const scopeCompanyId = companyScope !== 'ALL' && companyScope !== 'UNASSIGNED' ? companyScope : undefined;
   // Tahap 2/3 koreksi: GRNI bisa di-configure walau key belum ada di GET (backend auto-create via PUT)
   const [grniAkunId, setGrniAkunId] = useState('');
   const [grniSaving, setGrniSaving] = useState(false);
@@ -100,13 +108,17 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
     setLoading(true);
     setError(null);
     try {
-      const [settingsRes, coaRes] = await Promise.all([api.get<SettingAkunResponse[]>('/master/setting-akun'), loadCOA({ activeOnly: true })]);
-      const rows = Array.isArray(settingsRes) ? settingsRes : [];
+      // AUD-17 — scoped: GET ?companyId=C (server mengembalikan GLOBAL + override C);
+      // global: tanpa param lalu sembunyikan baris override perusahaan di klien.
+      const cs = scopeCompanyId ? `?companyId=${encodeURIComponent(scopeCompanyId)}` : '';
+      const [settingsRes, coaRes] = await Promise.all([api.get<SettingAkunResponse[]>(`/master/setting-akun${cs}`), loadCOA({ activeOnly: true })]);
+      let rows = Array.isArray(settingsRes) ? settingsRes : [];
+      if (!scopeCompanyId) rows = rows.filter((r) => !r.companyId);
       setSettings([
         ...rows,
         ...Object.entries(NEW_SETTINGS)
           .filter(([key]) => !rows.some((s) => s.key === key))
-          .map(([key, v]) => ({ id: '', key, label: v.label, akunPerkiraanId: '', akunPerkiraan: null, createdAt: '', updatedAt: '' }))
+          .map(([key, v]) => ({ id: '', key, label: v.label, akunPerkiraanId: '', akunPerkiraan: null, companyId: null, createdAt: '', updatedAt: '' }))
       ]);
       setCoaOptions(Array.isArray(coaRes) ? coaRes : []);
     } catch (err) {
@@ -116,7 +128,7 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [scopeCompanyId]);
 
   // ── Fetch metode valuasi global + opsi-nya ──
   useEffect(() => {
@@ -203,24 +215,37 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
     setPendingChanges((prev) => ({ ...prev, [key]: newAkunId }));
   };
 
-  const handleSave = async (key: string) => {
+  // AUD-17 — kunci baris pending change unik per scope (global vs override perusahaan).
+  const rowKey = (s: SettingAkunResponse) => `${s.companyId ?? 'GLOBAL'}::${s.key}`;
+
+  const handleSave = async (s: SettingAkunResponse) => {
+    const key = rowKey(s);
     const newAkunId = pendingChanges[key];
     if (!newAkunId) return;
-    if (!settings.find((s) => s.key === key)?.id) {
+    if (!s.id) {
       toast.error('Key setting belum tersedia. Administrator perlu menjalankan seed setting akun di backend.');
       return;
     }
     setSavingKey(key);
     try {
       const payload: SettingAkunUpdate = { akunPerkiraanId: newAkunId };
-      const updated = await api.put<SettingAkunResponse>(`/master/setting-akun/${key}`, payload);
-      setSettings((prev) => prev.map((s) => (s.key === key ? updated : s)));
+      // AUD-17 — companyId di body → override perusahaan:
+      //  - baris override (row.companyId) → perbarui override tsb;
+      //  - baris GLOBAL saat scope aktif → buat/ubah override perusahaan (bukan global);
+      //  - tanpa scope → perubahan baris GLOBAL (global).
+      const targetCompanyId = s.companyId || scopeCompanyId;
+      if (targetCompanyId) payload.companyId = targetCompanyId;
+      const updated = await api.put<SettingAkunResponse>(`/master/setting-akun/${s.key}`, payload);
+      setSettings((prev) => prev.map((row) => (rowKey(row) === key ? updated : row)));
       setPendingChanges((prev) => {
         const next = { ...prev };
         delete next[key];
         return next;
       });
-      toast.success(`Setting "${updated.label}" berhasil diperbarui`);
+      const scopeLabel = updated.companyId ? ` (override ${companies.find((c) => c.id === updated.companyId)?.name ?? updated.companyId})` : ' (global)';
+      toast.success(`Setting "${updated.label}" berhasil diperbarui${scopeLabel}`);
+      // Muat ulang agar baris GLOBAL + override tersusun rapi pasca-override baru.
+      fetchData();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.detail : 'Gagal memperbarui setting akun');
     } finally {
@@ -335,6 +360,32 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
         <p className="text-sm text-muted-foreground">Mapping akun default untuk auto-posting jurnal. Setiap transaksi akan otomatis menggunakan akun-akun di bawah ini.</p>
       </div>
 
+      {/* AUD-17 (update #05) — selector scope perusahaan (global + override) */}
+      <Card>
+        <CardContent className="p-4 flex flex-col sm:flex-row sm:items-end gap-4">
+          <PerusahaanFilter
+            value={companyScope}
+            onChange={(v) => {
+              setCompanyScope(v);
+              setPendingChanges({});
+            }}
+            label="Perusahaan"
+            allLabel="Global (semua perusahaan)"
+            includeUnassigned={false}
+            widthClass="w-full sm:w-64"
+          />
+          <p className="text-xs text-muted-foreground flex-1">
+            {scopeCompanyId ? (
+              <>
+                <strong className="text-foreground">{companies.find((c) => c.id === scopeCompanyId)?.name ?? 'Perusahaan'}</strong> — daftar menampilkan baris GLOBAL + override perusahaan ini. <strong>Saat scope perusahaan aktif, mengubah nilai = membuat/mengubah override perusahaan tsb (bukan global).</strong>
+              </>
+            ) : (
+              'Global — nilai berlaku untuk semua perusahaan tanpa override. Pilih perusahaan untuk membuat override.'
+            )}
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Info banner */}
       <div className="rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-xs text-blue-700">
         <strong>Informasi:</strong> Pastikan semua akun di bawah sudah dipilih dengan benar. Jika ada akun yang belum di-set, transaksi yang membutuhkan akun tersebut akan <strong>gagal auto-posting jurnal</strong>
@@ -385,6 +436,7 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
                     <TableRow>
                       <TableHead className="text-xs whitespace-nowrap">Label</TableHead>
                       <TableHead className="text-xs whitespace-nowrap">Key</TableHead>
+                      <TableHead className="text-xs whitespace-nowrap text-center">Scope</TableHead>
                       <TableHead className="text-xs">Akun Perkiraan</TableHead>
                       <TableHead className="text-xs whitespace-nowrap text-center">Aksi</TableHead>
                     </TableRow>
@@ -395,6 +447,11 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
                       <TableRow className="bg-amber-50/40">
                         <TableCell className="text-sm font-medium whitespace-nowrap">Penerimaan Dalam Proses (GRNI)</TableCell>
                         <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">PENERIMAAN_DALAM_PROSES</TableCell>
+                        <TableCell className="text-center whitespace-nowrap">
+                          <Badge variant="secondary" className="text-[10px]">
+                            Global
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           <SearchableDropdown
                             value={grniAkunId}
@@ -420,20 +477,33 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
                       </TableRow>
                     )}
                     {groupSettings.map((s) => {
-                      const currentValue = pendingChanges[s.key] || s.akunPerkiraanId;
+                      const key = rowKey(s);
+                      const currentValue = pendingChanges[key] || s.akunPerkiraanId;
                       const expected = EXPECTED_SYSTEM_TYPES[s.key];
                       const selected = coaOptions.find((a) => a.id === currentValue);
                       const mismatch = selected && expected && selected.systemAccountType !== expected;
-                      const hasChange = !!pendingChanges[s.key];
-                      const isSaving = savingKey === s.key;
+                      const hasChange = !!pendingChanges[key];
+                      const isSaving = savingKey === key;
                       return (
-                        <TableRow key={s.key}>
+                        <TableRow key={key}>
                           <TableCell className="text-sm font-medium whitespace-nowrap">{s.label}</TableCell>
                           <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">{s.key}</TableCell>
+                          <TableCell className="text-center whitespace-nowrap">
+                            {s.companyId ? (
+                              <Badge variant="outline" className="gap-1 border-sky-200 bg-sky-50 text-sky-700 text-[10px]">
+                                <Building2 className="h-3 w-3" />
+                                Perusahaan
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-[10px]">
+                                Global
+                              </Badge>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <SearchableDropdown
                               value={currentValue}
-                              onValueChange={(v) => handleChange(s.key, v)}
+                              onValueChange={(v) => handleChange(key, v)}
                               disabled={!s.id || isSaving}
                               options={coaOptions.map((c) => ({
                                 id: c.id,
@@ -472,11 +542,11 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
                               <Badge variant="outline">Belum dikonfigurasi</Badge>
                             ) : hasChange ? (
                               <div className="inline-flex items-center gap-1">
-                                <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={() => handleSave(s.key)} disabled={isSaving}>
+                                <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={() => handleSave(s)} disabled={isSaving}>
                                   {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                                   Simpan
                                 </Button>
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleReset(s.key)} disabled={isSaving}>
+                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleReset(key)} disabled={isSaving}>
                                   Batal
                                 </Button>
                               </div>

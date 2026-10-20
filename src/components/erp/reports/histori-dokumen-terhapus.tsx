@@ -1,17 +1,20 @@
 'use client';
 
 /**
- * Histori Dokumen Terhapus (audit trail hard delete).
+ * Histori Dokumen Terhapus & Histori Pembatalan (audit trail AUD-01).
  *
- * Semua pembatalan dokumen di modul apapun kini = hard delete (hapus permanen);
- * jejak lengkapnya (snapshot header, rincian, jurnal, workflow) tersimpan di
- * deleted_document_log dan ditampilkan di halaman ini.
+ * AUD-01 (update #05) — pembatalan dokumen kini 2-mode:
+ *  - REVERSAL   : dokumen POSTED dibatalkan dengan jurnal pembalik — dokumen &
+ *                 jurnal asli tetap tersimpan; jejaknya ada di /histori/pembatalan.
+ *  - HARD_DELETE: dokumen DRAFT (tanpa jurnal) dihapus permanen — snapshot
+ *                 lengkapnya tersimpan di deleted_document_log.
  *
- * Endpoint: GET /api/v1/histori/dokumen-terhapus (list ringkas)
+ * Endpoint: GET /api/v1/histori/pembatalan?limit=100
+ *           GET /api/v1/histori/dokumen-terhapus (list ringkas)
  *           GET /api/v1/histori/dokumen-terhapus/{id} (detail + snapshot)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,13 +23,14 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Loader2, RefreshCw, Search, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, RefreshCw, Search, Trash2, ChevronLeft, ChevronRight, Ban, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { formatRp } from '@/lib/pdf-utils';
-import type { DeletedDocumentLogResponse, DeletedDocumentLogDetailResponse, DeletedDocumentLogListResponse } from '@/types/api';
+import type { DeletedDocumentLogResponse, DeletedDocumentLogDetailResponse, DeletedDocumentLogListResponse, PembatalanHistoriRow, PembatalanHistoriListResponse } from '@/types/api';
 
 const PAGE_SIZE = 25;
+const PEMBATALAN_LIMIT = 100;
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   pembayaran_kas: 'Pembayaran Kas',
@@ -60,7 +64,178 @@ function fmtDate(v: string | null): string {
   }
 }
 
-export default function HistoriDokumenTerhapusPage() {
+type TabKey = 'terhapus' | 'pembatalan';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tab: Histori Pembatalan (AUD-01 update #05 — reversal & hard delete)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ModeBadge({ mode }: { mode: PembatalanHistoriRow['mode'] }) {
+  if (mode === 'REVERSAL') {
+    return (
+      <Badge variant="outline" className="gap-1 border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50 text-xs">
+        <Undo2 className="h-3 w-3" />
+        Jurnal Pembalik
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="destructive" className="gap-1 text-xs">
+      <Trash2 className="h-3 w-3" />
+      Hapus Permanen
+    </Badge>
+  );
+}
+
+function PembatalanTable() {
+  const [data, setData] = useState<PembatalanHistoriRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ limit: String(PEMBATALAN_LIMIT) });
+      if (typeFilter !== 'ALL') params.set('documentType', typeFilter);
+      const res = await api.get<PembatalanHistoriListResponse>(`/histori/pembatalan?${params.toString()}`);
+      setData(res.data);
+      setTotal(res.total);
+      setExpanded({});
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.detail : 'Gagal memuat histori pembatalan';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [typeFilter]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return (
+    <Card>
+      <CardContent className="p-0">
+        {/* Filter jenis dokumen */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-3 border-b p-4">
+          <div className="w-full sm:w-64 space-y-1">
+            <Label className="text-xs text-muted-foreground">Jenis dokumen</Label>
+            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Semua Jenis</SelectItem>
+                {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-muted-foreground">{loading ? 'Memuat...' : `${total} pembatalan`}</p>
+            <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} className="gap-2">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+            <Loader2 className="h-5 w-5 animate-spin" /> Memuat...
+          </div>
+        ) : error ? (
+          <div className="py-12 text-center text-destructive text-sm">{error}</div>
+        ) : data.length === 0 ? (
+          <div className="py-12 text-center text-muted-foreground text-sm">Belum ada pembatalan dokumen. Membatalkan dokumen di modul apapun (jurnal pembalik maupun hapus permanen) akan tercatat di sini.</div>
+        ) : (
+          <div className="max-h-[520px] overflow-y-auto">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background z-10">
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead>Tanggal Batal</TableHead>
+                  <TableHead>No. Dokumen</TableHead>
+                  <TableHead>Jenis</TableHead>
+                  <TableHead>Mode</TableHead>
+                  <TableHead>Alasan</TableHead>
+                  <TableHead>User</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.map((row) => {
+                  const isOpen = !!expanded[row.id];
+                  const hasReversal = row.mode === 'REVERSAL' && row.reversalJurnalIds.length > 0;
+                  return (
+                    <Fragment key={row.id}>
+                      <TableRow>
+                        <TableCell className="w-8">
+                          {hasReversal && (
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setExpanded((prev) => ({ ...prev, [row.id]: !prev[row.id] }))} aria-label={isOpen ? 'Tutup rincian jurnal pembalik' : 'Lihat rincian jurnal pembalik'}>
+                              {isOpen ? <ChevronRight className="h-4 w-4 rotate-90" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{fmtDate(row.cancelledAt)}</TableCell>
+                        <TableCell className="font-medium text-xs">{row.documentNumber || '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {typeLabel(row.documentType)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <ModeBadge mode={row.mode} />
+                        </TableCell>
+                        <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground" title={row.reason ?? undefined}>
+                          {row.reason || '—'}
+                        </TableCell>
+                        <TableCell className="text-xs">{row.cancelledBy || '—'}</TableCell>
+                        <TableCell className="text-right text-xs">{row.totalAmount != null ? formatRp(Number(row.totalAmount)) : '—'}</TableCell>
+                      </TableRow>
+                      {isOpen && hasReversal && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="bg-muted/30 px-4 py-2">
+                            <p className="text-xs font-semibold text-muted-foreground mb-1">
+                              Jurnal pembalik ({row.reversalJurnalIds.length}) — status akhir dokumen: {row.documentStatus || '—'}
+                            </p>
+                            <ul className="space-y-0.5">
+                              {row.reversalJurnalIds.map((j) => (
+                                <li key={j.id} className="flex items-center gap-2 text-xs">
+                                  <Undo2 className="h-3 w-3 text-emerald-600" />
+                                  <span className="font-mono">{j.noJurnal}</span>
+                                  {j.reversalOf && <span className="text-muted-foreground">membalik jurnal {j.reversalOf}</span>}
+                                </li>
+                              ))}
+                            </ul>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tab: Histori Dokumen Terhapus (hard delete snapshot)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function DokumenTerhapusTable({ refreshKey }: { refreshKey?: number }) {
   const [data, setData] = useState<DeletedDocumentLogResponse[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -104,7 +279,7 @@ export default function HistoriDokumenTerhapusPage() {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+  }, [fetchData, refreshKey]);
 
   const openDetail = useCallback(async (id: string) => {
     setDetailLoading(true);
@@ -120,22 +295,7 @@ export default function HistoriDokumenTerhapusPage() {
   }, []);
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-muted-foreground" />
-            Histori Dokumen Terhapus
-          </h2>
-          <p className="text-sm text-muted-foreground">Audit trail pembatalan dokumen (hard delete) — snapshot lengkap tersimpan untuk setiap penghapusan.</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={fetchData} disabled={loading} className="gap-2">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Refresh
-        </Button>
-      </div>
-
+    <>
       {/* Filter */}
       <Card>
         <CardContent className="p-4 flex flex-col sm:flex-row gap-3">
@@ -180,7 +340,7 @@ export default function HistoriDokumenTerhapusPage() {
           ) : error ? (
             <div className="py-12 text-center text-destructive text-sm">{error}</div>
           ) : data.length === 0 ? (
-            <div className="py-12 text-center text-muted-foreground text-sm">Belum ada dokumen yang dihapus. Pembatalan dokumen di modul apapun akan tercatat di sini.</div>
+            <div className="py-12 text-center text-muted-foreground text-sm">Belum ada dokumen yang dihapus permanen. Pembatalan dokumen DRAFT (tanpa jurnal) akan tercatat di sini.</div>
           ) : (
             <div className="max-h-[520px] overflow-y-auto">
               <Table>
@@ -282,6 +442,50 @@ export default function HistoriDokumenTerhapusPage() {
           ) : null}
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Halaman Histori (2 tab)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export default function HistoriDokumenTerhapusPage() {
+  const [tab, setTab] = useState<TabKey>('terhapus');
+
+  const tabs: { key: TabKey; label: string; desc: string; icon: React.ElementType }[] = [
+    { key: 'terhapus', label: 'Dokumen Terhapus', desc: 'Snapshot dokumen yang dihapus permanen (draft tanpa jurnal)', icon: Trash2 },
+    { key: 'pembatalan', label: 'Pembatalan', desc: 'Semua pembatalan — jurnal pembalik (posted) & hapus permanen (draft)', icon: Ban }
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div>
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Ban className="h-5 w-5 text-muted-foreground" />
+          Histori Pembatalan &amp; Dokumen Terhapus
+        </h2>
+        <p className="text-sm text-muted-foreground">Audit trail pembatalan dokumen — dokumen POSTED dibatalkan dengan jurnal pembalik (status BATAL, nomor tetap terpakai); dokumen DRAFT dihapus permanen dengan snapshot histori.</p>
+      </div>
+
+      {/* Tab switcher */}
+      <div className="grid w-full grid-cols-2 gap-2">
+        {tabs.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.key;
+          return (
+            <button key={t.key} type="button" onClick={() => setTab(t.key)} className={`rounded-lg border p-3 text-left transition-colors ${active ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`} aria-pressed={active}>
+              <div className="flex items-center gap-2 font-medium text-sm">
+                <Icon className={`h-4 w-4 ${active ? 'text-destructive' : 'text-muted-foreground'}`} /> {t.label}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground line-clamp-2">{t.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === 'terhapus' ? <DokumenTerhapusTable /> : <PembatalanTable />}
     </div>
   );
 }

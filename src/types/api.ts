@@ -196,6 +196,8 @@ export interface SettingAkunResponse {
   key: string;
   label: string;
   akunPerkiraanId: string;
+  /** AUD-17 (update #05): null = baris GLOBAL; terisi = override milik perusahaan tsb. */
+  companyId?: string | null;
   akunPerkiraan: COASimple | null;
   createdAt: string;
   updatedAt: string;
@@ -203,6 +205,8 @@ export interface SettingAkunResponse {
 
 export interface SettingAkunUpdate {
   akunPerkiraanId: string;
+  /** AUD-17 (update #05): kirim companyId untuk membuat/mengubah override perusahaan; tanpa = baris global. */
+  companyId?: string;
 }
 
 // ── Setting Aplikasi Global (non-COA, mis. METODE_VALUASI) ──
@@ -766,6 +770,8 @@ export interface KasBankAkunResponse {
   akunPerkiraan: COASimple;
   // === Phase 2 — field baru ===
   currency: string; // ISO 4217, default "IDR"
+  /** AUD-17 (update #05): null = GLOBAL (semua perusahaan), terisi = milik perusahaan tsb. */
+  companyId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -777,6 +783,8 @@ export interface KasBankAkunCreate {
   akunPerkiraanId: string;
   // === Phase 2 — field baru (opsional, default "IDR") ===
   currency?: string;
+  /** AUD-17 (update #05): opsional — null/global = dipakai semua perusahaan. */
+  companyId?: string | null;
 }
 
 export interface KasBankAkunUpdate {
@@ -786,6 +794,8 @@ export interface KasBankAkunUpdate {
   status?: string;
   // === Phase 2 — field baru (opsional) ===
   currency?: string;
+  /** AUD-17 (update #05): pindahkan kepemilikan akun (null = global). */
+  companyId?: string | null;
 }
 
 export interface COADropdownResponse {
@@ -1823,10 +1833,15 @@ export interface SalesReturResponse {
   noPengembalian: string | null;
   diskonGlobal: number;
   ppn: number;
+  /** AUD-12 (update #05): derived dari invoice sumber (bukan input user) — retur membalik PPh23 Dibayar di Muka. */
+  pph23Applicable?: boolean;
+  pph23?: string;
+  totalPph23?: string;
   keterangan: string | null;
   autoPostJurnal: boolean;
   subTotal: number;
   totalPpn: number;
+  /** AUD-12 (update #05): grand total NET-of-PPh23 untuk invoice sumber ber-PPh23. */
   grandTotal: number;
   status: StatusPenjualan;
   jurnalUmumId: string | null;
@@ -2173,10 +2188,15 @@ export interface PurchaseReturResponse {
   gudangId: string | null;
   alamat: string | null;
   ppn: number;
+  /** AUD-12 (update #05): derived dari invoice sumber (bukan input user) — retur membalik Hutang PPh23. */
+  pph23Applicable?: boolean;
+  pph23?: string;
+  totalPph23?: string;
   keterangan: string | null;
   autoPostJurnal: boolean;
   subTotal: number;
   totalPpn: number;
+  /** AUD-12 (update #05): grand total NET-of-PPh23 untuk invoice sumber ber-PPh23. */
   grandTotal: number;
   status: StatusPenjualan;
   jurnalUmumId: string | null;
@@ -3171,6 +3191,8 @@ export interface PenutupanPeriodeResponse {
   labaRugi: number | null;
   keterangan: string | null;
   jurnalPenutupanId: string | null;
+  /** AUD-17 (update #05): null = penutupan global; terisi = khusus perusahaan tsb. */
+  companyId?: string | null;
   closedBy: string | null;
   closedAt: string | null;
   reopenedBy: string | null;
@@ -3188,12 +3210,16 @@ export interface TutupPeriodeRequest {
   bulan: number;
   keterangan?: string;
   withClosingEntry?: boolean;
+  /** AUD-17 (update #05): scope perusahaan — tanpa ini = global (mengunci semua). */
+  companyId?: string;
 }
 
 export interface BukaPeriodeRequest {
   tahun: number;
   bulan: number;
   alasan?: string;
+  /** AUD-17 (update #05): scope perusahaan — tanpa ini = global. */
+  companyId?: string;
 }
 
 export interface PeriodeStatusResponse {
@@ -4012,13 +4038,22 @@ export interface AuditLogListResponse {
 // HARD DELETE (pembatalan = hapus permanen + histori)
 // ============================================================
 
-/** Respons endpoint /cancel (kini hard delete dengan jejak histori). */
+/** Respons endpoint /cancel (AUD-01 update #05 — reversal-first: POSTED → jurnal
+ *  pembalik + status BATAL; DRAFT tanpa jurnal → hard delete + snapshot histori). */
 export interface HardDeleteResponse {
   success: boolean;
+  /** Mode pembatalan: REVERSAL = jurnal pembalik (audit trail utuh); HARD_DELETE = hapus permanen + snapshot. */
+  mode?: 'REVERSAL' | 'HARD_DELETE';
   documentType: string;
   documentId: string;
   documentNumber: string | null;
+  /** Status akhir dokumen (BATAL/DIBATALKAN untuk REVERSAL; DELETED untuk HARD_DELETE). */
+  status?: string;
+  /** Daftar jurnal pembalik yang dibuat (mode REVERSAL saja). */
+  reversalJurnalIds?: Array<{ id: string; noJurnal: string; reversalOf?: string }>;
+  /** Field lama (kompatibel) — HARD_DELETE: waktu hapus; REVERSAL: waktu pembatalan. */
   deletedAt: string;
+  cancelledAt?: string;
   message: string;
 }
 
@@ -4042,6 +4077,38 @@ export interface DeletedDocumentLogDetailResponse extends DeletedDocumentLogResp
 
 export interface DeletedDocumentLogListResponse {
   data: DeletedDocumentLogResponse[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+// ── AUD-01 (update #05): histori pembatalan dokumen (reversal & hard delete) ──
+
+/** Satu jurnal pembalik yang dibuat saat pembatalan mode REVERSAL. */
+export interface PembatalanReversalJurnal {
+  id: string;
+  noJurnal: string;
+  reversalOf?: string | null;
+}
+
+/** Baris GET /histori/pembatalan. */
+export interface PembatalanHistoriRow {
+  id: string;
+  documentType: string;
+  documentId: string;
+  documentNumber: string | null;
+  documentDate: string | null;
+  documentStatus: string | null;
+  totalAmount: string | null;
+  reason: string | null;
+  mode: 'REVERSAL' | 'HARD_DELETE';
+  reversalJurnalIds: PembatalanReversalJurnal[];
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+}
+
+export interface PembatalanHistoriListResponse {
+  data: PembatalanHistoriRow[];
   total: number;
   skip: number;
   limit: number;
@@ -4323,8 +4390,14 @@ export interface PajakPph23Response {
   totalDipotongDariSupplier: number | string;
   pph23InvoicePenjualan: PajakPph23Baris[];
   totalPph23InvoicePenjualan: number | string;
+  /** AUD-12 (update #05): retur penjualan membalik PPh23 (nilai pph23 NEGATIF) — total accrual penjualan SUDAH termasuk netting ini. */
+  pph23ReturPenjualan?: PajakPph23Baris[];
+  totalPph23ReturPenjualan?: number | string;
   pph23InvoicePembelian: PajakPph23Baris[];
   totalPph23InvoicePembelian: number | string;
+  /** AUD-12 (update #05): retur pembelian membalik PPh23 (nilai pph23 NEGATIF) — total accrual pembelian SUDAH termasuk netting ini. */
+  pph23ReturPembelian?: PajakPph23Baris[];
+  totalPph23ReturPembelian?: number | string;
   perMasa: PajakPph23PerMasa[];
 }
 
@@ -4358,6 +4431,14 @@ export interface PajakMonitoringResponse {
   riwayatPelunasan: PajakPelunasanRiwayat[];
 }
 
+// ── AUD-17 (update #05): daftar perusahaan untuk filter laporan ───────────
+/** Baris GET /laporan/companies (organization_unit kind=COMPANY, AKTIF). */
+export interface LaporanCompanyOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
 // ── AUD-14: Penutupan tahunan ──────────────────────────────────────────────
 export interface PenutupanTahunItem {
   tahun: number;
@@ -4366,6 +4447,8 @@ export interface PenutupanTahunItem {
   bulanDitutup: number;
   semuaBulanDitutup: boolean;
   keterangan?: string | null;
+  /** AUD-17 (update #05): null = penutupan tahun global; terisi = khusus perusahaan. */
+  companyId?: string | null;
   closedAt?: string | null;
   reopenedAt?: string | null;
   jurnalPenutupanId?: string | null;

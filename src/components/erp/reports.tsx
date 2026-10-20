@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,28 @@ const HistoriDokumenTerhapusPage = dynamic(() => import('@/components/erp/report
 const ReconciliationDetailPage = dynamic(() => import('@/components/erp/reports/reconciliation-detail'), { ssr: false });
 // Update #04 (AUD-07/08/11) — Rekap Pajak: PPN, PPh 23, hutang & pelunasan pajak
 const RekapPajakPage = dynamic(() => import('@/components/erp/reports/rekap-pajak'), { ssr: false });
+// AUD-17 (update #05) — filter Perusahaan bersama (cache module-level)
+import { PerusahaanFilter, companyScopeQuery, type PerusahaanFilterValue } from '@/components/erp/perusahaan-filter';
+
+// ─── AUD-17: shared props untuk sub-laporan yang di-scope perusahaan ────────
+
+interface CompanyScopedProps {
+  /** 'ALL' | 'UNASSIGNED' | companyId — dari state level halaman Laporan. */
+  companyFilter?: PerusahaanFilterValue;
+  onCompanyChange: (v: PerusahaanFilterValue) => void;
+}
+
+/** Refetch saat company filter berubah — tanpa mereset filter tanggal user. */
+function useCompanyRefetch(companyFilter: PerusahaanFilterValue | undefined, fetchData: () => void) {
+  const prev = useRef<string>(companyFilter ?? 'ALL');
+  useEffect(() => {
+    const current = companyFilter ?? 'ALL';
+    if (prev.current !== current) {
+      prev.current = current;
+      fetchData();
+    }
+  }, [companyFilter, fetchData]);
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -297,7 +319,7 @@ function TahunBukuFilter({ value, onChange }: { value: string; onChange: (v: str
   );
 }
 
-function LabaRugiReport() {
+function LabaRugiReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   // AUD-15 (update #04) — mode tahun buku (saldo awal = SA-{tahun})
@@ -311,7 +333,8 @@ function LabaRugiReport() {
     setError(null);
     try {
       const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
-      const res = await api.get<LabaRugiLaporanResponse>(`/laporan/laba-rugi?dari=${dari}&sampai=${sampai}${tb}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<LabaRugiLaporanResponse>(`/laporan/laba-rugi?dari=${dari}&sampai=${sampai}${tb}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data laporan.';
@@ -320,11 +343,12 @@ function LabaRugiReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, tahunBuku]);
+  }, [dari, sampai, tahunBuku, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   // ── M-02 (Update #7): section & total baru dari backend ──
   // `pendapatanLain` = akun pendapatan report_group OTHER_INCOME (bunga, pendapatan
@@ -348,6 +372,8 @@ function LabaRugiReport() {
       <div className="flex flex-wrap items-end gap-3">
         <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
         <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
       </div>
 
       {loading && <ReportSkeleton rows={8} />}
@@ -500,7 +526,7 @@ function LabaRugiReport() {
 // Sub-page: Neraca
 // ═════════════════════════════════════════════════════════════════════════════
 
-function NeracaReport() {
+function NeracaReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [tanggal, setTanggal] = useState(getToday());
   // AUD-15 (update #04) — mode tahun buku (saldo = SA-{tahun} + mutasi tahun)
   const [tahunBuku, setTahunBuku] = useState('');
@@ -513,7 +539,8 @@ function NeracaReport() {
     setError(null);
     try {
       const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
-      const res = await api.get<NeracaLaporanResponse>(`/laporan/neraca?tanggal=${tanggal}${tb}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<NeracaLaporanResponse>(`/laporan/neraca?tanggal=${tanggal}${tb}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data neraca.';
@@ -522,7 +549,7 @@ function NeracaReport() {
     } finally {
       setLoading(false);
     }
-  }, [tanggal, tahunBuku]);
+  }, [tanggal, tahunBuku, companyFilter]);
 
   useEffect(() => {
     fetchData();
@@ -533,6 +560,8 @@ function NeracaReport() {
       <div className="flex flex-wrap items-end gap-3">
         <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
         <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
       </div>
 
       {loading && <ReportSkeleton rows={8} />}
@@ -801,7 +830,7 @@ function ArusKasSection({ title, items, total, warning = false, note }: { title:
   );
 }
 
-function ArusKasReport() {
+function ArusKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<ArusKasLaporanResponse | null>(null);
@@ -812,7 +841,8 @@ function ArusKasReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<ArusKasLaporanResponse>(`/laporan/arus-kas?dari=${dari}&sampai=${sampai}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<ArusKasLaporanResponse>(`/laporan/arus-kas?dari=${dari}&sampai=${sampai}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data arus kas.';
@@ -821,11 +851,12 @@ function ArusKasReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   const belumDiklasifikasi = data?.belumDiklasifikasikan;
   const jumlahJurnalBelumDiklasifikasi = data?.jumlahJurnalBelumDiklasifikasi ?? 0;
@@ -838,7 +869,11 @@ function ArusKasReport() {
 
   return (
     <div className="space-y-4">
-      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
+      </div>
 
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -902,7 +937,7 @@ function ArusKasReport() {
 // Sub-page: Rincian Buku Besar
 // ═════════════════════════════════════════════════════════════════════════════
 
-function BukuBesarReport() {
+function BukuBesarReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [akunId, setAkunId] = useState('');
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
@@ -937,7 +972,8 @@ function BukuBesarReport() {
     setFetched(true);
     try {
       const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
-      const res = await api.get<BukuBesarLaporanResponse>(`/laporan/buku-besar?akun_id=${akunId}&dari=${dari}&sampai=${sampai}${tb}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<BukuBesarLaporanResponse>(`/laporan/buku-besar?akun_id=${akunId}&dari=${dari}&sampai=${sampai}${tb}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data buku besar.';
@@ -946,11 +982,14 @@ function BukuBesarReport() {
     } finally {
       setLoading(false);
     }
-  }, [akunId, dari, sampai, tahunBuku]);
+  }, [akunId, dari, sampai, tahunBuku, companyFilter]);
 
   useEffect(() => {
     fetchCOA();
   }, [fetchCOA]);
+  useCompanyRefetch(companyFilter, () => {
+    if (akunId) void fetchData();
+  });
 
   const dropdownOptions = coaOptions.map((c) => ({
     id: c.id,
@@ -974,6 +1013,8 @@ function BukuBesarReport() {
           <Input type="date" value={sampai} onChange={(e) => setSampai(e.target.value)} className="w-44" />
         </div>
         <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
         <Button onClick={fetchData} disabled={loading || !akunId} size="sm">
           {loading ? 'Memuat...' : 'Tampilkan'}
         </Button>
@@ -1077,7 +1118,7 @@ function BukuBesarReport() {
 // Sub-page: Mutasi Kas (raw snake_case response)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function MutasiKasReport() {
+function MutasiKasReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<MutasiRawResponse | null>(null);
@@ -1088,7 +1129,8 @@ function MutasiKasReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<MutasiRawResponse>(`/laporan/mutasi-kas?dari=${dari}&sampai=${sampai}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<MutasiRawResponse>(`/laporan/mutasi-kas?dari=${dari}&sampai=${sampai}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data mutasi kas.';
@@ -1097,15 +1139,20 @@ function MutasiKasReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
+      </div>
 
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -1171,7 +1218,7 @@ function MutasiKasReport() {
 // Sub-page: Mutasi Bank (raw snake_case response)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function MutasiBankReport() {
+function MutasiBankReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<MutasiRawResponse | null>(null);
@@ -1182,7 +1229,8 @@ function MutasiBankReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<MutasiRawResponse>(`/laporan/mutasi-bank?dari=${dari}&sampai=${sampai}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<MutasiRawResponse>(`/laporan/mutasi-bank?dari=${dari}&sampai=${sampai}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data mutasi bank.';
@@ -1191,15 +1239,20 @@ function MutasiBankReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
+      </div>
 
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -1265,7 +1318,7 @@ function MutasiBankReport() {
 // Sub-page: Rekap Kas & Bank
 // ═════════════════════════════════════════════════════════════════════════════
 
-function RekapKasBankReport() {
+function RekapKasBankReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<RekapKasBankLaporanResponse | null>(null);
@@ -1276,7 +1329,8 @@ function RekapKasBankReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<RekapKasBankLaporanResponse>(`/laporan/rekap-kas-bank?dari=${dari}&sampai=${sampai}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<RekapKasBankLaporanResponse>(`/laporan/rekap-kas-bank?dari=${dari}&sampai=${sampai}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat rekap kas & bank.';
@@ -1285,11 +1339,12 @@ function RekapKasBankReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   // B-03: field API (saldoAwal/totalMasuk/totalKeluar/saldoAkhir) dikirim sebagai string
   // Decimal — reduce tanpa Number() menyebabkan konkatenasi string pada baris Total.
@@ -1300,7 +1355,11 @@ function RekapKasBankReport() {
 
   return (
     <div className="space-y-4">
-      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
+      </div>
 
       {loading && <ReportSkeleton rows={4} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -1379,7 +1438,7 @@ function RekapKasBankReport() {
 // Sub-page: Neraca Saldo (Trial Balance)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function NeracaSaldoReport() {
+function NeracaSaldoReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   // AUD-15 (update #04) — mode tahun buku (saldo awal = SA-{tahun})
@@ -1393,7 +1452,8 @@ function NeracaSaldoReport() {
     setError(null);
     try {
       const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
-      const res = await api.get<NeracaSaldoResponse>(`/laporan/neraca-saldo?dari=${dari}&sampai=${sampai}${tb}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<NeracaSaldoResponse>(`/laporan/neraca-saldo?dari=${dari}&sampai=${sampai}${tb}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat neraca saldo.';
@@ -1402,11 +1462,12 @@ function NeracaSaldoReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai, tahunBuku]);
+  }, [dari, sampai, tahunBuku, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   // Selisih dikirim backend sebagai string Decimal — koersi agar cek balance tidak selalu false.
   const isBalanced = data ? Number(data.selisih) === 0 : true;
@@ -1416,6 +1477,8 @@ function NeracaSaldoReport() {
       <div className="flex flex-wrap items-end gap-3">
         <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
         <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
       </div>
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -1491,7 +1554,7 @@ function NeracaSaldoReport() {
 // Sub-page: Perubahan Modal (Statement of Changes in Equity)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PerubahanModalReport() {
+function PerubahanModalReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
   const [data, setData] = useState<PerubahanModalResponse | null>(null);
@@ -1502,7 +1565,8 @@ function PerubahanModalReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<PerubahanModalResponse>(`/laporan/perubahan-modal?dari=${dari}&sampai=${sampai}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<PerubahanModalResponse>(`/laporan/perubahan-modal?dari=${dari}&sampai=${sampai}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat perubahan modal.';
@@ -1511,15 +1575,20 @@ function PerubahanModalReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
+      </div>
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
       {!loading && !error && data && (
@@ -1594,7 +1663,7 @@ function PerubahanModalReport() {
 // Sub-page: Umur Piutang (Aging Receivables)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function UmurPiutangReport() {
+function UmurPiutangReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [tanggal, setTanggal] = useState(getToday());
   const [data, setData] = useState<UmurPiutangResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1604,7 +1673,8 @@ function UmurPiutangReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<UmurPiutangResponse>(`/laporan/umur-piutang?as_of=${tanggal}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<UmurPiutangResponse>(`/laporan/umur-piutang?as_of=${tanggal}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat umur piutang.';
@@ -1613,15 +1683,20 @@ function UmurPiutangReport() {
     } finally {
       setLoading(false);
     }
-  }, [tanggal]);
+  }, [tanggal, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
+      </div>
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
       {!loading && !error && data && (
@@ -1702,7 +1777,7 @@ function UmurPiutangReport() {
 // Sub-page: Umur Hutang (Aging Payables)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function UmurHutangReport() {
+function UmurHutangReport({ companyFilter, onCompanyChange }: CompanyScopedProps) {
   const [tanggal, setTanggal] = useState(getToday());
   const [data, setData] = useState<UmurHutangResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1712,7 +1787,8 @@ function UmurHutangReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<UmurHutangResponse>(`/laporan/umur-hutang?as_of=${tanggal}`);
+      const cs = companyScopeQuery(companyFilter); // AUD-17: scope perusahaan
+      const res = await api.get<UmurHutangResponse>(`/laporan/umur-hutang?as_of=${tanggal}${cs}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat umur hutang.';
@@ -1721,15 +1797,20 @@ function UmurHutangReport() {
     } finally {
       setLoading(false);
     }
-  }, [tanggal]);
+  }, [tanggal, companyFilter]);
 
   useEffect(() => {
     fetchData();
   }, []);
+  useCompanyRefetch(companyFilter, fetchData);
 
   return (
     <div className="space-y-4">
-      <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
+        {/* AUD-17 — scope perusahaan */}
+        <PerusahaanFilter value={companyFilter ?? 'ALL'} onChange={onCompanyChange} />
+      </div>
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
       {!loading && !error && data && (
@@ -1868,32 +1949,41 @@ export default function ReportsModule({ subPage: propsSubPage, refreshKey, formM
   const { activeSubPage } = useERPStore();
   const subPage = propsSubPage || activeSubPage || 'laba-rugi';
 
+  // AUD-17 (update #05) — SATU state filter perusahaan di level halaman Laporan,
+  // berlaku untuk semua sub-laporan yang di-scope backend (neraca-saldo, laba-rugi,
+  // neraca, arus-kas, perubahan-modal, buku-besar, umur-piutang, umur-hutang,
+  // mutasi-kas/bank, rekap-kas-bank, rekap-pajak, penutupan-periode).
+  // Sub-laporan rekonsiliasi-persediaan*/accounting-health/rekonsiliasi grni/cf/eq
+  // TIDAK menerima scope (backend menolak) — param tidak dikirim ke sana.
+  const [companyFilter, setCompanyFilter] = useState<PerusahaanFilterValue>('ALL');
+  const handleCompanyChange = useCallback((v: PerusahaanFilterValue) => setCompanyFilter(v), []);
+
   const renderSubPage = () => {
     switch (subPage) {
       case 'laba-rugi':
-        return <LabaRugiReport />;
+        return <LabaRugiReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'neraca':
-        return <NeracaReport />;
+        return <NeracaReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'arus-kas':
-        return <ArusKasReport />;
+        return <ArusKasReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'neraca-saldo':
-        return <NeracaSaldoReport />;
+        return <NeracaSaldoReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'perubahan-modal':
-        return <PerubahanModalReport />;
+        return <PerubahanModalReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'rincian-buku-besar':
-        return <BukuBesarReport />;
+        return <BukuBesarReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'umur-piutang':
-        return <UmurPiutangReport />;
+        return <UmurPiutangReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'umur-hutang':
-        return <UmurHutangReport />;
+        return <UmurHutangReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'mutasi-kas':
-        return <MutasiKasReport />;
+        return <MutasiKasReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'mutasi-bank':
-        return <MutasiBankReport />;
+        return <MutasiBankReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'rekap-kas-bank':
-        return <RekapKasBankReport />;
+        return <RekapKasBankReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'rekap-pajak':
-        return <RekapPajakPage refreshKey={refreshKey} />;
+        return <RekapPajakPage refreshKey={refreshKey} companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
       case 'penutupan-periode':
         return <PenutupanPeriodePage refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
       case 'rekonsiliasi-persediaan':
@@ -1915,7 +2005,7 @@ export default function ReportsModule({ subPage: propsSubPage, refreshKey, formM
       case 'laporan-lainnya':
         return <LaporanLainnya />;
       default:
-        return <LabaRugiReport />;
+        return <LabaRugiReport companyFilter={companyFilter} onCompanyChange={handleCompanyChange} />;
     }
   };
 

@@ -2048,6 +2048,11 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
 
   const filteredPengirimanOptions = useMemo(() => (fPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === fPelangganId) : pengirimanOptions), [pengirimanOptions, fPelangganId]);
 
+  // AUD-12 (update #05) — estimasi PPh23 retur untuk info-card (derived dari invoice
+  // sumber + qty retur; nilai final dihitung backend saat create/post).
+  const returDppEstimate = source.invoice ? source.invoice.details.reduce((s, line) => s + Number(quantities[line.id] ?? 0) * Number(line.harga), 0) * (1 - (parseFloat(fDiskonGlobal) || 0) / 100) : 0;
+  const returPpnEstimate = returDppEstimate * ((parseFloat(fPpn) || 0) / 100);
+
   const handleSubmit = useCallback(async () => {
     if (createdReturn || !source.invoice) return;
     const errs: Record<string, string> = {};
@@ -2208,6 +2213,22 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
               <Input type="number" className="h-9 text-xs" value={fPpn} min={0} max={100} onChange={(e) => setFPpn(e.target.value)} />
             </div>
           </div>
+          {/* AUD-12 (update #05) — info PPh23 derived dari invoice sumber (bukan input user).
+              Retur atas SI ber-PPh23 membalik PPh23 Dibayar di Muka (116003);
+              grand total retur menjadi NET-of-PPh23 (dihitung backend dari DPP retur × tarif). */}
+          {source.invoice?.pph23Applicable && Number(source.invoice.totalPph23) > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50/60 px-4 py-3 space-y-1">
+              <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+                <Info className="h-3.5 w-3.5" /> Invoice sumber ber-PPh 23 (tarif {Number(source.invoice.pph23)}%)
+              </p>
+              <p className="text-xs text-amber-800">
+                PPh23 dibatalkan retur: <strong className="font-mono">{formatRp(Math.min(Number(source.invoice.totalPph23), returDppEstimate * (Number(source.invoice.pph23) / 100)))}</strong> — dihitung otomatis dari DPP retur × tarif (maks. sisa PPh23 invoice {formatRp(Number(source.invoice.totalPph23))}), bukan input.
+              </p>
+              <p className="text-xs text-amber-800">
+                Total Retur (net PPh23): <strong className="font-mono">{formatRp(returDppEstimate + returPpnEstimate - Math.min(Number(source.invoice.totalPph23), returDppEstimate * (Number(source.invoice.pph23) / 100)))}</strong> — grand total retur = DPP + PPN − PPh23 retur.
+              </p>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Alasan retur / catatan tambahan..." />
@@ -2258,6 +2279,9 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
   const [editDiskonGlobal, setEditDiskonGlobal] = useState('0');
   const [editPpn, setEditPpn] = useState('11');
   const [editKeterangan, setEditKeterangan] = useState('');
+  // AUD-12 (update #05) — PPh23 retur (derived dari invoice sumber saat create; read-only)
+  const [editPph23, setEditPph23] = useState<number | null>(null);
+  const [editTotalPph23, setEditTotalPph23] = useState<number | null>(null);
 
   const filteredPengirimanOptions = useMemo(() => (editPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === editPelangganId) : pengirimanOptions), [pengirimanOptions, editPelangganId]);
 
@@ -2281,6 +2305,9 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
         setEditDiskonGlobal(String(r.diskonGlobal ?? 0));
         setEditPpn(String(r.ppn ?? 0));
         setEditKeterangan(r.keterangan || '');
+        // AUD-12 (update #05) — tampilkan PPh23 retur bila ada (grand total sudah net)
+        setEditPph23(r.pph23 != null ? Number(r.pph23) : null);
+        setEditTotalPph23(r.totalPph23 != null ? Number(r.totalPph23) : null);
       } catch (e) {
         toast.error(e instanceof ApiError ? e.detail : 'Gagal memuat data retur');
       } finally {
@@ -2345,9 +2372,16 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
                   <StatusBadge status={editStatus} />
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span>Grand Total:</span>
+                  <span>{editTotalPph23 != null && editTotalPph23 > 0 ? 'Total Retur (net PPh23):' : 'Grand Total:'}</span>
                   <span className="font-mono font-semibold text-foreground">{formatRp(editGrandTotal)}</span>
                 </div>
+                {editTotalPph23 != null && editTotalPph23 > 0 && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>PPh23 dibatalkan retur:</span>
+                    <span className="font-mono font-semibold text-amber-700">{formatRp(editTotalPph23)}</span>
+                    {editPph23 != null && <span className="text-muted-foreground">(tarif {editPph23}%)</span>}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
