@@ -79,10 +79,12 @@ export function jenisPembelianLabel(v?: string | null) {
 }
 export type OrderHeaderKey = (typeof commonKeys)[number] | (typeof salesKeys)[number] | (typeof purchaseKeys)[number];
 export type OrderHeader = Record<OrderHeaderKey, string>;
-export function newOrderHeader(): OrderHeader {
+export function newOrderHeader(rates?: { ppn?: string; pph23?: string }): OrderHeader {
   const date = new Date();
   const tanggal = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : key === 'ppn' ? '11' : key === 'ppnApplicable' ? 'true' : key === 'pph23Applicable' ? 'false' : key === 'pph23' ? '2' : ''])) as OrderHeader;
+  // AUD-10 (update #04): default ppn/pph23 dari setting global (RATE_PPN /
+  // RATE_PPH23) bila caller menyuplai hasil useDefaultTaxRates(); fallback 11/2.
+  return Object.fromEntries([...commonKeys, ...salesKeys, ...purchaseKeys].map((key) => [key, key === 'tanggal' ? tanggal : key === 'currency' ? 'IDR' : key === 'ppn' ? (rates?.ppn ?? '11') : key === 'ppnApplicable' ? 'true' : key === 'pph23Applicable' ? 'false' : key === 'pph23' ? (rates?.pph23 ?? '2') : ''])) as OrderHeader;
 }
 export function orderHeaderFromResponse(order: OrderResponse): OrderHeader {
   const header = newOrderHeader();

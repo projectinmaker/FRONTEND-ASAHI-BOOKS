@@ -146,7 +146,7 @@ export default function AuditPersediaanPage({ refreshKey }: { refreshKey?: numbe
               Refresh
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2">Audit semua transaksi persediaan (Penerimaan, Pengiriman, Retur, Penyesuaian) di rentang tanggal. Anomali = transaksi nilai &gt; 0 + auto_post_jurnal = true TAPI jurnal_umum_id = null.</p>
+          <p className="text-[11px] text-muted-foreground mt-2">Audit semua transaksi persediaan (Penerimaan, Pengiriman, Retur, Penyesuaian) di rentang tanggal. Anomali = transaksi bernilai &gt; 0 TANPA jurnal (termasuk penyesuaian yang dibuat dengan auto-post jurnal nonaktif — kini default aktif sejak Update #04).</p>
         </CardContent>
       </Card>
 

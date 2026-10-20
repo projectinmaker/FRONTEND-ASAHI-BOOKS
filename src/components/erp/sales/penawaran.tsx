@@ -24,6 +24,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { FileText, Plus, Trash2, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info } from 'lucide-react';
 import { formatRp, formatDate, todayStr, generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
+import { useDefaultTaxRates } from '@/lib/use-default-rates';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
@@ -748,6 +749,11 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
   const [fPpn, setFPpn] = useState('11');
+  // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN)
+  const defaultRates = useDefaultTaxRates();
+  useEffect(() => {
+    if (defaultRates) setFPpn(defaultRates.ppn);
+  }, [defaultRates]);
   // ── Update #003: No. PO customer + singkatan — dibawa ke SO saat konversi ──
   const [fCustomerPoNumber, setFCustomerPoNumber] = useState('');
   const [fCustomerCode, setFCustomerCode] = useState('');

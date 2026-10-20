@@ -31,6 +31,7 @@ import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 // Update #007 — quick add master data langsung dari form transaksi
 import { QuickAddPelangganButton, QuickAddGudangButton, QuickAddBarangButton, QuickAddSatuanButton, toPelangganDropdown, toBarangDropdown, satuanFromBarang } from '@/components/erp/quick-add';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
+import { useDefaultTaxRates } from '@/lib/use-default-rates';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
@@ -1189,6 +1190,15 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
   const [soLoading, setSoLoading] = useState(false);
   const [doLoading, setDoLoading] = useState(false);
+  // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN/RATE_PPH23)
+  const defaultRates = useDefaultTaxRates();
+  useEffect(() => {
+    if (defaultRates) {
+      setFPpn(defaultRates.ppn);
+      setFPph23(defaultRates.pph23);
+    }
+  }, [defaultRates]);
+
   // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
   const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
 
@@ -1951,6 +1961,11 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
   const [fPpn, setFPpn] = useState('11');
   const [fKeterangan, setFKeterangan] = useState('');
+  // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN)
+  const defaultRatesRetur = useDefaultTaxRates();
+  useEffect(() => {
+    if (defaultRatesRetur) setFPpn(defaultRatesRetur.ppn);
+  }, [defaultRatesRetur]);
 
   // ── Update #4: alamat pengembalian ditarik otomatis dari invoice sumber ──
   // (alamat mengikuti invoice; isian manual user tetap dipertahankan —

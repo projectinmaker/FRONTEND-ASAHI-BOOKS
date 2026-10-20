@@ -9,12 +9,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
 import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse, LaporanAkunItem } from '@/types/api';
-import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight, Receipt } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
 import dynamic from 'next/dynamic';
@@ -30,6 +31,8 @@ const AssetReconciliationPage = dynamic(() => import('@/components/erp/reports/a
 const AccountingHealthPage = dynamic(() => import('@/components/erp/reports/accounting-health'), { ssr: false });
 const HistoriDokumenTerhapusPage = dynamic(() => import('@/components/erp/reports/histori-dokumen-terhapus'), { ssr: false });
 const ReconciliationDetailPage = dynamic(() => import('@/components/erp/reports/reconciliation-detail'), { ssr: false });
+// Update #04 (AUD-07/08/11) — Rekap Pajak: PPN, PPh 23, hutang & pelunasan pajak
+const RekapPajakPage = dynamic(() => import('@/components/erp/reports/rekap-pajak'), { ssr: false });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -90,6 +93,7 @@ const subPageTitles: Record<string, string> = {
   'mutasi-kas': 'Mutasi Kas',
   'mutasi-bank': 'Mutasi Bank',
   'rekap-kas-bank': 'Rekap Kas & Bank',
+  'rekap-pajak': 'Rekap Pajak (PPN & PPh 23)',
   'penutupan-periode': 'Penutupan Periode',
   'rekonsiliasi-persediaan': 'Rekonsiliasi Persediaan',
   'audit-persediaan': 'Audit Persediaan',
@@ -266,9 +270,38 @@ function TotalRow({ label, value, colSpan = 2 }: { label: string; value: number;
 // Sub-page: Laba / Rugi
 // ═════════════════════════════════════════════════════════════════════════════
 
+// AUD-15 (update #04) — pemilih mode tahun buku: "" = kontinu (semua histori);
+// angka = saldo awal diambil dari set SA-{tahun} + mutasi mulai 1 Jan tahun itu.
+function TahunBukuFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const years: number[] = [];
+  const y = new Date().getFullYear();
+  for (let i = 0; i < 8; i++) years.push(y - i);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-xs font-medium text-muted-foreground">Tahun Buku</Label>
+      <Select value={value || 'kontinu'} onValueChange={(v) => onChange(v === 'kontinu' ? '' : v)}>
+        <SelectTrigger className="w-44">
+          <SelectValue placeholder="Kontinu (semua)" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="kontinu">Kontinu (semua histori)</SelectItem>
+          {years.map((yr) => (
+            <SelectItem key={yr} value={String(yr)}>
+              Tahun buku {yr}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-[10px] text-muted-foreground">Kosong = gabung semua tahun; pilih tahun = potong buku per tahun (saldo awal SA-{'{tahun}'})</p>
+    </div>
+  );
+}
+
 function LabaRugiReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
+  // AUD-15 (update #04) — mode tahun buku (saldo awal = SA-{tahun})
+  const [tahunBuku, setTahunBuku] = useState('');
   const [data, setData] = useState<LabaRugiLaporanResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -277,7 +310,8 @@ function LabaRugiReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<LabaRugiLaporanResponse>(`/laporan/laba-rugi?dari=${dari}&sampai=${sampai}`);
+      const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
+      const res = await api.get<LabaRugiLaporanResponse>(`/laporan/laba-rugi?dari=${dari}&sampai=${sampai}${tb}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data laporan.';
@@ -286,7 +320,7 @@ function LabaRugiReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, tahunBuku]);
 
   useEffect(() => {
     fetchData();
@@ -311,7 +345,10 @@ function LabaRugiReport() {
 
   return (
     <div className="space-y-4">
-      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+        <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
+      </div>
 
       {loading && <ReportSkeleton rows={8} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -465,6 +502,8 @@ function LabaRugiReport() {
 
 function NeracaReport() {
   const [tanggal, setTanggal] = useState(getToday());
+  // AUD-15 (update #04) — mode tahun buku (saldo = SA-{tahun} + mutasi tahun)
+  const [tahunBuku, setTahunBuku] = useState('');
   const [data, setData] = useState<NeracaLaporanResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -473,7 +512,8 @@ function NeracaReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<NeracaLaporanResponse>(`/laporan/neraca?tanggal=${tanggal}`);
+      const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
+      const res = await api.get<NeracaLaporanResponse>(`/laporan/neraca?tanggal=${tanggal}${tb}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data neraca.';
@@ -482,15 +522,18 @@ function NeracaReport() {
     } finally {
       setLoading(false);
     }
-  }, [tanggal]);
+  }, [tanggal, tahunBuku]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   return (
     <div className="space-y-4">
-      <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <SingleDateFilter tanggal={tanggal} onTanggalChange={setTanggal} onSubmit={fetchData} loading={loading} />
+        <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
+      </div>
 
       {loading && <ReportSkeleton rows={8} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
@@ -863,6 +906,8 @@ function BukuBesarReport() {
   const [akunId, setAkunId] = useState('');
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
+  // AUD-15 (update #04) — mode tahun buku (saldo awal = SA-{tahun})
+  const [tahunBuku, setTahunBuku] = useState('');
   const [coaOptions, setCoaOptions] = useState<COADropdownResponse[]>([]);
   const [coaLoading, setCoaLoading] = useState(false);
   const [data, setData] = useState<BukuBesarLaporanResponse | null>(null);
@@ -891,7 +936,8 @@ function BukuBesarReport() {
     setError(null);
     setFetched(true);
     try {
-      const res = await api.get<BukuBesarLaporanResponse>(`/laporan/buku-besar?akun_id=${akunId}&dari=${dari}&sampai=${sampai}`);
+      const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
+      const res = await api.get<BukuBesarLaporanResponse>(`/laporan/buku-besar?akun_id=${akunId}&dari=${dari}&sampai=${sampai}${tb}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat data buku besar.';
@@ -900,7 +946,7 @@ function BukuBesarReport() {
     } finally {
       setLoading(false);
     }
-  }, [akunId, dari, sampai]);
+  }, [akunId, dari, sampai, tahunBuku]);
 
   useEffect(() => {
     fetchCOA();
@@ -927,6 +973,7 @@ function BukuBesarReport() {
           <Label className="text-xs font-medium text-muted-foreground">Sampai Tanggal</Label>
           <Input type="date" value={sampai} onChange={(e) => setSampai(e.target.value)} className="w-44" />
         </div>
+        <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
         <Button onClick={fetchData} disabled={loading || !akunId} size="sm">
           {loading ? 'Memuat...' : 'Tampilkan'}
         </Button>
@@ -1335,6 +1382,8 @@ function RekapKasBankReport() {
 function NeracaSaldoReport() {
   const [dari, setDari] = useState(getFirstDayOfMonth());
   const [sampai, setSampai] = useState(getToday());
+  // AUD-15 (update #04) — mode tahun buku (saldo awal = SA-{tahun})
+  const [tahunBuku, setTahunBuku] = useState('');
   const [data, setData] = useState<NeracaSaldoResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1343,7 +1392,8 @@ function NeracaSaldoReport() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<NeracaSaldoResponse>(`/laporan/neraca-saldo?dari=${dari}&sampai=${sampai}`);
+      const tb = tahunBuku ? `&tahunBuku=${tahunBuku}` : '';
+      const res = await api.get<NeracaSaldoResponse>(`/laporan/neraca-saldo?dari=${dari}&sampai=${sampai}${tb}`);
       setData(res);
     } catch (err) {
       const msg = err instanceof ApiError ? err.detail : 'Gagal memuat neraca saldo.';
@@ -1352,7 +1402,7 @@ function NeracaSaldoReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, tahunBuku]);
 
   useEffect(() => {
     fetchData();
@@ -1363,7 +1413,10 @@ function NeracaSaldoReport() {
 
   return (
     <div className="space-y-4">
-      <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+      <div className="flex flex-wrap items-end gap-3">
+        <DateRangeFilter dari={dari} sampai={sampai} onDariChange={setDari} onSampaiChange={setSampai} onSubmit={fetchData} loading={loading} />
+        <TahunBukuFilter value={tahunBuku} onChange={setTahunBuku} />
+      </div>
       {loading && <ReportSkeleton rows={6} />}
       {error && <ReportError message={error} onRetry={fetchData} />}
       {!loading && !error && data && (
@@ -1770,6 +1823,7 @@ function LaporanLainnya() {
     { id: 'mutasi-kas', title: 'Mutasi Kas', desc: 'Mutasi transaksi kas per periode', icon: ArrowLeftRight },
     { id: 'mutasi-bank', title: 'Mutasi Bank', desc: 'Mutasi transaksi bank per periode', icon: ArrowLeftRight },
     { id: 'rekap-kas-bank', title: 'Rekap Kas & Bank', desc: 'Rekapitulasi saldo dan mutasi kas/bank', icon: FileSpreadsheet },
+    { id: 'rekap-pajak', title: 'Rekap Pajak', desc: 'PPN keluaran/masukan & PPh 23 per masa pajak + hutang pajak', icon: Receipt },
     { id: 'penutupan-periode', title: 'Penutupan Periode', desc: 'Tutup/buka periode akuntansi bulanan', icon: Calendar },
     { id: 'rekonsiliasi-aset', title: 'Rekonsiliasi Aset', desc: 'Rekonsiliasi Asset Register vs GL', icon: Scale },
     { id: 'rekonsiliasi-grni', title: 'GRNI vs GL', desc: 'Rekonsiliasi Open GRNI vs GRNI GL', icon: Scale },
@@ -1838,6 +1892,8 @@ export default function ReportsModule({ subPage: propsSubPage, refreshKey, formM
         return <MutasiBankReport />;
       case 'rekap-kas-bank':
         return <RekapKasBankReport />;
+      case 'rekap-pajak':
+        return <RekapPajakPage refreshKey={refreshKey} />;
       case 'penutupan-periode':
         return <PenutupanPeriodePage refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
       case 'rekonsiliasi-persediaan':

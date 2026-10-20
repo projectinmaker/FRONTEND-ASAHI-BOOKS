@@ -153,7 +153,7 @@ interface PelunasanDraftData {
   mataUang?: string;
   nilaiTukar?: string;
   /** Update #01 — pph23Display per baris (potongan PPh 23 saat pelunasan) */
-  alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string; pph23Display?: string }[];
+  alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string; pph23Display?: string; noBuktiPotong?: string; masaPajak?: string }[];
 }
 
 function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: JenisPelunasan; refreshKey?: number; embedded?: boolean; onFinished?: () => void }) {
@@ -195,6 +195,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
     diskonDisplay?: string;
     /** Update #01 — PPh 23 per faktur: piutang (dipotong pelanggan) / hutang (ditahan dari supplier) */
     pph23Display?: string;
+    /** AUD-08 (update #04) — bukti potong (BUPTI) + masa pajak per faktur */
+    noBuktiPotong?: string;
+    masaPajak?: string;
   }
   const [selected, setSelected] = useState<Record<string, AllocationRow>>({});
 
@@ -308,7 +311,10 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
           invoice: inv,
           nilaiDisplay: initial > 0 ? sanitizeRupiahInput(String(initial)) : '',
           diskonDisplay: '',
-          pph23Display: ''
+          pph23Display: '',
+          // AUD-08 (update #04) — bukti potong & masa pajak per faktur
+          noBuktiPotong: '',
+          masaPajak: ''
         };
       }
       return next;
@@ -345,6 +351,23 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
 
   // Update #01 — shortcut isi PPh 23 = 2% dari nilai pembayaran faktur
   // (tarif umum PPh 23 atas jasa; dapat dikoreksi manual setelahnya).
+  // === AUD-08 (update #04) — bukti potong (BUPTI) + masa pajak per faktur ===
+  const updateBuktiPotong = useCallback((invoiceId: string, val: string) => {
+    setSelected((prev) => {
+      const row = prev[invoiceId];
+      if (!row) return prev;
+      return { ...prev, [invoiceId]: { ...row, noBuktiPotong: val } };
+    });
+  }, []);
+
+  const updateMasaPajak = useCallback((invoiceId: string, val: string) => {
+    setSelected((prev) => {
+      const row = prev[invoiceId];
+      if (!row) return prev;
+      return { ...prev, [invoiceId]: { ...row, masaPajak: val } };
+    });
+  }, []);
+
   const setPph23DuaPersen = useCallback((invoiceId: string) => {
     setSelected((prev) => {
       const row = prev[invoiceId];
@@ -480,7 +503,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
     const restored: Record<string, AllocationRow> = {};
     for (const a of d.alokasi) {
       const inv = map.get(a.invoiceId);
-      if (inv) restored[a.invoiceId] = { invoice: inv, nilaiDisplay: a.nilaiDisplay || '', diskonDisplay: a.diskonDisplay || '', pph23Display: a.pph23Display || '' };
+      if (inv) restored[a.invoiceId] = { invoice: inv, nilaiDisplay: a.nilaiDisplay || '', diskonDisplay: a.diskonDisplay || '', pph23Display: a.pph23Display || '', noBuktiPotong: a.noBuktiPotong || '', masaPajak: a.masaPajak || '' };
     }
     if (Object.keys(restored).length > 0) {
       setSelected(restored);
@@ -514,7 +537,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
       jumlahCek,
       mataUang,
       nilaiTukar,
-      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '', pph23Display: r.pph23Display || '' }))
+      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '', pph23Display: r.pph23Display || '', noBuktiPotong: r.noBuktiPotong || '', masaPajak: r.masaPajak || '' }))
     });
   }, [pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, selected]);
 
@@ -616,7 +639,10 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
           diskon: parseRupiahInput(r.diskonDisplay || ''),
           // Update #01 — PPh 23 per faktur: piutang (dipotong pelanggan) /
           // hutang (ditahan dari pembayaran supplier). Kas = nilai − diskon − pph23.
-          pph23: parseRupiahInput(r.pph23Display || '')
+          pph23: parseRupiahInput(r.pph23Display || ''),
+          // AUD-08 (update #04) — bukti potong + masa pajak per faktur
+          noBuktiPotong: r.noBuktiPotong?.trim() || undefined,
+          masaPajak: r.masaPajak?.trim() || undefined
         })),
         // Update #5 — penalti di level header; totalNilai (Σ alokasi + penalti) dihitung backend.
         penalti: parseRupiahInput(penaltiDisplay),
@@ -1101,6 +1127,8 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
                       <TableHead className="text-right w-[180px]">Nilai Pembayaran</TableHead>
                       {/* Update #01 — PPh 23 per faktur (piutang & hutang) */}
                       <TableHead className="text-right w-[160px]">PPh 23</TableHead>
+                      {/* AUD-08 (update #04) — bukti potong + masa pajak per faktur */}
+                      <TableHead className="w-[200px]">Bukti Potong / Masa Pajak</TableHead>
                       {/* Update cetak "Bayar Pemasok" — diskon pelunasan per faktur (hutang) */}
                       {!isPiutang && <TableHead className="text-right w-[160px]">Diskon</TableHead>}
                       <TableHead className="w-12" />
@@ -1142,6 +1170,11 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
                                 {isPiutang ? 'Diterima tunai' : 'Dibayar tunai'}: {formatRp(netTunai)}
                               </p>
                             ) : null}
+                          </TableCell>
+                          {/* AUD-08 (update #04) — no bukti potong + masa pajak (YYYY-MM) */}
+                          <TableCell>
+                            <Input type="text" placeholder="No. bukti potong" value={row.noBuktiPotong || ''} onChange={(e) => updateBuktiPotong(row.invoice.invoiceId, e.target.value)} className="h-8 text-sm" aria-label={`No bukti potong ${row.invoice.noDokumen}`} />
+                            <Input type="text" placeholder="Masa pajak (YYYY-MM)" value={row.masaPajak || ''} onChange={(e) => updateMasaPajak(row.invoice.invoiceId, e.target.value)} className={`mt-1 h-8 text-sm font-mono ${(row.masaPajak || '') && !/^\d{4}-(0[1-9]|1[0-2])$/.test(row.masaPajak || '') ? 'border-destructive' : ''}`} aria-label={`Masa pajak ${row.invoice.noDokumen}`} />
                           </TableCell>
                           {!isPiutang && (
                             <TableCell className="text-right">

@@ -1251,6 +1251,9 @@ export interface PaymentAllocationItem {
   // === Update #01 — PPh 23 pelunasan per faktur (piutang: dipotong pelanggan;
   // hutang: ditahan dari pembayaran supplier). Kas = nilai − diskon − pph23. ===
   pph23?: number | string;
+  // === AUD-08 (update #04) — bukti potong (BUPTI) + masa pajak 'YYYY-MM' ===
+  noBuktiPotong?: string | null;
+  masaPajak?: string | null;
   terutang?: number | string | null;
   noFaktur?: string | null;
   tanggalFaktur?: string | null;
@@ -1366,12 +1369,14 @@ export interface PenerimaanKasResponse {
 // 2. TRANSAKSI_LAINNYA — akun lawan bebas dari COA (non-invoice).
 // 3. BELUM_TERIDENTIFIKASI — mutasi belum diketahui asalnya → akun penampung,
 //    kemudian Identifikasi & Alokasi.
-export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA' | 'BELUM_TERIDENTIFIKASI';
+export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA' | 'BELUM_TERIDENTIFIKASI' | 'PELUNASAN_PAJAK';
 
 export const JENIS_TRANSAKSI_KAS_LABELS: Record<JenisTransaksiKas, string> = {
   PELUNASAN_INVOICE: 'Pelunasan Invoice',
   TRANSAKSI_LAINNYA: 'Transaksi Lainnya',
-  BELUM_TERIDENTIFIKASI: 'Belum Teridentifikasi'
+  BELUM_TERIDENTIFIKASI: 'Belum Teridentifikasi',
+  // AUD-11 (update #04) — pembayaran hutang pajak (akun lawan wajib TAX_PAYABLE)
+  PELUNASAN_PAJAK: 'Pelunasan Pajak'
 };
 
 // ── Update #02 — Identifikasi & Alokasi kas Belum Teridentifikasi ──────────
@@ -1445,6 +1450,9 @@ export interface IdentifikasiPiutangAlokasiCreate {
   /** String desimal (mis. "100000.00") — pola PelunasanCreate. */
   nilai: string;
   pph23?: string;
+  /** AUD-08 (update #04) — bukti potong + masa pajak 'YYYY-MM' */
+  noBuktiPotong?: string;
+  masaPajak?: string;
 }
 
 export interface IdentifikasiPiutangCreate {
@@ -1459,6 +1467,9 @@ export interface IdentifikasiHutangAlokasiCreate {
   nilai: string;
   diskon?: string;
   pph23?: string;
+  /** AUD-08 (update #04) — bukti potong + masa pajak 'YYYY-MM' */
+  noBuktiPotong?: string;
+  masaPajak?: string;
 }
 
 export interface IdentifikasiHutangCreate {
@@ -2046,6 +2057,9 @@ export interface PurchaseInvoiceCreate {
   alamat?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
+  /** AUD-09 (update #04) — PPh 23 pada PI: hutang net + Cr Hutang PPh 23 saat posting */
+  pph23?: number;
+  pph23Applicable?: boolean;
   keterangan?: string | null;
   autoPostJurnal?: false;
   details: PurchaseInvoiceDetailCreate[];
@@ -2060,6 +2074,9 @@ export interface PurchaseInvoiceUpdate {
   noFaktur?: string | null;
   alamat?: string | null;
   diskonGlobal?: number | null;
+  /** AUD-09 (update #04) — PPh 23 PI (draft only) */
+  pph23?: number;
+  pph23Applicable?: boolean;
   ppn?: number;
   keterangan?: string | null;
   autoPostJurnal?: boolean;
@@ -2077,6 +2094,10 @@ export interface PurchaseInvoiceResponse {
   alamat: string | null;
   diskonGlobal: number;
   ppn: number;
+  /** AUD-09 (update #04) — PPh 23 pada PI */
+  pph23?: number;
+  pph23Applicable?: boolean;
+  totalPph23?: number;
   keterangan: string | null;
   autoPostJurnal: boolean;
   subTotal: number;
@@ -3121,6 +3142,9 @@ export interface SaldoAwalRequest {
 export interface SaldoAwalResponse {
   sudahDiset: boolean;
   tanggal: string | null;
+  // AUD-15 (update #04) — set saldo awal per tahun buku (SA-{tahun})
+  tahun?: number | null;
+  tahunTersedia?: number[];
   items: SaldoAwalItem[];
   totalDebit: number;
   totalKredit: number;
@@ -3459,6 +3483,10 @@ export interface PelunasanAlokasiCreate {
   /** Update #01 — PPh 23 per faktur (piutang & hutang): potongan pajak atas
    * pembayaran; kas = nilai − diskon − pph23; sisa tagihan turun penuh. */
   pph23?: string;
+  /** AUD-08 (update #04) — no bukti potong (BUPTI) per faktur (opsional) */
+  noBuktiPotong?: string;
+  /** AUD-08 (update #04) — masa pajak 'YYYY-MM' per faktur (opsional) */
+  masaPajak?: string;
 }
 
 export interface PelunasanCreate {
@@ -4232,4 +4260,123 @@ export interface RequestOrderPartUpdate {
   diketahuiOleh?: string | null;
   disetujuiOleh?: string | null;
   items?: RequestOrderPartItemCreate[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UPDATE #04 — Temuan audit: rekap pajak, bukti potong, PPh 23 PI, closing
+// tahunan, saldo awal per tahun buku, monitoring hutang pajak.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── AUD-07: Rekap Pajak PPN ────────────────────────────────────────────────
+export interface PajakPpnBaris {
+  tanggal: string;
+  noJurnal: string;
+  noDokumen?: string | null;
+  jenis: string; // FAKTUR_KELUARAN | RETUR_PENJUALAN | FAKTUR_MASUKAN | RETUR_PEMBELIAN | LAINNYA
+  pihak?: string | null;
+  dpp?: number | string | null;
+  ppn: number | string;
+}
+
+export interface PajakPpnPerMasa {
+  masaPajak: string; // YYYY-MM
+  keluaran: number | string;
+  masukan: number | string;
+  netto: number | string;
+}
+
+export interface PajakPpnResponse {
+  periode: { dari: string; sampai: string };
+  keluaran: PajakPpnBaris[];
+  totalKeluaran: number | string;
+  masukan: PajakPpnBaris[];
+  totalMasukan: number | string;
+  ppnNetto: number | string;
+  perMasa: PajakPpnPerMasa[];
+  akun?: Record<string, string[]>;
+}
+
+// ── AUD-07/AUD-08: Rekap Pajak PPh 23 ─────────────────────────────────────
+export interface PajakPph23Baris {
+  tanggal: string;
+  noDokumen?: string | null;
+  noInvoice?: string | null;
+  pihak?: string | null;
+  nilai?: number | string | null;
+  pph23: number | string;
+  noBuktiPotong?: string | null;
+  masaPajak?: string | null;
+  sumber?: string | null; // PELUNASAN | IDENTIFIKASI | INVOICE
+}
+
+export interface PajakPph23PerMasa {
+  masaPajak: string;
+  dipotongPihakLain: number | string;
+  dipotongDariSupplier: number | string;
+}
+
+export interface PajakPph23Response {
+  periode: { dari: string; sampai: string };
+  dipotongPihakLain: PajakPph23Baris[];
+  totalDipotongPihakLain: number | string;
+  dipotongDariSupplier: PajakPph23Baris[];
+  totalDipotongDariSupplier: number | string;
+  pph23InvoicePenjualan: PajakPph23Baris[];
+  totalPph23InvoicePenjualan: number | string;
+  pph23InvoicePembelian: PajakPph23Baris[];
+  totalPph23InvoicePembelian: number | string;
+  perMasa: PajakPph23PerMasa[];
+}
+
+// ── AUD-11: Monitoring hutang pajak ────────────────────────────────────────
+export interface PajakAkunMonitoring {
+  id: string;
+  kode: string;
+  nama: string;
+  saldoGl: number | string; // debit − kredit (POSTED)
+  hutang: number | string; // positif = masih harus dibayar
+  dibayarLebih: number | string;
+}
+
+export interface PajakPelunasanRiwayat {
+  id: string;
+  noBukti: string;
+  noNukti: string;
+  tanggal: string;
+  totalNilai: number | string;
+  catatan?: string | null;
+  kasBank?: { id: string; kode: string; nama: string } | null;
+  status: string;
+  jurnalUmumId?: string | null;
+  akun: { id: string; nilai: number | string }[];
+}
+
+export interface PajakMonitoringResponse {
+  akunPajak: PajakAkunMonitoring[];
+  totalHutang: number | string;
+  totalDibayarLebih: number | string;
+  riwayatPelunasan: PajakPelunasanRiwayat[];
+}
+
+// ── AUD-14: Penutupan tahunan ──────────────────────────────────────────────
+export interface PenutupanTahunItem {
+  tahun: number;
+  status: string; // DITUTUP | DIBUKA | TERBUKA
+  labaRugi?: string | null;
+  bulanDitutup: number;
+  semuaBulanDitutup: boolean;
+  keterangan?: string | null;
+  closedAt?: string | null;
+  reopenedAt?: string | null;
+  jurnalPenutupanId?: string | null;
+}
+
+// ── AUD-08: alokasi settlement + bukti potong ──────────────────────────────
+export interface PelunasanAlokasiCreate04 {
+  invoiceId: string;
+  nilai: number | string;
+  diskon?: number | string;
+  pph23?: number | string;
+  noBuktiPotong?: string | null;
+  masaPajak?: string | null;
 }

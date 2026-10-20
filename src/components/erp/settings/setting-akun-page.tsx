@@ -4,14 +4,16 @@ import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Settings2, Save, Loader2, AlertCircle, CheckCircle2, RefreshCw, AlertTriangle, Boxes } from 'lucide-react';
+import { Settings2, Save, Loader2, AlertCircle, CheckCircle2, RefreshCw, AlertTriangle, Boxes, Percent } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
+import { invalidateDefaultRates } from '@/lib/use-default-rates';
 import { loadCOA, EXPECTED_SYSTEM_TYPES } from '@/lib/coa';
 import type { COAResponse } from '@/types/api';
 import type { SettingAkunResponse, SettingAkunUpdate, COADropdownResponse, AppSettingResponse } from '@/types/api';
@@ -87,6 +89,12 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
   const [valuasiOptions, setValuasiOptions] = useState<{ value: string; label: string }[]>([]);
   const [valuasiSaving, setValuasiSaving] = useState(false);
   const [valuasiError, setValuasiError] = useState<string | null>(null);
+  // ── AUD-10 (update #04) — tarif pajak default global (RATE_PPN / RATE_PPH23) ──
+  const [ratePpn, setRatePpn] = useState('11');
+  const [ratePpnTersimpan, setRatePpnTersimpan] = useState('11');
+  const [ratePph23, setRatePph23] = useState('2');
+  const [ratePph23Tersimpan, setRatePph23Tersimpan] = useState('2');
+  const [rateSaving, setRateSaving] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -116,18 +124,28 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
     (async () => {
       setValuasiError(null);
       try {
-        const [settingRes, optionsRes] = await Promise.all([
+        const [settingRes, optionsRes, ratePpnRes, ratePph23Res] = await Promise.all([
           api.get<AppSettingResponse>('/master/app-setting/METODE_VALUASI'),
           api.get<{ value: string; label: string }[]>('/stok-kartu/valuasi-options').catch(() => [
             { value: 'AVERAGE', label: 'Rata-rata Bergerak (Moving Average)' },
             { value: 'FIFO', label: 'FIFO (First In First Out)' },
             { value: 'FEFO', label: 'FEFO (First Expired First Out)' }
-          ])
+          ]),
+          // AUD-10 — tarif pajak default global
+          api.get<AppSettingResponse>('/master/app-setting/RATE_PPN').catch(() => null),
+          api.get<AppSettingResponse>('/master/app-setting/RATE_PPH23').catch(() => null)
         ]);
         if (cancelled) return;
         setMetodeValuasi(settingRes.value || 'AVERAGE');
         setMetodeValuasiTersimpan(settingRes.value || 'AVERAGE');
         setValuasiOptions(Array.isArray(optionsRes) ? optionsRes : []);
+        // AUD-10 — isi state tarif pajak (default 11/2 bila setting kosong)
+        const ppnRate = ratePpnRes?.value ?? '11';
+        const pph23Rate = ratePph23Res?.value ?? '2';
+        setRatePpn(ppnRate);
+        setRatePpnTersimpan(ppnRate);
+        setRatePph23(pph23Rate);
+        setRatePph23Tersimpan(pph23Rate);
       } catch (err) {
         if (!cancelled) setValuasiError(err instanceof ApiError ? err.detail : 'Gagal memuat metode valuasi');
       }
@@ -136,6 +154,32 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
       cancelled = true;
     };
   }, [refreshKey]);
+
+  // AUD-10 (update #04) — simpan tarif pajak default global
+  const handleSaveTarifPajak = async () => {
+    const ppn = parseFloat(ratePpn);
+    const pph = parseFloat(ratePph23);
+    if (isNaN(ppn) || ppn < 0 || ppn > 100) {
+      toast.error('Tarif PPN harus angka 0–100');
+      return;
+    }
+    if (isNaN(pph) || pph < 0 || pph > 100) {
+      toast.error('Tarif PPh 23 harus angka 0–100');
+      return;
+    }
+    setRateSaving(true);
+    try {
+      const [r1, r2] = await Promise.all([api.put<AppSettingResponse>('/master/app-setting/RATE_PPN', { value: ratePpn }), api.put<AppSettingResponse>('/master/app-setting/RATE_PPH23', { value: ratePph23 })]);
+      setRatePpnTersimpan(r1.value);
+      setRatePph23Tersimpan(r2.value);
+      invalidateDefaultRates(); // AUD-10 — form baru memakai tarif yang baru
+      toast.success('Tarif pajak default disimpan — berlaku untuk dokumen baru yang tidak mengirim tarif');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.detail : 'Gagal menyimpan tarif pajak');
+    } finally {
+      setRateSaving(false);
+    }
+  };
 
   const handleSaveMetodeValuasi = async () => {
     setValuasiSaving(true);
@@ -503,6 +547,60 @@ export default function SettingAkunPage({ refreshKey }: SettingAkunPageProps) {
                       )}
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ── AUD-10 (update #04): kartu Tarif Pajak default global ── */}
+            {group.title === 'Persediaan' && (
+              <Card data-testid="card-tarif-pajak">
+                <CardContent className="p-0">
+                  <div className="border-b bg-muted/30 px-4 py-3">
+                    <h3 className="text-sm font-semibold flex items-center gap-1.5">
+                      <Percent className="h-4 w-4" />
+                      Tarif Pajak Default
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">Tarif PPN &amp; PPh 23 untuk dokumen baru (SI/PI/PO/SO/retur/penawaran) yang tidak mengirim tarif eksplisit — sebelumnya hardcoded 11% / 2%.</p>
+                  </div>
+                  <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-end gap-3">
+                    <div className="flex-1 grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">PPN (%)</Label>
+                        <Input type="number" min={0} max={100} step="0.01" value={ratePpn} onChange={(e) => setRatePpn(e.target.value)} disabled={rateSaving} data-testid="input-rate-ppn" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">PPh 23 (%)</Label>
+                        <Input type="number" min={0} max={100} step="0.01" value={ratePph23} onChange={(e) => setRatePph23(e.target.value)} disabled={rateSaving} data-testid="input-rate-pph23" />
+                      </div>
+                    </div>
+                    <div className="shrink-0">
+                      {ratePpn !== ratePpnTersimpan || ratePph23 !== ratePph23Tersimpan ? (
+                        <div className="inline-flex items-center gap-1">
+                          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={handleSaveTarifPajak} disabled={rateSaving} data-testid="simpan-tarif-pajak">
+                            {rateSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                            Simpan
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs"
+                            onClick={() => {
+                              setRatePpn(ratePpnTersimpan);
+                              setRatePph23(ratePph23Tersimpan);
+                            }}
+                            disabled={rateSaving}>
+                            Batal
+                          </Button>
+                        </div>
+                      ) : (
+                        <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs gap-1">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Tersimpan
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <p className="px-4 pb-3 text-[11px] text-muted-foreground leading-relaxed">Tarif tersimpan sebagai snapshot per dokumen — mengubah setting hanya memengaruhi dokumen baru (histori tidak berubah).</p>
                 </CardContent>
               </Card>
             )}

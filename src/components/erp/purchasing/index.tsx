@@ -38,6 +38,7 @@ import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 // Update #007 — quick add master data langsung dari form transaksi
 import { QuickAddSupplierButton, QuickAddGudangButton, QuickAddBarangButton, QuickAddSatuanButton, toSupplierDropdown, toBarangDropdown, satuanFromBarang } from '@/components/erp/quick-add';
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
+import { useDefaultTaxRates } from '@/lib/use-default-rates';
 import { toast } from 'sonner';
 import { PesananPembelianCetakTab, PenerimaanCetakTab, InvoicePembelianCetakTab, ReturPembelianCetakTab, LppbCetakTab } from '@/components/erp/purchasing/cetak-tabs';
 // Update ASAHI #005 — modul LPPB (list + form) sebagai file mandiri
@@ -329,11 +330,13 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, satuanOptions, onB
 
 // ─── Totals Breakdown (PPN baris terpisah) ──────────────────────────────────
 
-function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan }: { subtotal: number; diskonGlobalPct: number; ppnPct: number; totalBiayaTambahan: number }) {
+function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan, pph23Pct = 0 }: { subtotal: number; diskonGlobalPct: number; ppnPct: number; totalBiayaTambahan: number; pph23Pct?: number }) {
   const totalDiskon = subtotal * (diskonGlobalPct / 100);
   const dasarPajak = subtotal - totalDiskon;
   const ppnAmount = dasarPajak * (ppnPct / 100);
-  const grandTotal = dasarPajak + ppnAmount + totalBiayaTambahan;
+  // AUD-09 (update #04): PPh 23 atas dasar pajak (potongan supplier sejak invoice)
+  const pph23Amount = dasarPajak * (pph23Pct / 100);
+  const grandTotal = dasarPajak + ppnAmount + totalBiayaTambahan - pph23Amount;
 
   return (
     <div className="rounded-md border bg-muted/20 px-4 py-3 space-y-1">
@@ -1351,10 +1354,22 @@ function InvoiceCreateForm() {
   const [fAlamat, setFAlamat] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
   const [fPpn, setFPpn] = useState('11');
+  // AUD-09 (update #04) — PPh 23 pada PI: hutang supplier dicatat NET sejak
+  // invoice (grand total − PPh 23) + Cr Hutang PPh 23 saat posting.
+  const [fPph23Applicable, setFPph23Applicable] = useState(false);
+  const [fPph23, setFPph23] = useState('2');
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
   const [poLoading, setPoLoading] = useState(false);
+  // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN/RATE_PPH23)
+  const defaultRates = useDefaultTaxRates();
+  useEffect(() => {
+    if (defaultRates) {
+      setFPpn(defaultRates.ppn);
+      setFPph23(defaultRates.pph23);
+    }
+  }, [defaultRates]);
   // === Update #4 (Q2): snapshot sisa PO terpilih — info barang belum diterima ===
   const [poSisaInfo, setPoSisaInfo] = useState<PurchaseOrderSisaResponse | null>(null);
 
@@ -1539,6 +1554,9 @@ function InvoiceCreateForm() {
         alamat: fAlamat || null,
         diskonGlobal: parseFloat(fDiskonGlobal) || null,
         ppn: parseFloat(fPpn) || 0,
+        // AUD-09 (update #04) — PPh 23 opsional di PI
+        pph23: fPph23Applicable ? parseFloat(fPph23) || 0 : 0,
+        pph23Applicable: fPph23Applicable,
         keterangan: fKeterangan || null,
         details,
         biayaTambahan: biaya.length > 0 ? biaya : undefined
@@ -1737,7 +1755,23 @@ function InvoiceCreateForm() {
               <Input type="number" className="h-9 text-xs" value={fPpn} min={0} max={100} onChange={(e) => setFPpn(e.target.value)} />
             </div>
           </div>
-          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} />
+          {/* AUD-09 (update #04) — PPh 23 pada Purchase Invoice */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-start gap-2 rounded-md border p-3">
+              <input type="checkbox" id="pi-pph23" className="mt-0.5 h-4 w-4 accent-emerald-600" checked={fPph23Applicable} onChange={(e) => setFPph23Applicable(e.target.checked)} />
+              <div className="min-w-0">
+                <Label htmlFor="pi-pph23" className="text-xs font-medium cursor-pointer">
+                  Potong PPh 23
+                </Label>
+                <p className="text-[11px] leading-tight text-muted-foreground mt-0.5">PPh 23 ditahan dari supplier sejak invoice: hutang dicatat net (grand total − PPh 23) dan hutang pajak (213002) terbentuk saat posting.</p>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">PPh 23 (%)</Label>
+              <Input type="number" className="h-9 text-xs" value={fPph23} min={0} max={100} disabled={!fPph23Applicable} onChange={(e) => setFPph23(e.target.value)} />
+            </div>
+          </div>
+          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} pph23Pct={fPph23Applicable ? parseFloat(fPph23) || 0 : 0} />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
@@ -2008,6 +2042,11 @@ function ReturCreateForm() {
   const [fAlamat, setFAlamat] = useState('');
   const [fPpn, setFPpn] = useState('11');
   const [fKeterangan, setFKeterangan] = useState('');
+  // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN)
+  const defaultRatesRetur = useDefaultTaxRates();
+  useEffect(() => {
+    if (defaultRatesRetur) setFPpn(defaultRatesRetur.ppn);
+  }, [defaultRatesRetur]);
   // Link ke invoice pembelian — backend menolak POSTING retur tanpa purchaseInvoiceId
   // ("Pilih purchaseInvoiceId sebelum posting retur pembelian..."). Boleh kosong saat draft.
   const [fPurchaseInvoiceId, setFPurchaseInvoiceId] = useState('');

@@ -24,6 +24,7 @@ import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderRes
 // Update #4 — auto-fill field berkaitan master data saat pelanggan/supplier dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { ORDER_CURRENCY_OPTIONS, buildOrderUpdate, canEditOrder, formatOrderMoney, JENIS_PEMBELIAN_OPTIONS, newOrderHeader, newOrderLine, orderEndpoint, orderHeaderFromResponse, orderLinesFromResponse, persistOrder, serializeOrderHeader, serializeOrderLines, type OrderHeader, type OrderHeaderKey, type OrderKind, type OrderLine, type OrderResponse } from '@/lib/order-documents';
+import { useDefaultTaxRates } from '@/lib/use-default-rates';
 // Update #007 — quick add master data langsung dari form transaksi
 import { QuickAddPelangganButton, QuickAddSupplierButton, QuickAddBarangButton, QuickAddSatuanButton, QuickAddSyaratBayarButton, toPelangganDropdown, toSupplierDropdown, toBarangDropdown, satuanFromBarang } from '@/components/erp/quick-add';
 function includeCurrent(options: SearchableDropdownOption[], id?: string | null, label?: string | null) {
@@ -43,6 +44,14 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   const title = isSales ? 'Pesanan Penjualan' : 'Pesanan Pembelian';
   const [header, setHeader] = useState(newOrderHeader);
   const [lines, setLines] = useState<OrderLine[]>(() => [newOrderLine()]);
+  // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN/RATE_PPH23);
+  // hanya untuk dokumen baru (bukan edit existing — original null).
+  const defaultRates = useDefaultTaxRates();
+  useEffect(() => {
+    if (defaultRates && !original && !editId) {
+      setHeader((prev) => ({ ...prev, ppn: defaultRates.ppn, pph23: defaultRates.pph23 }));
+    }
+  }, [defaultRates]);
   const [costs, setCosts] = useState<{ key: string; nama: string; jumlah: string }[]>([]);
   const [original, setOriginal] = useState<OrderResponse | null>(null);
   const savedId = useRef(editId);
@@ -186,7 +195,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   const handleDiscardDraft = () => {
     skipNextSaveRef.current = true;
     draft.clearDraft();
-    setHeader(newOrderHeader());
+    setHeader(newOrderHeader(defaultRates ? { ppn: defaultRates.ppn, pph23: defaultRates.pph23 } : undefined));
     setLines([newOrderLine()]);
     setCosts([]);
     setError('');

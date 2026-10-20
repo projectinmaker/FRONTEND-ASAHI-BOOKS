@@ -167,6 +167,11 @@ const modules: NavModule[] = [
         ]
       },
       {
+        // Update #04 — AUD-07/AUD-08/AUD-11
+        label: 'Pajak',
+        items: [{ id: 'rekap-pajak', label: 'Rekap Pajak (PPN & PPh 23)', icon: Receipt }]
+      },
+      {
         label: 'Laporan Lainnya',
         items: [
           { id: 'penutupan-periode', label: 'Penutupan Periode', icon: Lock },

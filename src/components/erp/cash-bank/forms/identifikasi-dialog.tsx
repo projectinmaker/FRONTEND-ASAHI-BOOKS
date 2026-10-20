@@ -56,6 +56,9 @@ interface InvoiceRow {
   nilaiDisplay: string;
   pph23Display: string;
   diskonDisplay: string; // hutang saja
+  /** AUD-08 (update #04) — bukti potong + masa pajak per faktur */
+  noBuktiPotong?: string;
+  masaPajak?: string;
 }
 
 type Mode = 'PIHAK' | 'COA';
@@ -228,7 +231,7 @@ export function IdentifikasiDialog({ open, onOpenChange, jenisDokumen, dokumenId
     setSelected((prev) => {
       const next = { ...prev };
       if (checked) {
-        next[inv.invoiceId] = { invoice: inv, nilaiDisplay: '', pph23Display: '', diskonDisplay: '' };
+        next[inv.invoiceId] = { invoice: inv, nilaiDisplay: '', pph23Display: '', diskonDisplay: '', noBuktiPotong: '', masaPajak: '' };
       } else {
         delete next[inv.invoiceId];
       }
@@ -286,7 +289,10 @@ export function IdentifikasiDialog({ open, onOpenChange, jenisDokumen, dokumenId
             alokasi: selectedList.map((r) => ({
               salesInvoiceId: r.invoice.invoiceId,
               nilai: toDecimalStr(r.nilaiDisplay),
-              pph23: toDecimalStr(r.pph23Display)
+              pph23: toDecimalStr(r.pph23Display),
+              // AUD-08 (update #04) — bukti potong + masa pajak
+              noBuktiPotong: r.noBuktiPotong?.trim() || undefined,
+              masaPajak: r.masaPajak?.trim() || undefined
             }))
           };
           const res = await api.post<KasIdentifikasiResponse>(`/kas-bank/penerimaan/${dokumenId}/identifikasi-piutang`, payload);
@@ -302,7 +308,10 @@ export function IdentifikasiDialog({ open, onOpenChange, jenisDokumen, dokumenId
               purchaseInvoiceId: r.invoice.invoiceId,
               nilai: toDecimalStr(r.nilaiDisplay),
               diskon: toDecimalStr(r.diskonDisplay),
-              pph23: toDecimalStr(r.pph23Display)
+              pph23: toDecimalStr(r.pph23Display),
+              // AUD-08 (update #04) — bukti potong + masa pajak
+              noBuktiPotong: r.noBuktiPotong?.trim() || undefined,
+              masaPajak: r.masaPajak?.trim() || undefined
             }))
           };
           const res = await api.post<KasIdentifikasiResponse>(`/kas-bank/pembayaran/${dokumenId}/identifikasi-hutang`, payload);
@@ -523,6 +532,8 @@ export function IdentifikasiDialog({ open, onOpenChange, jenisDokumen, dokumenId
                             <TableHead className="whitespace-nowrap w-[130px]">Nilai Alokasi</TableHead>
                             {!isPenerimaan && <TableHead className="whitespace-nowrap w-[110px]">Diskon</TableHead>}
                             <TableHead className="whitespace-nowrap w-[110px]">PPh 23</TableHead>
+                            {/* AUD-08 (update #04) — bukti potong + masa pajak */}
+                            <TableHead className="whitespace-nowrap w-[190px]">Bukti Potong / Masa</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -553,6 +564,15 @@ export function IdentifikasiDialog({ open, onOpenChange, jenisDokumen, dokumenId
                                         }}>
                                         2%
                                       </button>
+                                    </div>
+                                  )}
+                                </TableCell>
+                                {/* AUD-08 (update #04) — no bukti potong + masa pajak */}
+                                <TableCell className="p-2">
+                                  {row && (
+                                    <div className="space-y-1">
+                                      <Input type="text" placeholder="No. bukti potong" value={row.noBuktiPotong || ''} onChange={(e) => updateInvoiceRow(inv.invoiceId, { noBuktiPotong: e.target.value })} className="h-7 text-xs" aria-label={`No bukti potong ${inv.noDokumen}`} />
+                                      <Input type="text" placeholder="YYYY-MM" value={row.masaPajak || ''} onChange={(e) => updateInvoiceRow(inv.invoiceId, { masaPajak: e.target.value })} className={`h-7 text-xs font-mono ${(row.masaPajak || '') && !/^\d{4}-(0[1-9]|1[0-2])$/.test(row.masaPajak || '') ? 'border-destructive' : ''}`} aria-label={`Masa pajak ${inv.noDokumen}`} />
                                     </div>
                                   )}
                                 </TableCell>

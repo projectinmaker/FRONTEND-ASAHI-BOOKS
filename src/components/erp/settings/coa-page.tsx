@@ -564,6 +564,9 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
 
     await api.post<SaldoAwalResponse>('/coa/saldo-awal', {
       tanggal: form.tanggalSaldoAwal,
+      // AUD-15 (update #04) — tahun buku set saldo awal (default: tahun dari
+      // tanggal; set tahun lain tetap utuh → mendukung buku per tahun).
+      tahun: form.tanggalSaldoAwal ? new Date(form.tanggalSaldoAwal).getFullYear() : undefined,
       items
     });
   };
@@ -923,8 +926,12 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
                     <CurrencyInput id="coa-saldo-awal" allowDecimal placeholder="0" value={form.saldoAwalNilai} onValueChange={(v) => setForm((prev) => ({ ...prev, saldoAwalNilai: v }))} disabled={loadingSaldoAwal || !saldoAwalEligible} />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="coa-tanggal-saldo-awal">Tanggal Saldo Awal</Label>
+                    <Label htmlFor="coa-tanggal-saldo-awal">Tanggal Saldo Awal (Tahun Buku)</Label>
                     <Input id="coa-tanggal-saldo-awal" type="date" value={form.tanggalSaldoAwal} onChange={(e) => setForm((prev) => ({ ...prev, tanggalSaldoAwal: e.target.value }))} disabled={loadingSaldoAwal || !saldoAwalEligible} />
+                    <p className="text-[11px] text-muted-foreground">
+                      AUD-15: tahun tanggal menentukan set tahun buku (SA-{'{tahun}'}). Set tahun lain tetap utuh — laporan dapat difilter per tahun buku.
+                      {saldoAwal?.tahunTersedia && saldoAwal.tahunTersedia.length > 0 && <> Set tersedia: {saldoAwal.tahunTersedia.join(', ')}.</>}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label className="flex items-center gap-1">

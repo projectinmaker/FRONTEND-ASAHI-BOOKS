@@ -9,17 +9,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Lock, Unlock, Loader2, RefreshCw, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Lock, Unlock, Loader2, RefreshCw, AlertCircle, ChevronLeft, ChevronRight, CalendarClock, LockOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
-import type { PenutupanPeriodeResponse, PeriodeStatusResponse, PreCloseReadinessResponse, GlReconciliationResponse } from '@/types/api';
+import type { PenutupanPeriodeResponse, PeriodeStatusResponse, PreCloseReadinessResponse, GlReconciliationResponse, PenutupanTahunItem } from '@/types/api';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -351,6 +351,14 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
   const [bukaAlasan, setBukaAlasan] = useState('');
   const [bukaLoading, setBukaLoading] = useState(false);
 
+  // ── AUD-14 (update #04) — closing tahunan ──
+  const [tahunList, setTahunList] = useState<PenutupanTahunItem[]>([]);
+  const [tahunBusy, setTahunBusy] = useState(false);
+  const [bukaTahunItem, setBukaTahunItem] = useState<PenutupanTahunItem | null>(null);
+  const [bukaTahunOpen, setBukaTahunOpen] = useState(false);
+  const [bukaTahunAlasan, setBukaTahunAlasan] = useState('');
+  const [tutupTahunItem, setTutupTahunItem] = useState<PenutupanTahunItem | null>(null);
+
   // ── Fetch data ──
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -373,9 +381,67 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
     }
   }, [skip, filterTahun, filterStatus]);
 
+  const fetchTahunList = useCallback(async () => {
+    try {
+      const res = await api.get<PenutupanTahunItem[]>('/periode/penutupan-periode/tahun');
+      setTahunList(Array.isArray(res) ? res : []);
+    } catch {
+      // non-fatal — section tetap tampil kosong
+      setTahunList([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchData();
-  }, [fetchData, refreshKey]);
+    fetchTahunList();
+  }, [fetchData, fetchTahunList, refreshKey]);
+
+  // AUD-14 — tutup tahun: transfer laba berjalan → laba ditahan
+  const handleTutupTahun = async () => {
+    if (!tutupTahunItem) return;
+    setTahunBusy(true);
+    try {
+      await api.post(`/periode/penutupan-periode/tutup-tahun/${tutupTahunItem.tahun}`, {
+        keterangan: `Tutup tahun buku ${tutupTahunItem.tahun}`,
+        withClosingEntry: true
+      });
+      toast.success(`Tahun buku ${tutupTahunItem.tahun} ditutup — saldo Laba (Rugi) Tahun Berjalan ditransfer ke Laba (Rugi) Ditahan.`);
+      setTutupTahunItem(null);
+      fetchTahunList();
+      fetchData();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.detail : 'Gagal menutup tahun buku';
+      toast.error('Tidak bisa menutup tahun', { description: msg, duration: 8000 });
+    } finally {
+      setTahunBusy(false);
+    }
+  };
+
+  // AUD-14 — buka tahun: reversal jurnal transfer + alasan wajib
+  const handleBukaTahun = async () => {
+    if (!bukaTahunItem) return;
+    if (!bukaTahunAlasan.trim()) {
+      toast.error('Alasan pembukaan kembali tahun buku wajib diisi.');
+      return;
+    }
+    setTahunBusy(true);
+    try {
+      await api.post(`/periode/penutupan-periode/buka-tahun/${bukaTahunItem.tahun}`, {
+        alasan: bukaTahunAlasan.trim()
+      });
+      toast.success(`Tahun buku ${bukaTahunItem.tahun} dibuka kembali — jurnal transfer dibalik.`);
+      setBukaTahunOpen(false);
+      setBukaTahunItem(null);
+      setBukaTahunAlasan('');
+      fetchTahunList();
+      fetchData();
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.detail : 'Gagal membuka tahun buku';
+      toast.error('Tidak bisa membuka tahun', { description: msg, duration: 8000 });
+    } finally {
+      setTahunBusy(false);
+    }
+  };
 
   // ── Actions ──
   const handleBuka = async () => {
@@ -495,6 +561,131 @@ function PenutupanPeriodeList({ refreshKey }: { refreshKey?: number }) {
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── AUD-14 (update #04): Closing Tahunan — transfer laba berjalan → laba ditahan ── */}
+      <Card>
+        <CardContent className="p-0">
+          <div className="border-b bg-muted/30 px-4 py-3">
+            <h3 className="text-sm font-semibold flex items-center gap-1.5">
+              <CalendarClock className="h-4 w-4" />
+              Tutup Tahun Buku (AUD-14)
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Transfer saldo <strong>Laba (Rugi) Tahun Berjalan (322000)</strong> ke <strong>Laba (Rugi) Ditahan (321000)</strong> di akhir tahun. Syarat: tahun sudah berlalu dan seluruh 12 bulan DITUTUP. Jurnal transfer <span className="font-mono">CL-YEAR-{'{tahun}'}</span> dikecualikan dari laporan laba rugi.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tahun</TableHead>
+                  <TableHead className="w-28 text-center">Status</TableHead>
+                  <TableHead className="text-right">Laba/(Rugi)</TableHead>
+                  <TableHead className="text-center w-32">Bulan Ditutup</TableHead>
+                  <TableHead className="w-40 text-center">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tahunList.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-muted-foreground text-sm py-8">
+                      Belum ada tahun buku yang bisa ditutup (tutup 12 bulan periode terlebih dahulu).
+                    </TableCell>
+                  </TableRow>
+                )}
+                {tahunList.map((th) => (
+                  <TableRow key={th.tahun}>
+                    <TableCell className="font-medium">{th.tahun}</TableCell>
+                    <TableCell className="text-center">
+                      {th.status === 'DITUTUP' ? (
+                        <Badge variant="default" className="gap-1 bg-emerald-600 hover:bg-emerald-700">
+                          <Lock className="h-3 w-3" />
+                          Ditutup
+                        </Badge>
+                      ) : th.status === 'DIBUKA' ? (
+                        <Badge variant="secondary" className="gap-1">
+                          <LockOpen className="h-3 w-3" />
+                          Dibuka
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="gap-1">
+                          <LockOpen className="h-3 w-3" />
+                          Terbuka
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs">{th.labaRugi != null ? formatRp(parseFloat(th.labaRugi)) : '—'}</TableCell>
+                    <TableCell className="text-center">
+                      <span className={th.semuaBulanDitutup ? 'text-emerald-700 font-medium' : 'text-muted-foreground'}>{th.bulanDitutup}/12</span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {th.status !== 'DITUTUP' && th.semuaBulanDitutup && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="default" className="h-7 gap-1 text-xs" disabled={tahunBusy} onClick={() => setTutupTahunItem(th)}>
+                              <Lock className="h-3 w-3" /> Tutup Tahun
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Tutup tahun buku {th.tahun}?</AlertDialogTitle>
+                              <AlertDialogDescription>Saldo Laba (Rugi) Tahun Berjalan akan ditransfer ke Laba (Rugi) Ditahan (jurnal CL-YEAR-{th.tahun}). Tindakan ini mengunci tahun; buka kembali memerlukan alasan + manajer/admin.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel onClick={() => setTutupTahunItem(null)}>Batal</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => void handleTutupTahun()}>Ya, Tutup Tahun</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                      {th.status === 'DITUTUP' && (
+                        <AlertDialog
+                          open={bukaTahunOpen && bukaTahunItem?.tahun === th.tahun}
+                          onOpenChange={(v) => {
+                            if (!v) {
+                              setBukaTahunOpen(false);
+                              setBukaTahunItem(null);
+                            }
+                          }}>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 gap-1 text-xs"
+                              disabled={tahunBusy || !canReopen}
+                              onClick={() => {
+                                setBukaTahunItem(th);
+                                setBukaTahunOpen(true);
+                              }}>
+                              <LockOpen className="h-3 w-3" /> Buka
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Buka kembali tahun buku {th.tahun}?</AlertDialogTitle>
+                              <AlertDialogDescription>Jurnal transfer tahun akan dibalik. Bulan-bulan tetap terkunci — buka bulan tertentu lewat aksi baris periode setelah tahun dibuka.</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <div className="space-y-1.5 py-2">
+                              <Label htmlFor="buka-tahun-alasan" className="text-xs">
+                                Alasan (wajib)
+                              </Label>
+                              <Textarea id="buka-tahun-alasan" value={bukaTahunAlasan} onChange={(e) => setBukaTahunAlasan(e.target.value)} placeholder="mis. Koreksi jurnal tahun berjalan" className="min-h-[70px] text-xs" />
+                            </div>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Batal</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => void handleBukaTahun()}>Ya, Buka Tahun</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
