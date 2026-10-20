@@ -156,7 +156,7 @@ interface PelunasanDraftData {
   alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string; pph23Display?: string }[];
 }
 
-function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey?: number }) {
+function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: JenisPelunasan; refreshKey?: number; embedded?: boolean; onFinished?: () => void }) {
   const isPiutang = jenis === 'piutang';
   const pihakLabel = isPiutang ? 'Pelanggan' : 'Supplier';
   const docLabel = isPiutang ? 'Invoice Penjualan' : 'Invoice Pembelian';
@@ -660,12 +660,16 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
       // Pembayaran di modul Kas & Bank supaya dokumen settlement langsung
       // terlihat di list kas/bank (tab terbuka ikut memuat ulang).
       useTabStore.getState().refreshListTab('cash-bank', isPiutang ? 'penerimaan' : 'pembayaran');
+      // Update #02 — mode embedded (form Penerimaan/Pembayaran, jenis
+      // Pelunasan Invoice): setelah posting sukses, tutup tab form &
+      // kembali ke daftar — sama seperti perilaku form kas umum.
+      if (embedded && onFinished) onFinished();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.detail : 'Gagal membuat draft pembayaran');
     } finally {
       setSubmitting(false);
     }
-  }, [validate, selectedPihakId, pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft]);
+  }, [validate, selectedPihakId, pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft, embedded, onFinished]);
 
   // ── Export Excel daftar tagihan (Update #5) — ikut filter aktif ──
   const handleExport = useCallback(async () => {
@@ -1224,10 +1228,16 @@ function PelunasanTab({ jenis, refreshKey }: { jenis: JenisPelunasan; refreshKey
 }
 
 // ─── Standalone Views ────────────────────────────────────────────────────────
-// Update #01 — Pelunasan Piutang & Hutang diintegrasikan ke modul Kas & Bank
-// (routing subPage "pelunasan-piutang" / "pelunasan-hutang" di page.tsx):
-//   - Pelunasan Piutang → Kas & Bank (penerimaan kas dari pelanggan)
-//   - Pelunasan Hutang  → Kas & Bank (pembayaran kas ke supplier)
+// Update #02 — koreksi miskom catatan-update-01: Pelunasan Piutang/Hutang
+// BUKAN menu/subPage terpisah, melainkan JENIS TRANSAKSI 'Pelunasan Invoice'
+// di dalam form Penerimaan (piutang) / Pembayaran (hutang) modul Kas & Bank
+// (lihat forms/penerimaan-form.tsx & forms/pembayaran-form.tsx yang memakai
+// EmbeddedSettlementForm di bawah). View standalone dipertahankan hanya
+// untuk backward-compat internal; sidebar/page.tsx sudah tidak meroutenya.
+
+export function EmbeddedSettlementForm({ jenis, onFinished }: { jenis: JenisPelunasan; onFinished?: () => void }) {
+  return <PelunasanTab jenis={jenis} embedded onFinished={onFinished} />;
+}
 
 export function PelunasanPiutangView({ refreshKey }: { refreshKey?: number }) {
   return (

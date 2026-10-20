@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory } from 'lucide-react';
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory, HelpCircle } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -50,11 +50,11 @@ const modules: NavModule[] = [
       { id: 'penerimaan', label: 'Penerimaan', icon: ArrowDownToLine },
       { id: 'transfer-bank', label: 'Transfer Bank', icon: ArrowLeftRight },
       { id: 'rekonsiliasi-bank', label: 'Rekonsiliasi Bank', icon: GitCompareArrows },
-      // Update #01 — Pelunasan Piutang & Hutang diintegrasikan ke Kas & Bank
-      // (sebelumnya di modul Penjualan / Pembelian). Alur: pilih pelanggan/
-      // supplier → invoice outstanding → nilai → posting.
-      { id: 'pelunasan-piutang', label: 'Pelunasan Piutang', icon: HandCoins },
-      { id: 'pelunasan-hutang', label: 'Pelunasan Hutang', icon: HandCoins }
+      // Update #02 — koreksi miskom catatan-update-01: Pelunasan Piutang &
+      // Hutang BUKAN menu terpisah — kini menjadi pilihan Jenis Transaksi
+      // 'Pelunasan Invoice' di dalam form Penerimaan (piutang) & Pembayaran
+      // (hutang). Menu ini menggantikan submenu pelunasan lama.
+      { id: 'belum-teridentifikasi', label: 'Belum Teridentifikasi', icon: HelpCircle }
     ]
   },
   {
@@ -230,8 +230,13 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     penerimaan: 'finance.cash_receipt.view',
     'transfer-bank': 'finance.bank_transfer.view',
     'rekonsiliasi-bank': 'finance.bank_reconciliation.view',
-    // Update #01 — menu pelunasan pindah ke Kas & Bank; kode permission
-    // tetap pakai registry settlement (sales.ar_settlement / purchase.ap_settlement).
+    // Update #02 — menu Belum Teridentifikasi (Identifikasi & Alokasi)
+    // menggantikan submenu pelunasan lama (pelunasan kini jenis transaksi
+    // di form Penerimaan/Pembayaran; alur settlement tetap diendpoint
+    // /pelunasan dengan permission sales.ar_settlement/purchase.ap_settlement).
+    'belum-teridentifikasi': 'finance.cash_receipt.view',
+    // Mapping lama dipertahankan supaya tab tersimpan sebelum update tetap
+    // lolos RBAC saat di-remap ke list Penerimaan/Pembayaran di page.tsx.
     'pelunasan-piutang': 'sales.ar_settlement.view',
     'pelunasan-hutang': 'purchase.ap_settlement.view'
   },

@@ -27,11 +27,6 @@ const WorkflowQueue = dynamic(() => import('@/components/erp/workflow-queue'), {
 // Tukar Faktur (update #4) — routing subPage 'tukar-faktur' di-render langsung di sini
 // (mirror pola Penawaran; sales/index.tsx tidak disentuh).
 const TukarFakturModule = dynamic(() => import('@/components/erp/sales/tukar-faktur').then((m) => m.TukarFakturModule), { ssr: false });
-// Update #01 — Pelunasan Piutang & Hutang diintegrasikan ke modul Kas & Bank
-// (sebelumnya subPage modul Penjualan / Pembelian; routing lama di-remap di bawah
-// supaya tab tersimpan sebelum update tetap menampilkan halaman yang benar).
-const PelunasanPiutangView = dynamic(() => import('@/components/erp/pelunasan').then((m) => m.PelunasanPiutangView), { ssr: false });
-const PelunasanHutangView = dynamic(() => import('@/components/erp/pelunasan').then((m) => m.PelunasanHutangView), { ssr: false });
 
 const moduleLabels: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -54,6 +49,7 @@ const subPageLabels: Record<string, string> = {
   penerimaan: 'Penerimaan',
   'transfer-bank': 'Transfer Bank',
   'rekonsiliasi-bank': 'Rekonsiliasi Bank',
+  'belum-teridentifikasi': 'Belum Teridentifikasi',
   // Penjualan / Pembelian
   penawaran: 'Penawaran',
   pesanan: 'Pesanan',
@@ -113,24 +109,29 @@ const subPageLabels: Record<string, string> = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: { moduleId: string; subPage?: string; refreshKey?: number; formMode?: string; formProps?: Record<string, unknown> }) {
-  // Update #01 — Pelunasan Piutang/Hutang pindah ke modul Kas & Bank; remap
-  // module lama (sales/purchasing) untuk tab tersimpan sebelum update.
+  // Update #02 — koreksi miskom catatan-update-01: Pelunasan Piutang/Hutang
+  // kini JENIS TRANSAKSI 'Pelunasan Invoice' di form Penerimaan/Pembayaran
+  // Kas & Bank (bukan halaman terpisah). Tab tersimpan dari versi lama
+  // di-remap ke daftar Penerimaan/Pembayaran (alur pelunasan dibuka dari
+  // tombol Tambah di list masing-masing → jenis 'Pelunasan Invoice').
   let activeModule = moduleId;
-  if (activeModule === 'sales' && subPage === 'pelunasan-piutang') activeModule = 'cash-bank';
-  if (activeModule === 'purchasing' && subPage === 'pelunasan-hutang') activeModule = 'cash-bank';
+  let activeSubPage = subPage;
+  if (activeModule === 'sales' && subPage === 'pelunasan-piutang') {
+    activeModule = 'cash-bank';
+    activeSubPage = 'penerimaan';
+  }
+  if (activeModule === 'purchasing' && subPage === 'pelunasan-hutang') {
+    activeModule = 'cash-bank';
+    activeSubPage = 'pembayaran';
+  }
+  if (activeModule === 'cash-bank' && (subPage === 'pelunasan-piutang' || subPage === 'pelunasan-hutang')) {
+    activeSubPage = subPage === 'pelunasan-piutang' ? 'penerimaan' : 'pembayaran';
+  }
   switch (activeModule) {
     case 'dashboard':
       return <Dashboard />;
     case 'cash-bank':
-      // Update #01 — subPage pelunasan dirender view pelunasan (alur pilih
-      // pihak → invoice outstanding → nilai → posting), bukan list Kas & Bank.
-      if (subPage === 'pelunasan-piutang') {
-        return <PelunasanPiutangView refreshKey={refreshKey} />;
-      }
-      if (subPage === 'pelunasan-hutang') {
-        return <PelunasanHutangView refreshKey={refreshKey} />;
-      }
-      return <CashBank subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
+      return <CashBank subPage={activeSubPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'sales':
       // Tukar Faktur (update #4): list + form + cetak di-handle modul mandiri
       // (penawaran & modul lain tetap lewat Sales).
