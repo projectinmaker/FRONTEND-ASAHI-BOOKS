@@ -1,12 +1,17 @@
 'use client';
 
 /**
- * Update #02 — Tab "Belum Teridentifikasi" modul Kas & Bank.
+ * Update #02 + #03 — Tab "Belum Teridentifikasi" modul Kas & Bank.
  *
- * Daftar dokumen Penerimaan & Pembayaran dengan jenis transaksi
- * BELUM_TERIDENTIFIKASI beserta progres identifikasi (teridentifikasi /
- * sisa). Tombol "Identifikasi & Alokasi" membuka IdentifikasiDialog untuk
- * memindahkan nilai dari akun penampung ke akun yang benar.
+ * Update #03: panel monitoring & rekonsiliasi akun penampung di atas —
+ * saldo GL per akun (penerimaan 216001 / pembayaran 117004 / legacy)
+ * dibandingkan dengan Σ sisa dokumen BELUM aktif per arah, plus cek
+ * jurnal balance / jurnal identifikasi tanpa kas / outstanding tidak
+ * negatif (subledger = General Ledger, rekonsiliasi sampai nol).
+ *
+ * Daftar dokumen Penerimaan & Pembayaran BELUM_TERIDENTIFIKASI beserta
+ * progres identifikasi. Tombol "Identifikasi & Alokasi" membuka
+ * IdentifikasiDialog (mode Piutang/Hutang + akun COA).
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -20,12 +25,12 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Loader2, Search, SearchCheck, RefreshCw, HelpCircle } from 'lucide-react';
+import { Loader2, Search, SearchCheck, RefreshCw, HelpCircle, ShieldCheck, ShieldAlert, Landmark } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRp, formatDate } from '@/lib/pdf-utils';
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { IdentifikasiDialog } from '@/components/erp/cash-bank/forms/identifikasi-dialog';
-import type { KasBankAkunResponse, PenerimaanKasResponse, PembayaranKasResponse } from '@/types/api';
+import type { KasBankAkunResponse, PenerimaanKasResponse, PembayaranKasResponse, PenampungMonitoringResponse } from '@/types/api';
 
 const PAGE_SIZE = 100;
 
@@ -49,6 +54,22 @@ export function BelumTeridentifikasiTab({ kasBankOptions, refreshKey }: { kasBan
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogDoc, setDialogDoc] = useState<{ id: string; noBukti: string } | null>(null);
+
+  // === Update #03 — monitoring & rekonsiliasi akun penampung ===
+  const [monitoring, setMonitoring] = useState<PenampungMonitoringResponse | null>(null);
+  const [monitoringLoading, setMonitoringLoading] = useState(true);
+
+  const fetchMonitoring = useCallback(async () => {
+    setMonitoringLoading(true);
+    try {
+      const res = await api.get<PenampungMonitoringResponse>('/kas-bank/penampung/monitoring');
+      setMonitoring(res);
+    } catch {
+      setMonitoring(null);
+    } finally {
+      setMonitoringLoading(false);
+    }
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -74,7 +95,8 @@ export function BelumTeridentifikasiTab({ kasBankOptions, refreshKey }: { kasBan
 
   useEffect(() => {
     void fetchData();
-  }, [fetchData, refreshKey]);
+    void fetchMonitoring();
+  }, [fetchData, fetchMonitoring, refreshKey]);
 
   useEffect(() => {
     debounceTimer.current = setTimeout(() => {
@@ -98,6 +120,89 @@ export function BelumTeridentifikasiTab({ kasBankOptions, refreshKey }: { kasBan
 
   return (
     <div className="space-y-4">
+      {/* === Update #03 — Monitoring & rekonsiliasi akun penampung === */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Landmark className="h-4 w-4 text-violet-600" aria-hidden="true" />
+                Kontrol Sementara &amp; Rekonsiliasi
+              </CardTitle>
+              <CardDescription>Saldo akun penampung piutang/hutang kontrol sementara dibandingkan dengan Σ sisa dokumen belum teridentifikasi — pantau dan rekonsiliasikan hingga nol.</CardDescription>
+            </div>
+            {monitoring && (
+              <Badge className={monitoring.rekonsiliasiOk ? 'border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100' : 'border-red-200 bg-red-100 text-red-700 hover:bg-red-100'}>
+                {monitoring.rekonsiliasiOk ? <ShieldCheck className="h-3.5 w-3.5 mr-1" /> : <ShieldAlert className="h-3.5 w-3.5 mr-1" />}
+                {monitoring.rekonsiliasiOk ? 'Rekonsiliasi OK' : 'Perlu ditelusuri'}
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {monitoringLoading ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : monitoring ? (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {monitoring.akun.map((a) => (
+                  <div key={a.akun.id} className={`rounded-lg border p-3 ${a.konsisten ? 'border-border' : 'border-red-300 bg-red-50'}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-mono text-xs font-semibold">{a.akun.kode}</p>
+                        <p className="text-xs text-muted-foreground">{a.akun.nama}</p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] whitespace-nowrap">
+                        {a.arah}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-muted-foreground">Saldo GL</p>
+                        <p className={`font-mono font-semibold ${Number(a.saldoGl) > 0 ? 'text-emerald-700' : Number(a.saldoGl) < 0 ? 'text-rose-700' : ''}`}>{formatRp(Number(a.saldoGl) || 0)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Sisa Penerimaan (Cr)</p>
+                        <p className="font-mono">{formatRp(Number(a.sisaPenerimaan) || 0)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Sisa Pembayaran (Dr)</p>
+                        <p className="font-mono">{formatRp(Number(a.sisaPembayaran) || 0)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Dokumen Aktif</p>
+                        <p className="font-mono">{a.jumlahDokumenAktif}</p>
+                      </div>
+                    </div>
+                    {!a.konsisten && <p className="mt-2 text-[11px] text-red-700">Selisih GL vs subledger: {formatRp(Number(a.selisih) || 0)}</p>}
+                  </div>
+                ))}
+              </div>
+              <details className="rounded-md border bg-muted/30 p-3">
+                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                  Detail cek rekonsiliasi ({monitoring.checks.filter((c) => c.ok).length}/{monitoring.checks.length} lolos)
+                </summary>
+                <ul className="mt-2 space-y-1.5">
+                  {monitoring.checks.map((c) => (
+                    <li key={c.kode} className="flex items-start gap-2 text-xs">
+                      {c.ok ? <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" aria-hidden="true" /> : <ShieldAlert className="h-3.5 w-3.5 text-red-600 shrink-0 mt-0.5" aria-hidden="true" />}
+                      <span>
+                        <span className={c.ok ? '' : 'font-medium text-red-700'}>{c.label}</span>
+                        {c.detail && <span className="text-muted-foreground"> — {c.detail}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">Gagal memuat monitoring penampung.</p>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
@@ -248,6 +353,7 @@ export function BelumTeridentifikasiTab({ kasBankOptions, refreshKey }: { kasBan
           noBukti={dialogDoc.noBukti}
           onDone={() => {
             void fetchData();
+            void fetchMonitoring();
             toast.dismiss();
           }}
         />

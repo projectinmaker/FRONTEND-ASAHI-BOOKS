@@ -1394,6 +1394,11 @@ export interface IdentifikasiRincianItem {
   nilai: number | string;
   keterangan: string | null;
   akunPerkiraan: AkunPerkiraanSimple | null;
+  // === Update #03 — snapshot invoice + potongan per faktur (sesi PIUTANG/HUTANG) ===
+  salesInvoiceId?: string | null;
+  purchaseInvoiceId?: string | null;
+  diskon?: number | string;
+  pph23?: number | string;
 }
 
 export interface KasIdentifikasiResponse {
@@ -1412,6 +1417,10 @@ export interface KasIdentifikasiResponse {
   jurnal: { id: string; noJurnal: string } | null;
   creator: PenggunaSimple | null;
   rincian: IdentifikasiRincianItem[];
+  // === Update #03 — jenis sesi + pihak yang diidentifikasi ===
+  jenis?: 'LAINNYA' | 'PIUTANG' | 'HUTANG' | string;
+  pelangganId?: string | null;
+  supplierId?: string | null;
 }
 
 export interface KasIdentifikasiListResponse {
@@ -1427,6 +1436,65 @@ export interface KasIdentifikasiListResponse {
   teridentifikasi: number | string;
   sisaBelumTeridentifikasi: number | string;
   identifikasi: KasIdentifikasiResponse[];
+}
+
+// ── Update #03 — Identifikasi Piutang/Hutang (pihak + invoice) ──────────
+
+export interface IdentifikasiPiutangAlokasiCreate {
+  salesInvoiceId: string;
+  /** String desimal (mis. "100000.00") — pola PelunasanCreate. */
+  nilai: string;
+  pph23?: string;
+}
+
+export interface IdentifikasiPiutangCreate {
+  pelangganId: string;
+  tanggal: string;
+  alokasi: IdentifikasiPiutangAlokasiCreate[];
+  catatan?: string | null;
+}
+
+export interface IdentifikasiHutangAlokasiCreate {
+  purchaseInvoiceId: string;
+  nilai: string;
+  diskon?: string;
+  pph23?: string;
+}
+
+export interface IdentifikasiHutangCreate {
+  supplierId: string;
+  tanggal: string;
+  alokasi: IdentifikasiHutangAlokasiCreate[];
+  catatan?: string | null;
+}
+
+// ── Update #03 — Monitoring & rekonsiliasi akun penampung ──────────
+
+export interface PenampungAkunMonitoring {
+  akun: { id: string; kode: string; nama: string };
+  settingKey: string | null;
+  arah: string;
+  saldoGl: number | string;
+  jumlahDokumenAktif: number;
+  sisaPenerimaan: number | string;
+  sisaPembayaran: number | string;
+  totalSisaDokumen: number | string;
+  selisih: number | string;
+  konsisten: boolean;
+}
+
+export interface PenampungCheck {
+  kode: string;
+  label: string;
+  ok: boolean;
+  detail: string | null;
+}
+
+export interface PenampungMonitoringResponse {
+  akun: PenampungAkunMonitoring[];
+  totalSisa: number | string;
+  rekonsiliasiOk: boolean;
+  checks: PenampungCheck[];
 }
 
 export interface TransferBankCreate {

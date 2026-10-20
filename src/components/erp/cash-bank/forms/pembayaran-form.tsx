@@ -320,13 +320,16 @@ export default function PembayaranForm({ mode, id }: Props) {
   const isBelumTeridentifikasi = jenisTransaksi === 'BELUM_TERIDENTIFIKASI';
   const isPelunasanInvoice = jenisTransaksi === 'PELUNASAN_INVOICE';
 
-  // ── Update #02 — info akun penampung (setting KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI) ──
+  // ── Update #03 — info akun penampung arah-spesifik (pembayaran →
+  // KAS_PENAMPUNG_PEMBAYARAN 117004 aset; fallback key legacy
+  // KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI bila belum dikonfigurasi). ──
   useEffect(() => {
     let cancelled = false;
     api
-      .get<SettingAkunResponse>('/master/setting-akun/KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI')
+      .get<SettingAkunResponse>('/master/setting-akun/KAS_PENAMPUNG_PEMBAYARAN')
+      .catch(() => api.get<SettingAkunResponse>('/master/setting-akun/KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI'))
       .then((res) => {
-        if (cancelled) return;
+        if (cancelled || !res) return;
         setPenampungAkun(res.akunPerkiraan ? { kode: res.akunPerkiraan.kode, nama: res.akunPerkiraan.nama } : null);
       })
       .catch(() => {
@@ -684,7 +687,7 @@ export default function PembayaranForm({ mode, id }: Props) {
                       ) : (
                         <strong>KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI</strong>
                       )}
-                      {penampungAkun ? '' : ' (belum dikonfigurasi — atur di Pengaturan → Setting Akun)'}. Setelah tujuannya diketahui, gunakan menu Kas &amp; Bank → Belum Teridentifikasi untuk Identifikasi &amp; Alokasi ke akun yang benar (tanpa jurnal bank ganda).
+                      {penampungAkun ? '' : ' (belum dikonfigurasi — atur di Pengaturan → Setting Akun)'}. Setelah supplier/invoice-nya diketahui, buka menu Kas &amp; Bank → Belum Teridentifikasi lalu Identifikasi &amp; Alokasi: pilih supplier dan invoice yang dilunasi (reklasifikasi penampung → hutang supplier, tanpa jurnal bank ganda).
                     </p>
                   </div>
                 </div>
