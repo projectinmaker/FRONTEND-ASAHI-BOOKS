@@ -121,18 +121,9 @@ export function RopStatusBadge({ status }: { status: RequestOrderPartStatus }) {
 function ColorLegend() {
   return (
     <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 rounded-md border border-dashed bg-muted/40 px-4 py-3 text-xs font-semibold tracking-wider">
-      <span className="flex items-center gap-2">
-        <span className="inline-block h-3.5 w-3.5 rounded-sm border-2 border-gray-400 bg-white" aria-hidden="true" />
-        PUTIH = PURCHASING
-      </span>
-      <span className="flex items-center gap-2">
-        <span className="inline-block h-3.5 w-3.5 rounded-sm border border-yellow-600 bg-yellow-400" aria-hidden="true" />
-        KUNING = PRODUKSI
-      </span>
-      <span className="flex items-center gap-2">
-        <span className="inline-block h-3.5 w-3.5 rounded-sm border border-red-800 bg-red-600" aria-hidden="true" />
-        MERAH = ENGINEERING
-      </span>
+      <span className="flex items-center gap-2">PUTIH = PURCHASING</span>
+      <span className="flex items-center gap-2">KUNING = PRODUKSI</span>
+      <span className="flex items-center gap-2">MERAH = ENGINEERING</span>
     </div>
   );
 }
