@@ -139,18 +139,9 @@ function ColorLegend({ compact = false }: { compact?: boolean }) {
   };
   return (
     <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap' }}>
-      <span style={labelStyle}>
-        <span style={swatch('#ffffff', '#9ca3af')} />
-        PUTIH = PURCHASING
-      </span>
-      <span style={labelStyle}>
-        <span style={swatch('#facc15', '#a16207')} />
-        KUNING = PRODUKSI
-      </span>
-      <span style={labelStyle}>
-        <span style={swatch('#dc2626', '#7f1d1d')} />
-        MERAH = ENGINEERING
-      </span>
+      <span style={labelStyle}>PUTIH = PURCHASING</span>
+      <span style={labelStyle}>KUNING = PRODUKSI</span>
+      <span style={labelStyle}>MERAH = ENGINEERING</span>
     </div>
   );
 }
