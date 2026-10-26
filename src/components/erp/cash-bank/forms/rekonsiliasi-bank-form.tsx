@@ -121,7 +121,8 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
   const [tanggal, setTanggal] = useState(todayStr());
   const [saldoBank, setSaldoBank] = useState('');
   const [keterangan, setKeterangan] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Update #17 — nilai undefined dipakai untuk menghapus pesan error per field
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
 
   // ── Preview saldo ──
   const [previewSaldo, setPreviewSaldo] = useState<SaldoBukuPreviewResponse | null>(null);

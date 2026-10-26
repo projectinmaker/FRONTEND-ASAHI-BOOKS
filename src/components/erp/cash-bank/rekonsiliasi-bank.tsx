@@ -219,7 +219,8 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
   const [dlJumlah, setDlJumlah] = useState('');
   const [dlSisi, setDlSisi] = useState('DEBIT');
   const [dlAkunId, setDlAkunId] = useState('');
-  const [dlErrors, setDlErrors] = useState<Record<string, string>>({});
+  // Update #17 — nilai undefined dipakai untuk menghapus pesan error per field
+  const [dlErrors, setDlErrors] = useState<Record<string, string | undefined>>({});
   const [dlSubmitting, setDlSubmitting] = useState(false);
 
   // ── Void (Batal) dialog ──
@@ -314,8 +315,10 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
     setDlSubmitting(true);
     try {
       if (detailLineEditing && detail && detailLineId) {
+        // Update #17 — `tipe` TIDAK dikirim saat update: backend update_detail
+        // tidak mendukung perubahan tipe (hanya keterangan/jumlah/sisi/akun).
+        // Sebelumnya field ini dikirim diam-diam dan diabaikan backend.
         const payload: RekonsiliasiDetailUpdate = {
-          tipe: dlTipe,
           keterangan: dlKeterangan.trim(),
           jumlah: Number(dlJumlah),
           sisi: dlSisi,
@@ -674,7 +677,9 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
                 <Label className="text-xs font-medium">
                   Tipe <span className="text-destructive">*</span>
                 </Label>
-                <Select value={dlTipe} onValueChange={setDlTipe}>
+                {/* Update #17 — tipe dikunci saat edit (backend tidak mendukung
+                    perubahan tipe; hapus baris & buat ulang bila salah tipe). */}
+                <Select value={dlTipe} onValueChange={setDlTipe} disabled={detailLineEditing}>
                   <SelectTrigger className={cn(dlErrors.tipe && 'border-destructive')}>
                     <SelectValue />
                   </SelectTrigger>
@@ -683,6 +688,7 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
                     <SelectItem value="PENYESUAIAN">Penyesuaian</SelectItem>
                   </SelectContent>
                 </Select>
+                {detailLineEditing && <p className="text-xs text-muted-foreground">Tipe tidak dapat diubah setelah dibuat — hapus baris ini dan tambahkan ulang bila ingin mengganti tipe.</p>}
               </div>
 
               <div className="space-y-1.5">
