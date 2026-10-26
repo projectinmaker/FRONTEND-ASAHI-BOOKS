@@ -618,3 +618,107 @@ export function RincianPembayaranPDFTemplate({ data, elementId = 'pdf-content' }
     </div>
   );
 }
+
+// ═══ Baris daftar untuk laporan "Rincian Penerimaan" ═══
+// Update #16 — "Cetak Daftar Penerimaan" (paritas fitur Cetak Daftar pada
+// tab Pembayaran): laporan daftar penerimaan per periode sesuai filter aktif.
+export interface RincianPenerimaanItem {
+  noBukti: string;
+  noBuktiFisik: string;
+  tanggal: string;
+  kasBankNama: string;
+  /** Diterima dari (pemberi) atau nama pelanggan bila settlement */
+  pihak: string;
+  /** Keterangan — isi kolom catatan dokumen */
+  keterangan: string;
+  nilai: number;
+  /** true bila dokumen adalah pelunasan faktur pelanggan (Pelunasan Piutang) */
+  isSettlement: boolean;
+}
+
+export interface RincianPenerimaanData {
+  /** Filter periode aktif ('' = semua tanggal) */
+  periodeDari: string;
+  periodeSampai: string;
+  /** Nama kas/bank terpilih ('' = semua) */
+  filterKasBank: string;
+  /** Status terpilih ('' = semua) */
+  filterStatus: string;
+  /** Jenis penerimaan yang ditampilkan */
+  jenis: 'lain' | 'pelanggan' | 'semua';
+  items: RincianPenerimaanItem[];
+  total: number;
+}
+
+export function RincianPenerimaanPDFTemplate({ data, elementId = 'pdf-content' }: { data: RincianPenerimaanData; elementId?: string }) {
+  const total = data.items.reduce((s, r) => s + (Number(r.nilai) || 0), 0);
+  const judul = data.jenis === 'lain' ? 'Rincian Penerimaan Lain' : data.jenis === 'pelanggan' ? 'Rincian Pelunasan Piutang' : 'Rincian Penerimaan';
+  const periode = data.periodeDari || data.periodeSampai ? `Dari ${data.periodeDari ? formatDate(data.periodeDari) : 'awal'} s/d ${data.periodeSampai ? formatDate(data.periodeSampai) : 'sekarang'}` : 'Semua Tanggal';
+
+  return (
+    <div id={elementId} className="bg-white text-black p-8 min-w-m]" style={rootStyle}>
+      {/* ── Header ── */}
+      <div className="flex justify-between items-start mb-4">
+        <CompanyBrand />
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>{judul}</div>
+      </div>
+
+      {/* ── Info periode & filter ── */}
+      <div className="mb-4" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <InfoCell label="Periode" value={periode} />
+        <InfoCell label="Kas/Bank" value={data.filterKasBank || 'Semua Kas/Bank'} />
+        <InfoCell label="Status" value={data.filterStatus || 'Semua'} />
+      </div>
+
+      {/* ── Tabel daftar penerimaan ── */}
+      <table style={tableStyle}>
+        <thead>
+          <tr style={{ background: '#f3f4f6' }}>
+            <th style={{ ...cellStyle, width: '32px', textAlign: 'center' }}>No</th>
+            <th style={{ ...cellStyle, width: '80px', textAlign: 'center' }}>Tanggal</th>
+            <th style={{ ...cellStyle, width: '110px', textAlign: 'left' }}>No. Dokumen</th>
+            <th style={{ ...cellStyle, width: '100px', textAlign: 'left' }}>No. Bukti Fisik</th>
+            <th style={{ ...cellStyle, width: '120px', textAlign: 'left' }}>Kas/Bank</th>
+            <th style={{ ...cellStyle, width: '140px', textAlign: 'left' }}>Diterima Dari</th>
+            <th style={{ ...cellStyle, textAlign: 'left' }}>Keterangan</th>
+            <th style={{ ...cellStyle, width: '110px', textAlign: 'right' }}>Jumlah</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.items.length === 0 ? (
+            <tr>
+              <td colSpan={8} style={{ ...cellStyle, textAlign: 'center', fontStyle: 'italic', color: '#777' }}>
+                Tidak ada penerimaan pada periode/filter ini
+              </td>
+            </tr>
+          ) : (
+            data.items.map((r, i) => (
+              <tr key={i}>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
+                <td style={{ ...cellStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>{r.tanggal ? formatDate(r.tanggal) : '-'}</td>
+                <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.noBukti || '-'}</td>
+                <td style={cellStyle}>{r.noBuktiFisik || '-'}</td>
+                <td style={cellStyle}>{r.kasBankNama || '-'}</td>
+                <td style={cellStyle}>{r.pihak || '-'}</td>
+                <td style={cellStyle}>{r.keterangan || '-'}</td>
+                <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>Rp {formatNumber(Number(r.nilai) || 0)}</td>
+              </tr>
+            ))
+          )}
+          {/* Total row */}
+          <tr style={{ background: '#fafafa' }}>
+            <td colSpan={7} style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>
+              Total
+            </td>
+            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>Rp {formatNumber(total)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* ── Terbilang total ── */}
+      <div className="mt-2" style={{ fontStyle: 'italic' }}>
+        <strong>Terbilang:</strong> {terbilang(total)}
+      </div>
+    </div>
+  );
+}

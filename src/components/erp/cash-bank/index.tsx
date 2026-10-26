@@ -18,7 +18,7 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { formatRp, formatDate, generatePDF } from '@/lib/pdf-utils';
-import { TransferBankPDFTemplate, PembayaranKasPDFTemplate, PenerimaanKasPDFTemplate, RincianPembayaranPDFTemplate, type TransferBankData, type PembayaranKasData, type PenerimaanKasData, type RincianPembayaranData, type RincianPembayaranItem } from '@/components/erp/cash-bank/pdf-templates';
+import { TransferBankPDFTemplate, PembayaranKasPDFTemplate, PenerimaanKasPDFTemplate, RincianPembayaranPDFTemplate, RincianPenerimaanPDFTemplate, type TransferBankData, type PembayaranKasData, type PenerimaanKasData, type RincianPembayaranData, type RincianPembayaranItem, type RincianPenerimaanData, type RincianPenerimaanItem } from '@/components/erp/cash-bank/pdf-templates';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -1108,6 +1108,22 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
     [openFormTab]
   );
 
+  // ── Update #16 — "Cetak Daftar Penerimaan": cetak daftar sesuai filter aktif
+  //    (paritas fitur Cetak Daftar pada tab Pembayaran) ──
+  const openRincianCetakTab = useCallback(() => {
+    openFormTab({
+      title: 'Cetak Rincian Penerimaan',
+      module: 'cash-bank',
+      subPage: 'penerimaan',
+      formKey: 'penerimaan-rincian-cetak',
+      formProps: {
+        type: 'rincian-penerimaan',
+        initialJenisPenerimaan: 'lain',
+        filters: { search: debouncedSearch, status: statusFilter, kasBankId: kasBankFilter, dateFrom, dateTo }
+      }
+    });
+  }, [openFormTab, debouncedSearch, statusFilter, kasBankFilter, dateFrom, dateTo]);
+
   const wfStates = useWorkflowStates(
     'penerimaan_kas',
     data.map((d) => d.id),
@@ -1116,9 +1132,13 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <Button size="sm" className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={openCreateTab}>
           <Plus className="h-4 w-4" /> Tambah Penerimaan
+        </Button>
+        {/* Update #16 — "Cetak Daftar Penerimaan" sesuai filter aktif */}
+        <Button size="sm" variant="outline" className="gap-2" onClick={openRincianCetakTab}>
+          <Printer className="h-4 w-4" /> Cetak Daftar
         </Button>
       </div>
 
@@ -1147,9 +1167,11 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
 // Update cetak "Pembayaran Lain": tambah mode 'rincian-pembayaran' — laporan
 // daftar pembayaran per periode (mengacu contoh klien "Rincian Data
 // Pembayaran Lain", tanpa meniru tata letaknya).
-type CetakType = 'pembayaran' | 'penerimaan' | 'transfer' | 'rincian-pembayaran';
+// Update #16 — tambah mode 'rincian-penerimaan': "Cetak Daftar Penerimaan"
+// (paritas fitur Cetak Daftar pada tab Pembayaran).
+type CetakType = 'pembayaran' | 'penerimaan' | 'transfer' | 'rincian-pembayaran' | 'rincian-penerimaan';
 
-/** Filter aktif tab Pembayaran yang dibawa ke tab "Cetak Rincian Pembayaran". */
+/** Filter aktif tab Pembayaran/Penerimaan yang dibawa ke tab "Cetak Rincian". */
 interface RincianPembayaranFilters {
   search: string;
   status: string;
@@ -1158,11 +1180,16 @@ interface RincianPembayaranFilters {
   dateTo: string;
 }
 
+/** Filter tab Penerimaan — bentuknya identik dengan filter Pembayaran. */
+type RincianPenerimaanFilters = RincianPembayaranFilters;
+
 type RincianJenis = 'lain' | 'pemasok' | 'semua';
+// Update #16 — jenis laporan Rincian Penerimaan (mirror RincianJenis pembayaran)
+type RincianPenerimaanJenis = 'lain' | 'pelanggan' | 'semua';
 
 const STATUS_LABELS: Record<string, string> = { DRAFT: 'Draft', DIPROSES: 'Diproses', SELESAI: 'Selesai', BATAL: 'Batal' };
 
-function CetakTab({ type, id, filters, initialJenis }: { type: CetakType; id?: string; filters?: RincianPembayaranFilters; initialJenis?: RincianJenis }) {
+function CetakTab({ type, id, filters, initialJenis, initialJenisPenerimaan }: { type: CetakType; id?: string; filters?: RincianPembayaranFilters; initialJenis?: RincianJenis; initialJenisPenerimaan?: RincianPenerimaanJenis }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -1180,6 +1207,9 @@ function CetakTab({ type, id, filters, initialJenis }: { type: CetakType; id?: s
   const [allPembayaran, setAllPembayaran] = useState<PembayaranKasResponse[] | null>(null);
   const [filterKasBankNama, setFilterKasBankNama] = useState('');
   const [jenis, setJenis] = useState<RincianJenis>(initialJenis || 'lain');
+  // Update #16 — "Cetak Daftar Penerimaan": seluruh penerimaan sesuai filter + jenis
+  const [allPenerimaan, setAllPenerimaan] = useState<PenerimaanKasResponse[] | null>(null);
+  const [jenisPenerimaan, setJenisPenerimaan] = useState<RincianPenerimaanJenis>(initialJenisPenerimaan || 'lain');
 
   // Unique element id for the PDF template (so multiple cetak tabs don't collide)
   const pdfElementId = useMemo(() => `pdf-content-${type}-${id || 'daftar'}`, [type, id]);
@@ -1221,6 +1251,39 @@ function CetakTab({ type, id, filters, initialJenis }: { type: CetakType; id?: s
         }
         setAllPembayaran(all);
         // Resolve nama kas/bank terpilih untuk baris info laporan
+        if (f.kasBankId) {
+          try {
+            const kb = await api.get<KasBankAkunResponse[]>('/master/kas-bank-dropdown');
+            const found = kb.find((k) => k.id === f.kasBankId);
+            setFilterKasBankNama(found?.akunPerkiraan?.nama || found?.nama || '');
+          } catch {
+            setFilterKasBankNama('');
+          }
+        } else {
+          setFilterKasBankNama('');
+        }
+      } else if (type === 'rincian-penerimaan') {
+        // Update #16 — "Cetak Daftar Penerimaan": ambil SEMUA halaman sesuai
+        // filter aktif tab Penerimaan (mirror alur rincian-pembayaran).
+        const f: RincianPenerimaanFilters = filters || { search: '', status: '', kasBankId: '', dateFrom: '', dateTo: '' };
+        const all: PenerimaanKasResponse[] = [];
+        let skip = 0;
+        const limit = 200; // backend max 500; guard 50 halaman (=10.000 baris)
+        for (let page = 0; page < 50; page++) {
+          const params = new URLSearchParams();
+          params.set('skip', String(skip));
+          params.set('limit', String(limit));
+          if (f.search) params.set('search', f.search);
+          if (f.status && f.status !== 'ALL') params.set('status', f.status);
+          if (f.kasBankId) params.set('kas_bank_id', f.kasBankId);
+          if (f.dateFrom) params.set('tanggal_from', f.dateFrom);
+          if (f.dateTo) params.set('tanggal_to', f.dateTo);
+          const res = await api.get<PaginatedResponse<PenerimaanKasResponse>>(`/kas-bank/penerimaan?${params.toString()}`);
+          all.push(...res.data);
+          if (all.length >= res.total || res.data.length === 0) break;
+          skip += limit;
+        }
+        setAllPenerimaan(all);
         if (f.kasBankId) {
           try {
             const kb = await api.get<KasBankAkunResponse[]>('/master/kas-bank-dropdown');
@@ -1305,9 +1368,9 @@ function CetakTab({ type, id, filters, initialJenis }: { type: CetakType; id?: s
 
   // Update cetak "Pembayaran Lain": judul & nama file voucher dinamis sesuai
   // jenis dokumen (settlement = Bayar Pemasok, non-settlement = Pembayaran Lain).
-  const title = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Cetak Bayar Pemasok' : 'Cetak Pembayaran Lain') : type === 'rincian-pembayaran' ? 'Cetak Rincian Pembayaran' : type === 'penerimaan' ? 'Cetak Bukti Penerimaan Kas' : 'Cetak Bukti Transfer Bank';
+  const title = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Cetak Bayar Pemasok' : 'Cetak Pembayaran Lain') : type === 'rincian-pembayaran' ? 'Cetak Rincian Pembayaran' : type === 'rincian-penerimaan' ? 'Cetak Rincian Penerimaan' : type === 'penerimaan' ? 'Cetak Bukti Penerimaan Kas' : 'Cetak Bukti Transfer Bank';
 
-  const filename = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Bayar-Pemasok.pdf' : 'Pembayaran-Lain.pdf') : type === 'rincian-pembayaran' ? (jenis === 'lain' ? 'Rincian-Pembayaran-Lain.pdf' : jenis === 'pemasok' ? 'Rincian-Bayar-Pemasok.pdf' : 'Rincian-Pembayaran.pdf') : type === 'penerimaan' ? 'Bukti-Penerimaan-Kas.pdf' : 'Bukti-Transfer-Bank.pdf';
+  const filename = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Bayar-Pemasok.pdf' : 'Pembayaran-Lain.pdf') : type === 'rincian-pembayaran' ? (jenis === 'lain' ? 'Rincian-Pembayaran-Lain.pdf' : jenis === 'pemasok' ? 'Rincian-Bayar-Pemasok.pdf' : 'Rincian-Pembayaran.pdf') : type === 'rincian-penerimaan' ? (jenisPenerimaan === 'lain' ? 'Rincian-Penerimaan-Lain.pdf' : jenisPenerimaan === 'pelanggan' ? 'Rincian-Pelunasan-Piutang.pdf' : 'Rincian-Penerimaan.pdf') : type === 'penerimaan' ? 'Bukti-Penerimaan-Kas.pdf' : 'Bukti-Transfer-Bank.pdf';
 
   // Update cetak "Rincian Pembayaran": turunkan data laporan dari seluruh
   // pembayaran + pilihan jenis (filter client-side — tidak perlu refetch).
@@ -1337,6 +1400,35 @@ function CetakTab({ type, id, filters, initialJenis }: { type: CetakType; id?: s
       total: items.reduce((s, r) => s + r.nilai, 0)
     };
   }, [type, allPembayaran, jenis, filters, filterKasBankNama]);
+
+  // Update #16 — turunkan data laporan "Rincian Penerimaan" dari seluruh
+  // penerimaan + pilihan jenis (filter client-side — tidak perlu refetch).
+  const rincianPenerimaanData = useMemo<RincianPenerimaanData | null>(() => {
+    if (type !== 'rincian-penerimaan' || !allPenerimaan) return null;
+    const items: RincianPenerimaanItem[] = allPenerimaan
+      .filter((r) => (jenisPenerimaan === 'semua' ? true : jenisPenerimaan === 'lain' ? !((r.alokasi?.length ?? 0) > 0) : (r.alokasi?.length ?? 0) > 0))
+      .slice()
+      .sort((a, b) => (a.tanggal === b.tanggal ? (a.noBukti || '').localeCompare(b.noBukti || '') : a.tanggal < b.tanggal ? -1 : 1))
+      .map((r) => ({
+        noBukti: r.noBukti || '-',
+        noBuktiFisik: r.noNukti || '',
+        tanggal: r.tanggal || '',
+        kasBankNama: r.kasBank?.akunPerkiraan?.nama || r.kasBank?.nama || '-',
+        pihak: r.pelanggan?.nama || r.pemberi || '-',
+        keterangan: r.catatan || '',
+        nilai: Number(r.totalNilai) || 0,
+        isSettlement: (r.alokasi?.length ?? 0) > 0
+      }));
+    return {
+      periodeDari: filters?.dateFrom || '',
+      periodeSampai: filters?.dateTo || '',
+      filterKasBank: filterKasBankNama,
+      filterStatus: filters?.status && filters.status !== 'ALL' ? STATUS_LABELS[filters.status] || filters.status : '',
+      jenis: jenisPenerimaan,
+      items,
+      total: items.reduce((s, r) => s + r.nilai, 0)
+    };
+  }, [type, allPenerimaan, jenisPenerimaan, filters, filterKasBankNama]);
 
   const handleDownload = useCallback(async () => {
     setDownloading(true);
@@ -1383,6 +1475,23 @@ function CetakTab({ type, id, filters, initialJenis }: { type: CetakType; id?: s
                 </Select>
               </div>
             )}
+            {/* Update #16 — pilih jenis penerimaan yang ditampilkan pada
+                laporan "Cetak Daftar Penerimaan". */}
+            {type === 'rincian-penerimaan' && (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Jenis</Label>
+                <Select value={jenisPenerimaan} onValueChange={(v) => setJenisPenerimaan(v as RincianPenerimaanJenis)}>
+                  <SelectTrigger className="h-8 w-[210px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lain">Penerimaan Lain (non-pelanggan)</SelectItem>
+                    <SelectItem value="pelanggan">Pelunasan Piutang</SelectItem>
+                    <SelectItem value="semua">Semua Penerimaan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
               {downloading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}
               Download PDF
@@ -1398,6 +1507,7 @@ function CetakTab({ type, id, filters, initialJenis }: { type: CetakType; id?: s
             {type === 'pembayaran' && pembayaranData && <PembayaranKasPDFTemplate data={pembayaranData} elementId={pdfElementId} />}
             {type === 'penerimaan' && penerimaanData && <PenerimaanKasPDFTemplate data={penerimaanData} elementId={pdfElementId} />}
             {type === 'rincian-pembayaran' && rincianData && <RincianPembayaranPDFTemplate data={rincianData} elementId={pdfElementId} />}
+            {type === 'rincian-penerimaan' && rincianPenerimaanData && <RincianPenerimaanPDFTemplate data={rincianPenerimaanData} elementId={pdfElementId} />}
           </div>
         </div>
       )}
@@ -1424,10 +1534,12 @@ export default function CashBankModule(props: CashBankModuleProps) {
     // Derive type from formMode if not provided
     const type: CetakType = typeRaw || (formMode.startsWith('transfer') ? 'transfer' : formMode.startsWith('pembayaran') ? 'pembayaran' : 'penerimaan');
     // Update cetak "Rincian Pembayaran": laporan daftar tidak punya id dokumen
-    if (id || type === 'rincian-pembayaran') {
+    // Update #16 — begitu juga laporan daftar penerimaan.
+    if (id || type === 'rincian-pembayaran' || type === 'rincian-penerimaan') {
       const filters = formProps?.filters as RincianPembayaranFilters | undefined;
       const initialJenis = formProps?.initialJenis as RincianJenis | undefined;
-      return <CetakTab type={type} id={id} filters={filters} initialJenis={initialJenis} />;
+      const initialJenisPenerimaan = formProps?.initialJenisPenerimaan as RincianPenerimaanJenis | undefined;
+      return <CetakTab type={type} id={id} filters={filters} initialJenis={initialJenis} initialJenisPenerimaan={initialJenisPenerimaan} />;
     }
   }
 

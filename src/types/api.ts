@@ -1205,9 +1205,17 @@ export interface BarangAkunPilihanResponse {
 
 // ── Kas & Bank ───────────────────────────────────────────────────────
 
+// === Update #16 — preview nomor dokumen berikutnya (form ala Accurate) ===
+export interface NomorPreviewResponse {
+  nomor: string;
+}
+
 export interface PembayaranRincianCreate {
   akunPerkiraanId: string;
   nilai: number;
+  // === Update #16 — keterangan per baris rincian (kolom Catatan grid
+  // detail, paritas Accurate "Pembayaran Lain") ===
+  keterangan?: string | null;
 }
 
 export interface PembayaranRincianResponse extends PembayaranRincianCreate {
@@ -1218,8 +1226,13 @@ export interface PembayaranRincianResponse extends PembayaranRincianCreate {
 export interface PembayaranKasCreate {
   tanggal: string;
   kasBankId: string;
-  noNukti: string;
+  // === Update #16 — noNukti kini opsional (form ala Accurate tanpa field
+  // No Bukti); kosong → backend auto-isi = nomor dokumen ===
+  noNukti?: string | null;
   noCek?: string | null;
+  // === Update #16 — "Cek Kosong" (paritas Accurate): True = via cek kosong,
+  // No. Cek boleh kosong ===
+  cekKosong?: boolean;
   // === Update cetak "Bayar Pemasok" — info cek & mata uang ===
   tanggalCek?: string | null;
   jumlahCek?: number | string | null;
@@ -1270,6 +1283,8 @@ export interface PembayaranKasResponse {
   kasBankId: string;
   noNukti: string;
   noCek: string | null;
+  // === Update #16 — "Cek Kosong" (paritas Accurate) ===
+  cekKosong?: boolean;
   // === Update cetak "Bayar Pemasok" — info cek & mata uang ===
   tanggalCek: string | null;
   jumlahCek: number | string | null;
@@ -1303,6 +1318,9 @@ export interface PembayaranKasResponse {
 export interface PenerimaanRincianCreate {
   akunPerkiraanId: string;
   nilai: number;
+  // === Update #16 — keterangan per baris rincian (kolom Catatan grid
+  // detail, paritas Accurate "Penerimaan Lain") ===
+  keterangan?: string | null;
 }
 
 export interface PenerimaanRincianResponse extends PenerimaanRincianCreate {
@@ -1313,7 +1331,9 @@ export interface PenerimaanRincianResponse extends PenerimaanRincianCreate {
 export interface PenerimaanKasCreate {
   tanggal: string;
   kasBankId: string;
-  noNukti: string;
+  // === Update #16 — noNukti kini opsional (form ala Accurate tanpa field
+  // No Bukti); kosong → backend auto-isi = nomor dokumen ===
+  noNukti?: string | null;
   noCek?: string | null;
   pemberi?: string | null;
   catatan?: string | null;
@@ -1346,6 +1366,9 @@ export interface PenerimaanKasResponse {
   akunPenaltiId?: string | null;
   // === Phase 1.B — field tambahan dari backend ===
   pelangganId?: string | null;
+  // === Update #16 — relasi pelanggan (paritas supplier di PembayaranKasResponse;
+  // dipakai laporan "Cetak Daftar Penerimaan" untuk baris settlement piutang) ===
+  pelanggan?: { id: string; nama: string; alamat?: string | null } | null;
   alokasi?: PaymentAllocationItem[];
   jurnal?: { id: string; noJurnal: string } | null;
   // === Update #02 — jenis transaksi ===
@@ -1399,6 +1422,8 @@ export interface PembayaranKasUpdate {
   kasBankId?: string;
   noNukti?: string;
   noCek?: string | null;
+  // === Update #16 — "Cek Kosong" (paritas Accurate; editable) ===
+  cekKosong?: boolean | null;
   // === Update cetak "Bayar Pemasok" — info cek & mata uang (editable) ===
   tanggalCek?: string | null;
   jumlahCek?: number | string | null;

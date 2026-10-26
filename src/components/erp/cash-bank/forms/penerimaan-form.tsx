@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { formatRp, todayStr } from '@/lib/pdf-utils';
+import { formatRp, todayStr, terbilang } from '@/lib/pdf-utils';
 import { api, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
@@ -23,11 +23,11 @@ import { useAuthStore } from '@/store/auth-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
-import { TrendingUp, Loader2, Trash2, Check, ChevronDown, Search, Info, ListRestart } from 'lucide-react';
+import { TrendingUp, Loader2, Trash2, Check, ChevronDown, Search, Info, ListRestart, FileText } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { JenisTransaksiSelector, JenisTransaksiBadge } from '@/components/erp/cash-bank/forms/jenis-transaksi-selector';
 import { EmbeddedSettlementForm } from '@/components/erp/pelunasan';
-import type { KasBankAkunResponse, COADropdownResponse, PenerimaanKasResponse, PenerimaanKasCreate, PenerimaanKasUpdate, JenisTransaksiKas } from '@/types/api';
+import type { KasBankAkunResponse, COADropdownResponse, PenerimaanKasResponse, PenerimaanKasCreate, PenerimaanKasUpdate, JenisTransaksiKas, NomorPreviewResponse } from '@/types/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,9 @@ interface RincianRow {
   akunKode: string;
   akunNama: string;
   nilai: string;
+  // === Update #16 — keterangan per baris (kolom Catatan grid detail,
+  // paritas Accurate "Penerimaan lain") ===
+  keterangan: string;
 }
 
 // ─── Status Badge ────────────────────────────────────────────────────────
@@ -69,6 +72,12 @@ function Req({ label }: { label: string }) {
 function FieldError({ msg }: { msg?: string }) {
   if (!msg) return null;
   return <p className="text-xs text-destructive mt-1">{msg}</p>;
+}
+
+// === Update #16 — saldo bisa string (Decimal backend) atau number ===
+function numSaldo(v: number | string | null | undefined): number {
+  const n = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
+  return isNaN(n) ? 0 : n;
 }
 
 // ─── KasBank Searchable Dropdown ──────────────────────────────────────────
@@ -183,7 +192,7 @@ function CoaSearch({ onSelect, disabledIds = [], options, loading }: { onSelect:
 
 // ─── Rincian Section ──────────────────────────────────────────────────────
 
-function RincianSection({ label, rows, onAddRow, onRemoveRow, onUpdateNilai, error, coaOptions, coaLoading }: { label: string; rows: RincianRow[]; onAddRow: (id: string, kode: string, nama: string) => void; onRemoveRow: (id: number) => void; onUpdateNilai: (id: number, val: string) => void; error?: string; coaOptions: COADropdownResponse[]; coaLoading?: boolean }) {
+function RincianSection({ label, rows, onAddRow, onRemoveRow, onUpdateNilai, onUpdateKeterangan, error, coaOptions, coaLoading }: { label: string; rows: RincianRow[]; onAddRow: (id: string, kode: string, nama: string) => void; onRemoveRow: (id: number) => void; onUpdateNilai: (id: number, val: string) => void; onUpdateKeterangan: (id: number, val: string) => void; error?: string; coaOptions: COADropdownResponse[]; coaLoading?: boolean }) {
   const totalNilai = useMemo(() => rows.reduce((sum, r) => sum + (parseInt(r.nilai.replace(/\D/g, ''), 10) || 0), 0), [rows]);
   const disabledIds = useMemo(() => rows.map((r) => r.akunPerkiraanId), [rows]);
 
@@ -200,14 +209,16 @@ function RincianSection({ label, rows, onAddRow, onRemoveRow, onUpdateNilai, err
               <TableHead className="whitespace-nowrap w-12 text-center">No</TableHead>
               <TableHead className="whitespace-nowrap">Akun</TableHead>
               <TableHead className="whitespace-nowrap">Nama Akun</TableHead>
-              <TableHead className="whitespace-nowrap text-right w-48">Nilai</TableHead>
+              <TableHead className="whitespace-nowrap text-right w-44">Jumlah</TableHead>
+              {/* === Update #16 — kolom Catatan per baris (paritas Accurate) === */}
+              <TableHead className="whitespace-nowrap w-56">Keterangan</TableHead>
               <TableHead className="w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center text-muted-foreground text-sm">
+                <TableCell colSpan={6} className="h-24 text-center text-muted-foreground text-sm">
                   Belum ada data
                 </TableCell>
               </TableRow>
@@ -219,6 +230,9 @@ function RincianSection({ label, rows, onAddRow, onRemoveRow, onUpdateNilai, err
                   <TableCell className="text-sm whitespace-nowrap">{row.akunNama}</TableCell>
                   <TableCell className="text-right">
                     <CurrencyInput placeholder="0" value={row.nilai} onValueChange={(v) => onUpdateNilai(row.id, v)} className="text-right font-mono h-8 text-sm" />
+                  </TableCell>
+                  <TableCell>
+                    <Input value={row.keterangan} onChange={(e) => onUpdateKeterangan(row.id, e.target.value)} placeholder="Catatan baris (opsional)" className="h-8 text-sm" maxLength={255} />
                   </TableCell>
                   <TableCell className="p-1">
                     <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => onRemoveRow(row.id)}>
@@ -232,10 +246,14 @@ function RincianSection({ label, rows, onAddRow, onRemoveRow, onUpdateNilai, err
         </Table>
       </div>
 
+      {/* === Update #16 — Jumlah + Terbilang live (paritas Accurate) === */}
       <div className="flex justify-end">
-        <div className="text-sm">
-          <span className="text-muted-foreground">Nilai (total): </span>
-          <span className="font-mono font-semibold">{formatRp(totalNilai)}</span>
+        <div className="w-full max-w-md space-y-1 rounded-md bg-muted/40 px-3 py-2 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Jumlah: </span>
+            <span className="font-mono font-semibold">{formatRp(totalNilai)}</span>
+          </div>
+          <div className="text-xs italic text-muted-foreground">Terbilang: {terbilang(totalNilai)}</div>
         </div>
       </div>
 
@@ -257,7 +275,7 @@ interface Props {
 interface PenerimaanDraftData {
   kasBankId: string;
   tanggal: string;
-  noNukti: string;
+  // Update #16 — noNukti keluar dari form/draft (ala Accurate; auto-isi backend)
   noCek: string;
   pemberi: string;
   catatan: string;
@@ -273,7 +291,8 @@ export default function PenerimaanForm({ mode, id }: Props) {
 
   const isEdit = !!id || mode === 'edit';
   const isCreate = !isEdit;
-  const title = isEdit ? 'Edit Penerimaan' : 'Tambah Penerimaan';
+  // Update #16 — judul ala Accurate Desktop ("Penerimaan lain")
+  const title = isEdit ? 'Edit Penerimaan' : 'Penerimaan Lain';
 
   // ── Draft otomatis (mode create saja; form edit memuat data server) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -290,12 +309,17 @@ export default function PenerimaanForm({ mode, id }: Props) {
   const [loading, setLoading] = useState(isEdit);
   const [kasBankId, setKasBankId] = useState('');
   const [tanggal, setTanggal] = useState(todayStr());
-  const [noNukti, setNoNukti] = useState('');
   const [rincianRows, setRincianRows] = useState<RincianRow[]>([]);
   const [noCek, setNoCek] = useState('');
   const [pemberi, setPemberi] = useState('');
   const [catatan, setCatatan] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // === Update #16 — preview nomor dokumen berikutnya (form ala Accurate;
+  // PB ASI/YYYY/NNN untuk Penerimaan Lain) ===
+  const [nomorPreview, setNomorPreview] = useState('');
+  const [nomorPreviewLoading, setNomorPreviewLoading] = useState(false);
+  // Kelebihan ASAHI: saldo kas/bank terpilih tampil langsung di form
+  const selectedKasBank = useMemo(() => kasBankOptions.find((o) => o.id === kasBankId) ?? null, [kasBankOptions, kasBankId]);
 
   // === Update #02 — jenis transaksi ===
   const [jenisTransaksi, setJenisTransaksi] = useState<JenisTransaksiKas>('TRANSAKSI_LAINNYA');
@@ -324,7 +348,6 @@ export default function PenerimaanForm({ mode, id }: Props) {
     if (!d) return;
     setKasBankId(d.kasBankId || '');
     setTanggal(d.tanggal || todayStr());
-    setNoNukti(d.noNukti || '');
     setNoCek(d.noCek || '');
     setPemberi(d.pemberi || '');
     setCatatan(d.catatan || '');
@@ -346,9 +369,9 @@ export default function PenerimaanForm({ mode, id }: Props) {
       return;
     }
     if (isCreate) {
-      draft.saveDraft({ kasBankId, tanggal, noNukti, noCek, pemberi, catatan, rincianRows, jenisTransaksi });
+      draft.saveDraft({ kasBankId, tanggal, noCek, pemberi, catatan, rincianRows, jenisTransaksi });
     }
-  }, [kasBankId, tanggal, noNukti, noCek, pemberi, catatan, rincianRows, jenisTransaksi]);
+  }, [kasBankId, tanggal, noCek, pemberi, catatan, rincianRows, jenisTransaksi]);
 
   // ── Draft otomatis: buang draft → kosongkan form ──
   const handleDiscardDraft = useCallback(() => {
@@ -356,7 +379,6 @@ export default function PenerimaanForm({ mode, id }: Props) {
     draft.clearDraft();
     setKasBankId('');
     setTanggal(todayStr());
-    setNoNukti('');
     setNoCek('');
     setPemberi('');
     setCatatan('');
@@ -383,6 +405,29 @@ export default function PenerimaanForm({ mode, id }: Props) {
     fetchDropdowns();
   }, [fetchDropdowns]);
 
+  // === Update #16 — preview nomor dokumen berikutnya (form ala Accurate).
+  // PB ASI/YYYY/NNN untuk Penerimaan Lain; di-refetch saat tahun tanggal
+  // berubah. Indikatif — nomor final di-generate backend saat create. ===
+  useEffect(() => {
+    if (isEdit) return;
+    let cancelled = false;
+    setNomorPreviewLoading(true);
+    api
+      .get<NomorPreviewResponse>(`/kas-bank/penerimaan/next-nomor?jenis=TRANSAKSI_LAINNYA&tanggal=${tanggal}`)
+      .then((res) => {
+        if (!cancelled) setNomorPreview(res.nomor);
+      })
+      .catch(() => {
+        if (!cancelled) setNomorPreview('');
+      })
+      .finally(() => {
+        if (!cancelled) setNomorPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit, tanggal]);
+
   // ── Fetch edit data ──
   useEffect(() => {
     if (!id) return;
@@ -394,7 +439,6 @@ export default function PenerimaanForm({ mode, id }: Props) {
         if (cancelled) return;
         setTanggal(res.tanggal);
         setKasBankId(res.kasBankId);
-        setNoNukti(res.noNukti);
         setNoCek(res.noCek || '');
         setPemberi(res.pemberi || '');
         setCatatan(res.catatan || '');
@@ -417,7 +461,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
   const addRincianRow = useCallback((akunId: string, kode: string, nama: string) => {
     setRincianRows((prev) => {
       if (prev.some((r) => r.akunPerkiraanId === akunId)) return prev;
-      return [...prev, { id: Date.now(), akunPerkiraanId: akunId, akunKode: kode, akunNama: nama, nilai: '' }];
+      return [...prev, { id: Date.now(), akunPerkiraanId: akunId, akunKode: kode, akunNama: nama, nilai: '', keterangan: '' }];
     });
   }, []);
 
@@ -429,12 +473,18 @@ export default function PenerimaanForm({ mode, id }: Props) {
     setRincianRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, nilai: val } : r)));
   }, []);
 
+  // === Update #16 — keterangan per baris rincian ===
+  const updateKeterangan = useCallback((rowId: number, val: string) => {
+    setRincianRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, keterangan: val } : r)));
+  }, []);
+
   // ── Validation ──
   const validate = useCallback((): boolean => {
     const e: Record<string, string> = {};
     if (!isEdit && !kasBankId) e.kasBank = 'Kas/Bank wajib dipilih';
     if (!tanggal) e.tanggal = 'Tanggal wajib diisi';
-    if (!noNukti.trim()) e.noNukti = 'No Bukti wajib diisi';
+    // Update #16 — validasi No Bukti dihapus (field tidak ada lagi ala Accurate;
+    // backend auto-isi = nomor dokumen)
     if (!isEdit) {
       // Update #02 — validasi rincian Transaksi Lainnya
       if (rincianRows.length === 0) e.rincian = 'Rincian penerimaan wajib diisi';
@@ -443,7 +493,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     }
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [isEdit, kasBankId, tanggal, noNukti, rincianRows]);
+  }, [isEdit, kasBankId, tanggal, rincianRows]);
 
   // ── Submit ──
   const handleSubmit = useCallback(async () => {
@@ -454,7 +504,6 @@ export default function PenerimaanForm({ mode, id }: Props) {
         const payload: PenerimaanKasUpdate = {
           tanggal,
           kasBankId: kasBankId || undefined,
-          noNukti: noNukti.trim(),
           noCek: noCek.trim() || null,
           pemberi: pemberi.trim() || null,
           catatan: catatan.trim() || null
@@ -466,18 +515,19 @@ export default function PenerimaanForm({ mode, id }: Props) {
         const payload: PenerimaanKasCreate = {
           tanggal,
           kasBankId,
-          noNukti: noNukti.trim(),
+          // Update #16 — tanpa noNukti (ala Accurate); backend auto-isi = nomor dokumen
           noCek: noCek.trim() || undefined,
           pemberi: pemberi.trim() || undefined,
           catatan: catatan.trim() || undefined,
           rincian: rincianRows.map((r) => ({
             akunPerkiraanId: r.akunPerkiraanId,
-            nilai: parseInt(r.nilai.replace(/\D/g, ''), 10) || 0
+            nilai: parseInt(r.nilai.replace(/\D/g, ''), 10) || 0,
+            keterangan: r.keterangan.trim() || undefined // Update #16 — catatan per baris
           })),
           jenisTransaksi: 'TRANSAKSI_LAINNYA'
         };
         await api.post<PenerimaanKasResponse>('/kas-bank/penerimaan', payload);
-        toast.success('Penerimaan berhasil dicatat');
+        toast.success(`Penerimaan berhasil dicatat${nomorPreview ? ` — nomor berikutnya: ${nomorPreview}` : ''}`);
       }
       if (isCreate) draft.clearDraft();
       refreshListTab('cash-bank', 'penerimaan');
@@ -491,7 +541,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     } finally {
       setSubmitting(false);
     }
-  }, [validate, isEdit, id, tanggal, kasBankId, noNukti, noCek, pemberi, catatan, rincianRows, activeTabId, closeTab, refreshListTab]);
+  }, [validate, isEdit, id, tanggal, kasBankId, noCek, pemberi, catatan, rincianRows, activeTabId, closeTab, refreshListTab, nomorPreview]);
 
   // ── Close tab ──
   const handleClose = useCallback(() => {
@@ -606,11 +656,18 @@ export default function PenerimaanForm({ mode, id }: Props) {
               </div>
             )}
 
-            {/* Row 1: Kas/Bank + Tanggal */}
+            {/* === Update #16 — header ala Accurate "Penerimaan lain":
+                Disimpan ke (+ saldo) · Tanggal · No. Dokumen (preview otomatis) === */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Req label="Kas/Bank" />
+                <Req label="Disimpan ke" />
                 <KasBankSearch value={kasBankId} onValueChange={setKasBankId} error={errors.kasBank} options={kasBankOptions} loading={dropdownLoading} />
+                {/* Kelebihan ASAHI: saldo kas/bank terpilih tampil langsung */}
+                {selectedKasBank && (
+                  <p className="text-xs text-muted-foreground">
+                    Saldo: <span className={`font-mono font-semibold ${numSaldo(selectedKasBank.saldo) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRp(numSaldo(selectedKasBank.saldo))}</span>
+                  </p>
+                )}
                 <FieldError msg={errors.kasBank} />
               </div>
               <div className="space-y-1.5">
@@ -620,19 +677,25 @@ export default function PenerimaanForm({ mode, id }: Props) {
               </div>
             </div>
 
-            {/* Row 2: No Bukti (nomor bukti fisik, bukan nomor dokumen sistem) */}
-            <div className="space-y-1.5">
-              <Req label="No Bukti" />
-              <Input value={noNukti} onChange={(e) => setNoNukti(e.target.value)} placeholder="Masukkan no bukti" className={errors.noNukti ? 'border-destructive' : ''} />
-              <FieldError msg={errors.noNukti} />
-            </div>
+            {/* Update #16 — No. Dokumen otomatis (preview PB ASI/YYYY/NNN, ala
+                Accurate "No. Voucher"; nomor final di-generate backend saat simpan) */}
+            {!isEdit && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">No. Dokumen</Label>
+                <div className="relative">
+                  <Input readOnly value={nomorPreviewLoading ? 'Memuat nomor…' : nomorPreview || 'Otomatis saat disimpan'} className="font-mono bg-muted/50 pr-9" />
+                  <FileText className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </div>
+                <p className="text-[11px] text-muted-foreground">Nomor voucher otomatis — terbit saat transaksi disimpan.</p>
+              </div>
+            )}
 
             <Separator />
 
             {/* Rincian Penerimaan (create mode only) */}
             {!isEdit && (
               <>
-                <RincianSection label="Rincian Penerimaan" rows={rincianRows} onAddRow={addRincianRow} onRemoveRow={removeRincianRow} onUpdateNilai={updateNilai} error={errors.rincian} coaOptions={coaOptions} coaLoading={dropdownLoading} />
+                <RincianSection label="Rincian Penerimaan" rows={rincianRows} onAddRow={addRincianRow} onRemoveRow={removeRincianRow} onUpdateNilai={updateNilai} onUpdateKeterangan={updateKeterangan} error={errors.rincian} coaOptions={coaOptions} coaLoading={dropdownLoading} />
                 <Separator />
               </>
             )}
