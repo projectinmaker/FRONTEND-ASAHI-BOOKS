@@ -2,19 +2,18 @@
 
 /**
  * Update #02 — Pemilih Jenis Transaksi untuk form Penerimaan & Pembayaran
- * (modul Kas & Bank). Tiga pilihan (koreksi miskom catatan-update-01):
+ * (modul Kas & Bank). Dua pilihan (Update #14 — 'Belum Teridentifikasi'
+ * dihapus bersama fitur Identifikasi & Alokasi):
  *
  * 1. PELUNASAN_INVOICE — Pelunasan Piutang di Penerimaan (pilih pelanggan →
  *    invoice penjualan outstanding → nominal → posting) / Pelunasan Hutang
  *    di Pembayaran (pilih supplier → invoice pembelian outstanding).
  * 2. TRANSAKSI_LAINNYA — penerimaan modal, pendapatan lain, biaya operasional,
  *    transaksi non-invoice; akun lawan dipilih dari COA (rincian).
- * 3. BELUM_TERIDENTIFIKASI — mutasi bank yang pihak/asalnya belum diketahui;
- *    posting ke akun penampung sementara, lalu Identifikasi & Alokasi.
  */
 
 import { cn } from '@/lib/utils';
-import { HandCoins, ReceiptText, HelpCircle } from 'lucide-react';
+import { HandCoins, ReceiptText } from 'lucide-react';
 import type { JenisTransaksiKas } from '@/types/api';
 
 interface Option {
@@ -38,12 +37,6 @@ export function jenisTransaksiOptions(jenisDokumen: 'penerimaan' | 'pembayaran')
       title: 'Transaksi Lainnya',
       description: isPenerimaan ? 'Penerimaan modal, pendapatan lain, dan transaksi non-invoice — akun lawan dipilih dari COA' : 'Biaya operasional, pembelian tunai, dan transaksi non-invoice — akun lawan dipilih dari COA',
       icon: ReceiptText
-    },
-    {
-      value: 'BELUM_TERIDENTIFIKASI',
-      title: 'Belum Teridentifikasi',
-      description: 'Mutasi bank yang pelanggan/supplier atau transaksi asalnya belum diketahui — diposting ke akun penampung, lalu Identifikasi & Alokasi',
-      icon: HelpCircle
     }
   ];
 }
@@ -58,7 +51,7 @@ interface Props {
 export function JenisTransaksiSelector({ value, onValueChange, jenisDokumen, disabled }: Props) {
   const options = jenisTransaksiOptions(jenisDokumen);
   return (
-    <div role="radiogroup" aria-label="Jenis Transaksi" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <div role="radiogroup" aria-label="Jenis Transaksi" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {options.map((opt) => {
         const active = value === opt.value;
         const Icon = opt.icon;
@@ -86,8 +79,6 @@ export function JenisTransaksiBadge({ jenis }: { jenis: string }) {
   switch (jenis) {
     case 'PELUNASAN_INVOICE':
       return <Badge className="border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-100">Pelunasan Invoice</Badge>;
-    case 'BELUM_TERIDENTIFIKASI':
-      return <Badge className="border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100">Belum Teridentifikasi</Badge>;
     default:
       return <Badge variant="secondary">Transaksi Lainnya</Badge>;
   }

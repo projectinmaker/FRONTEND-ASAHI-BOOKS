@@ -49,6 +49,8 @@ const subPageLabels: Record<string, string> = {
   penerimaan: 'Penerimaan',
   'transfer-bank': 'Transfer Bank',
   'rekonsiliasi-bank': 'Rekonsiliasi Bank',
+  // Update #14 — fitur Belum Teridentifikasi dihapus; label dipertahankan
+  // untuk tab tersimpan versi lama (di-remap ke Penerimaan di bawah).
   'belum-teridentifikasi': 'Belum Teridentifikasi',
   // Penjualan / Pembelian
   penawaran: 'Penawaran',
@@ -126,6 +128,11 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
   }
   if (activeModule === 'cash-bank' && (subPage === 'pelunasan-piutang' || subPage === 'pelunasan-hutang')) {
     activeSubPage = subPage === 'pelunasan-piutang' ? 'penerimaan' : 'pembayaran';
+  }
+  // Update #14 — fitur Belum Teridentifikasi dihapus; tab tersimpan dari
+  // versi lama di-remap ke daftar Penerimaan.
+  if (activeModule === 'cash-bank' && subPage === 'belum-teridentifikasi') {
+    activeSubPage = 'penerimaan';
   }
   switch (activeModule) {
     case 'dashboard':

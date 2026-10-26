@@ -1230,8 +1230,6 @@ export interface PembayaranKasCreate {
   rincian: PembayaranRincianCreate[];
   // === Update #02 — jenis transaksi kas (lihat JenisTransaksiKas) ===
   jenisTransaksi?: JenisTransaksiKas;
-  /** Update #02 — nilai tunggal, wajib untuk BELUM_TERIDENTIFIKASI (rincian kosong) */
-  nilai?: number;
 }
 
 // ── Payment Allocation (Phase 1.B) ─────────────────────────────────────────
@@ -1298,10 +1296,8 @@ export interface PembayaranKasResponse {
   supplier?: { id: string; nama: string; alamat: string | null } | null;
   alokasi?: PaymentAllocationItem[];
   jurnal?: { id: string; noJurnal: string } | null;
-  // === Update #02 — jenis transaksi + progres identifikasi (BELUM_TERIDENTIFIKASI) ===
+  // === Update #02 — jenis transaksi ===
   jenisTransaksi?: string;
-  teridentifikasi?: number | string | null;
-  sisaBelumTeridentifikasi?: number | string | null;
 }
 
 export interface PenerimaanRincianCreate {
@@ -1324,8 +1320,6 @@ export interface PenerimaanKasCreate {
   rincian: PenerimaanRincianCreate[];
   // === Update #02 — jenis transaksi kas (lihat JenisTransaksiKas) ===
   jenisTransaksi?: JenisTransaksiKas;
-  /** Update #02 — nilai tunggal, wajib untuk BELUM_TERIDENTIFIKASI (rincian kosong) */
-  nilai?: number;
 }
 
 export interface PenerimaanKasResponse {
@@ -1354,148 +1348,22 @@ export interface PenerimaanKasResponse {
   pelangganId?: string | null;
   alokasi?: PaymentAllocationItem[];
   jurnal?: { id: string; noJurnal: string } | null;
-  // === Update #02 — jenis transaksi + progres identifikasi (BELUM_TERIDENTIFIKASI) ===
+  // === Update #02 — jenis transaksi ===
   jenisTransaksi?: string;
-  teridentifikasi?: number | string | null;
-  sisaBelumTeridentifikasi?: number | string | null;
 }
 
 // ── Update #02 — Jenis Transaksi Kas & Bank ────────────────────────────────
 // Pilihan jenis transaksi pada form Penerimaan & Pembayaran:
 // 1. PELUNASAN_INVOICE — pilih pihak → invoice outstanding → nominal → posting.
 // 2. TRANSAKSI_LAINNYA — akun lawan bebas dari COA (non-invoice).
-// 3. BELUM_TERIDENTIFIKASI — mutasi belum diketahui asalnya → akun penampung,
-//    kemudian Identifikasi & Alokasi.
-export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA' | 'BELUM_TERIDENTIFIKASI';
+// (Update #14 — BELUM_TERIDENTIFIKASI dihapus bersama fitur Identifikasi
+//  & Alokasi.)
+export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA';
 
 export const JENIS_TRANSAKSI_KAS_LABELS: Record<JenisTransaksiKas, string> = {
   PELUNASAN_INVOICE: 'Pelunasan Invoice',
-  TRANSAKSI_LAINNYA: 'Transaksi Lainnya',
-  BELUM_TERIDENTIFIKASI: 'Belum Teridentifikasi'
+  TRANSAKSI_LAINNYA: 'Transaksi Lainnya'
 };
-
-// ── Update #02 — Identifikasi & Alokasi kas Belum Teridentifikasi ──────────
-
-export interface IdentifikasiAlokasiCreate {
-  akunPerkiraanId: string;
-  nilai: number;
-  keterangan?: string | null;
-}
-
-export interface KasIdentifikasiCreate {
-  tanggal: string;
-  alokasi: IdentifikasiAlokasiCreate[];
-  catatan?: string | null;
-}
-
-export interface IdentifikasiRincianItem {
-  id: string;
-  akunPerkiraanId: string;
-  nilai: number | string;
-  keterangan: string | null;
-  akunPerkiraan: AkunPerkiraanSimple | null;
-  // === Update #03 — snapshot invoice + potongan per faktur (sesi PIUTANG/HUTANG) ===
-  salesInvoiceId?: string | null;
-  purchaseInvoiceId?: string | null;
-  diskon?: number | string;
-  pph23?: number | string;
-}
-
-export interface KasIdentifikasiResponse {
-  id: string;
-  noBukti: string;
-  tanggal: string;
-  penerimaanId: string | null;
-  pembayaranId: string | null;
-  catatan: string | null;
-  totalNilai: number | string;
-  status: string;
-  jurnalUmumId: string | null;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-  jurnal: { id: string; noJurnal: string } | null;
-  creator: PenggunaSimple | null;
-  rincian: IdentifikasiRincianItem[];
-  // === Update #03 — jenis sesi + pihak yang diidentifikasi ===
-  jenis?: 'LAINNYA' | 'PIUTANG' | 'HUTANG' | string;
-  pelangganId?: string | null;
-  supplierId?: string | null;
-}
-
-export interface KasIdentifikasiListResponse {
-  dokumenId: string;
-  jenisDokumen: string;
-  noBuktiDokumen: string;
-  tanggalDokumen: string;
-  totalNilaiDokumen: number | string;
-  jenisTransaksiDokumen: string;
-  statusDokumen: string;
-  kasBank: KasBankSimple | null;
-  penampungAkun: AkunPerkiraanSimple | null;
-  teridentifikasi: number | string;
-  sisaBelumTeridentifikasi: number | string;
-  identifikasi: KasIdentifikasiResponse[];
-}
-
-// ── Update #03 — Identifikasi Piutang/Hutang (pihak + invoice) ──────────
-
-export interface IdentifikasiPiutangAlokasiCreate {
-  salesInvoiceId: string;
-  /** String desimal (mis. "100000.00") — pola PelunasanCreate. */
-  nilai: string;
-  pph23?: string;
-}
-
-export interface IdentifikasiPiutangCreate {
-  pelangganId: string;
-  tanggal: string;
-  alokasi: IdentifikasiPiutangAlokasiCreate[];
-  catatan?: string | null;
-}
-
-export interface IdentifikasiHutangAlokasiCreate {
-  purchaseInvoiceId: string;
-  nilai: string;
-  diskon?: string;
-  pph23?: string;
-}
-
-export interface IdentifikasiHutangCreate {
-  supplierId: string;
-  tanggal: string;
-  alokasi: IdentifikasiHutangAlokasiCreate[];
-  catatan?: string | null;
-}
-
-// ── Update #03 — Monitoring & rekonsiliasi akun penampung ──────────
-
-export interface PenampungAkunMonitoring {
-  akun: { id: string; kode: string; nama: string };
-  settingKey: string | null;
-  arah: string;
-  saldoGl: number | string;
-  jumlahDokumenAktif: number;
-  sisaPenerimaan: number | string;
-  sisaPembayaran: number | string;
-  totalSisaDokumen: number | string;
-  selisih: number | string;
-  konsisten: boolean;
-}
-
-export interface PenampungCheck {
-  kode: string;
-  label: string;
-  ok: boolean;
-  detail: string | null;
-}
-
-export interface PenampungMonitoringResponse {
-  akun: PenampungAkunMonitoring[];
-  totalSisa: number | string;
-  rekonsiliasiOk: boolean;
-  checks: PenampungCheck[];
-}
 
 export interface TransferBankCreate {
   tanggal: string;
@@ -1538,10 +1406,8 @@ export interface PembayaranKasUpdate {
   nilaiTukar?: number | string;
   penerima?: string | null;
   catatan?: string | null;
-  // === Update #02 — jenis immutable (nilai sama dengan tersimpan); nilai
-  // hanya utk dokumen BELUM_TERIDENTIFIKASI ===
+  // === Update #02 — jenis immutable (nilai sama dengan tersimpan) ===
   jenisTransaksi?: JenisTransaksiKas;
-  nilai?: number;
 }
 
 export interface PenerimaanKasUpdate {
@@ -1551,10 +1417,8 @@ export interface PenerimaanKasUpdate {
   noCek?: string | null;
   pemberi?: string | null;
   catatan?: string | null;
-  // === Update #02 — jenis immutable (nilai sama dengan tersimpan); nilai
-  // hanya utk dokumen BELUM_TERIDENTIFIKASI ===
+  // === Update #02 — jenis immutable (nilai sama dengan tersimpan) ===
   jenisTransaksi?: JenisTransaksiKas;
-  nilai?: number;
 }
 
 export interface TransferBankUpdate {
@@ -4293,7 +4157,7 @@ export interface RekapPph23Item {
   noInvoice: string | null;
   dasar: string | number;
   pph23: string | number;
-  sumber: 'PELUNASAN' | 'IDENTIFIKASI';
+  sumber: 'PELUNASAN';
   sisi: 'DIPOTONG_DARI_KITA' | 'KITA_POTONG';
 }
 

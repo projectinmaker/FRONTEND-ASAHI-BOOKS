@@ -25,13 +25,11 @@ import { toast } from 'sonner';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import type { KasBankAkunResponse, COADropdownResponse, PembayaranKasResponse, PenerimaanKasResponse, TransferBankResponse, HardDeleteResponse } from '@/types/api';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
-import { Wallet, Building2, ArrowRightLeft, Plus, Download, Printer, X, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Undo2, SearchCheck, type LucideIcon } from 'lucide-react';
+import { Wallet, Building2, ArrowRightLeft, Plus, Download, Printer, X, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Undo2, type LucideIcon } from 'lucide-react';
 import RekonsiliasiBankTab from '@/components/erp/cash-bank/rekonsiliasi-bank';
 import PembayaranForm from '@/components/erp/cash-bank/forms/pembayaran-form';
 import PenerimaanForm from '@/components/erp/cash-bank/forms/penerimaan-form';
 import TransferBankForm from '@/components/erp/cash-bank/forms/transfer-bank-form';
-import { BelumTeridentifikasiTab } from '@/components/erp/cash-bank/belum-teridentifikasi';
-import { IdentifikasiDialog } from '@/components/erp/cash-bank/forms/identifikasi-dialog';
 import { JenisTransaksiBadge } from '@/components/erp/cash-bank/forms/jenis-transaksi-selector';
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
@@ -180,8 +178,7 @@ function HistoryTable({
   workflowStates,
   onWorkflowDone,
   jenisFilter,
-  onJenisFilterChange,
-  onIdentifikasi
+  onJenisFilterChange
 }: {
   type: 'pembayaran' | 'penerimaan';
   data: PembayaranKasResponse[] | PenerimaanKasResponse[];
@@ -208,10 +205,9 @@ function HistoryTable({
   onCetak?: (id: string) => void;
   workflowStates?: Record<string, WorkflowResponse>;
   onWorkflowDone?: () => void;
-  /** Update #02 — filter & aksi jenis transaksi */
+  /** Update #02 — filter jenis transaksi */
   jenisFilter?: string;
   onJenisFilterChange?: (v: string) => void;
-  onIdentifikasi?: (row: PembayaranKasResponse | PenerimaanKasResponse) => void;
 }) {
   const label = type === 'pembayaran' ? 'Pembayaran' : 'Penerimaan';
   const hasActions = !!(onCancel || onEdit || onCetak);
@@ -261,7 +257,6 @@ function HistoryTable({
                   <SelectItem value="ALL">Semua</SelectItem>
                   <SelectItem value="PELUNASAN_INVOICE">Pelunasan Invoice</SelectItem>
                   <SelectItem value="TRANSAKSI_LAINNYA">Transaksi Lainnya</SelectItem>
-                  <SelectItem value="BELUM_TERIDENTIFIKASI">Belum Teridentifikasi</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -319,13 +314,10 @@ function HistoryTable({
                       <TableCell className="whitespace-nowrap">
                         <StatusBadge status={row.status} />
                       </TableCell>
-                      {/* Update #02 — kolom jenis transaksi + sisa identifikasi */}
+                      {/* Update #02 — kolom jenis transaksi */}
                       {hasJenis && (
                         <TableCell className="whitespace-nowrap">
-                          <div className="flex flex-col gap-0.5">
-                            <JenisTransaksiBadge jenis={row.jenisTransaksi || 'TRANSAKSI_LAINNYA'} />
-                            {row.jenisTransaksi === 'BELUM_TERIDENTIFIKASI' && row.sisaBelumTeridentifikasi != null && <span className="text-[11px] text-amber-700">Sisa: {formatRp(Number(row.sisaBelumTeridentifikasi) || 0)}</span>}
-                          </div>
+                          <JenisTransaksiBadge jenis={row.jenisTransaksi || 'TRANSAKSI_LAINNYA'} />
                         </TableCell>
                       )}
                       {hasWorkflow && (
@@ -345,12 +337,6 @@ function HistoryTable({
                       {(onCancel || onEdit || onCetak) && (
                         <TableCell className="whitespace-nowrap text-center">
                           <div className="flex items-center justify-center gap-1">
-                            {/* Update #02 — aksi identifikasi utk dokumen Belum Teridentifikasi */}
-                            {onIdentifikasi && row.jenisTransaksi === 'BELUM_TERIDENTIFIKASI' && row.status === 'SELESAI' && (Number(row.sisaBelumTeridentifikasi) || 0) > 0 && (
-                              <Button variant="ghost" size="sm" className="h-7 text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50" onClick={() => onIdentifikasi(row)} title="Identifikasi & Alokasi">
-                                <SearchCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                              </Button>
-                            )}
                             {onEdit && (row.status === 'DRAFT' || row.status === 'DIPROSES') && (
                               <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => onEdit(row.id)}>
                                 <Pencil className="h-3.5 w-3.5" />
@@ -816,9 +802,6 @@ function PembayaranTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
   const [jenisFilter, setJenisFilter] = useState('');
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // ── Update #02 — dialog Identifikasi & Alokasi (Belum Teridentifikasi) ──
-  const [identifikasiDoc, setIdentifikasiDoc] = useState<{ id: string; noBukti: string } | null>(null);
-
   // ── Cancel dialog ──
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<string | null>(null);
@@ -968,21 +951,7 @@ function PembayaranTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
         </Button>
       </div>
 
-      <HistoryTable type="pembayaran" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={wfStates.states} onWorkflowDone={wfStates.refresh} jenisFilter={jenisFilter} onJenisFilterChange={setJenisFilter} onIdentifikasi={(row) => setIdentifikasiDoc({ id: row.id, noBukti: row.noBukti })} />
-
-      {/* Update #02 — dialog Identifikasi & Alokasi (Belum Teridentifikasi) */}
-      {identifikasiDoc && (
-        <IdentifikasiDialog
-          open={!!identifikasiDoc}
-          onOpenChange={(o) => {
-            if (!o) setIdentifikasiDoc(null);
-          }}
-          jenisDokumen="pembayaran"
-          dokumenId={identifikasiDoc.id}
-          noBukti={identifikasiDoc.noBukti}
-          onDone={fetchData}
-        />
-      )}
+      <HistoryTable type="pembayaran" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={wfStates.states} onWorkflowDone={wfStates.refresh} jenisFilter={jenisFilter} onJenisFilterChange={setJenisFilter} />
 
       {/* Cancel = Hard Delete (hapus permanen + histori) */}
       <HardDeleteCancelDialog
@@ -1022,9 +991,6 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
   // Update #02 — filter jenis transaksi
   const [jenisFilter, setJenisFilter] = useState('');
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // ── Update #02 — dialog Identifikasi & Alokasi (Belum Teridentifikasi) ──
-  const [identifikasiDoc, setIdentifikasiDoc] = useState<{ id: string; noBukti: string } | null>(null);
 
   // ── Cancel dialog ──
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -1156,21 +1122,7 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
         </Button>
       </div>
 
-      <HistoryTable type="penerimaan" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={wfStates.states} onWorkflowDone={wfStates.refresh} jenisFilter={jenisFilter} onJenisFilterChange={setJenisFilter} onIdentifikasi={(row) => setIdentifikasiDoc({ id: row.id, noBukti: row.noBukti })} />
-
-      {/* Update #02 — dialog Identifikasi & Alokasi (Belum Teridentifikasi) */}
-      {identifikasiDoc && (
-        <IdentifikasiDialog
-          open={!!identifikasiDoc}
-          onOpenChange={(o) => {
-            if (!o) setIdentifikasiDoc(null);
-          }}
-          jenisDokumen="penerimaan"
-          dokumenId={identifikasiDoc.id}
-          noBukti={identifikasiDoc.noBukti}
-          onDone={fetchData}
-        />
-      )}
+      <HistoryTable type="penerimaan" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={wfStates.states} onWorkflowDone={wfStates.refresh} jenisFilter={jenisFilter} onJenisFilterChange={setJenisFilter} />
 
       {/* Cancel = Hard Delete (hapus permanen + histori) */}
       <HardDeleteCancelDialog
@@ -1559,8 +1511,6 @@ function CashBankListContent({ subPage: subPageProp, refreshKey, formMode, formP
           {subPage === 'penerimaan' && <PenerimaanTab kasBankOptions={kasBankOptions} coaOptions={coaOptions} refreshKey={refreshKey} />}
           {subPage === 'transfer-bank' && <TransferBankTab kasBankOptions={kasBankOptions} onPreview={setPreviewData} refreshKey={refreshKey} />}
           {subPage === 'rekonsiliasi-bank' && <RekonsiliasiBankTab formMode={formMode} formProps={formProps} refreshKey={refreshKey} />}
-          {/* Update #02 — daftar mutasi Belum Teridentifikasi + Identifikasi & Alokasi */}
-          {subPage === 'belum-teridentifikasi' && <BelumTeridentifikasiTab kasBankOptions={kasBankOptions} refreshKey={refreshKey} />}
         </>
       )}
 

@@ -23,11 +23,11 @@ import { useAuthStore } from '@/store/auth-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
-import { TrendingUp, Loader2, Trash2, Check, ChevronDown, Search, Info, HelpCircle, ListRestart } from 'lucide-react';
+import { TrendingUp, Loader2, Trash2, Check, ChevronDown, Search, Info, ListRestart } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { JenisTransaksiSelector, JenisTransaksiBadge } from '@/components/erp/cash-bank/forms/jenis-transaksi-selector';
 import { EmbeddedSettlementForm } from '@/components/erp/pelunasan';
-import type { KasBankAkunResponse, COADropdownResponse, PenerimaanKasResponse, PenerimaanKasCreate, PenerimaanKasUpdate, JenisTransaksiKas, SettingAkunResponse } from '@/types/api';
+import type { KasBankAkunResponse, COADropdownResponse, PenerimaanKasResponse, PenerimaanKasCreate, PenerimaanKasUpdate, JenisTransaksiKas } from '@/types/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -262,9 +262,8 @@ interface PenerimaanDraftData {
   pemberi: string;
   catatan: string;
   rincianRows: RincianRow[];
-  // === Update #02 — jenis transaksi + nilai tunggal (Belum Teridentifikasi) ===
+  // === Update #02 — jenis transaksi ===
   jenisTransaksi?: JenisTransaksiKas;
-  nilai?: string;
 }
 
 export default function PenerimaanForm({ mode, id }: Props) {
@@ -298,10 +297,8 @@ export default function PenerimaanForm({ mode, id }: Props) {
   const [catatan, setCatatan] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // === Update #02 — jenis transaksi & nilai tunggal (Belum Teridentifikasi) ===
+  // === Update #02 — jenis transaksi ===
   const [jenisTransaksi, setJenisTransaksi] = useState<JenisTransaksiKas>('TRANSAKSI_LAINNYA');
-  const [nilai, setNilai] = useState('');
-  const [penampungAkun, setPenampungAkun] = useState<{ kode: string; nama: string } | null>(null);
 
   // Read-only display (edit mode)
   const [editNoBukti, setEditNoBukti] = useState('');
@@ -309,7 +306,6 @@ export default function PenerimaanForm({ mode, id }: Props) {
   const [editTotalNilai, setEditTotalNilai] = useState(0);
   const [editJenisTransaksi, setEditJenisTransaksi] = useState<string>('');
 
-  const isBelumTeridentifikasi = jenisTransaksi === 'BELUM_TERIDENTIFIKASI';
   const isPelunasanInvoice = jenisTransaksi === 'PELUNASAN_INVOICE';
 
   // ── Update #13 (Kas & Bank) — kembali ke kartu pilihan Jenis Transaksi dari
@@ -318,26 +314,6 @@ export default function PenerimaanForm({ mode, id }: Props) {
   // Pelunasan Invoice kembali, jadi konfirmasi hanya untuk menghindari klik salah. ──
   const [settlementDirty, setSettlementDirty] = useState(false);
   const [backConfirmOpen, setBackConfirmOpen] = useState(false);
-
-  // ── Update #03 — info akun penampung arah-spesifik (penerimaan →
-  // KAS_PENAMPUNG_PENERIMAAN 216001 liabilitas; fallback key legacy
-  // KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI bila belum dikonfigurasi). ──
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<SettingAkunResponse>('/master/setting-akun/KAS_PENAMPUNG_PENERIMAAN')
-      .catch(() => api.get<SettingAkunResponse>('/master/setting-akun/KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI'))
-      .then((res) => {
-        if (cancelled || !res) return;
-        setPenampungAkun(res.akunPerkiraan ? { kode: res.akunPerkiraan.kode, nama: res.akunPerkiraan.nama } : null);
-      })
-      .catch(() => {
-        // Setting belum dikonfigurasi — info banner menampilkan instruksi.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // ── Draft otomatis: pulihkan sekali saat mount (hanya create + ada draft) ──
   const restoredRef = useRef(false);
@@ -353,9 +329,8 @@ export default function PenerimaanForm({ mode, id }: Props) {
     setPemberi(d.pemberi || '');
     setCatatan(d.catatan || '');
     setRincianRows(Array.isArray(d.rincianRows) ? d.rincianRows : []);
-    // Update #02 — pulihkan jenis transaksi + nilai tunggal
+    // Update #02 — pulihkan jenis transaksi
     if (d.jenisTransaksi) setJenisTransaksi(d.jenisTransaksi);
-    if (d.nilai) setNilai(d.nilai);
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Penerimaan dimuat kembali otomatis.' });
   }, []);
 
@@ -371,9 +346,9 @@ export default function PenerimaanForm({ mode, id }: Props) {
       return;
     }
     if (isCreate) {
-      draft.saveDraft({ kasBankId, tanggal, noNukti, noCek, pemberi, catatan, rincianRows, jenisTransaksi, nilai });
+      draft.saveDraft({ kasBankId, tanggal, noNukti, noCek, pemberi, catatan, rincianRows, jenisTransaksi });
     }
-  }, [kasBankId, tanggal, noNukti, noCek, pemberi, catatan, rincianRows, jenisTransaksi, nilai]);
+  }, [kasBankId, tanggal, noNukti, noCek, pemberi, catatan, rincianRows, jenisTransaksi]);
 
   // ── Draft otomatis: buang draft → kosongkan form ──
   const handleDiscardDraft = useCallback(() => {
@@ -387,7 +362,6 @@ export default function PenerimaanForm({ mode, id }: Props) {
     setCatatan('');
     setRincianRows([]);
     setJenisTransaksi('TRANSAKSI_LAINNYA');
-    setNilai('');
     setErrors({});
   }, []);
 
@@ -428,11 +402,6 @@ export default function PenerimaanForm({ mode, id }: Props) {
         setEditStatus(res.status);
         setEditTotalNilai(res.totalNilai);
         setEditJenisTransaksi(res.jenisTransaksi || 'TRANSAKSI_LAINNYA');
-        // Update #02 — nilai tunggal dokumen Belum Teridentifikasi
-        if (res.jenisTransaksi === 'BELUM_TERIDENTIFIKASI') {
-          setJenisTransaksi('BELUM_TERIDENTIFIKASI');
-          setNilai(String(Number(res.totalNilai) || 0));
-        }
       } catch (err) {
         if (!cancelled) toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat data penerimaan');
       } finally {
@@ -467,22 +436,14 @@ export default function PenerimaanForm({ mode, id }: Props) {
     if (!tanggal) e.tanggal = 'Tanggal wajib diisi';
     if (!noNukti.trim()) e.noNukti = 'No Bukti wajib diisi';
     if (!isEdit) {
-      // Update #02 — validasi per jenis transaksi
-      if (isBelumTeridentifikasi) {
-        const n = parseInt(nilai.replace(/\D/g, ''), 10) || 0;
-        if (n <= 0) e.nilai = 'Nilai penerimaan wajib diisi (lebih dari 0) untuk jenis Belum Teridentifikasi';
-      } else {
-        if (rincianRows.length === 0) e.rincian = 'Rincian penerimaan wajib diisi';
-        const hasEmptyNilai = rincianRows.some((r) => !r.nilai || parseInt(r.nilai.replace(/\D/g, ''), 10) <= 0);
-        if (hasEmptyNilai) e.rincian = 'Semua rincian harus memiliki nilai lebih dari 0';
-      }
-    } else if (isBelumTeridentifikasi && editStatus === 'DRAFT') {
-      const n = parseInt(nilai.replace(/\D/g, ''), 10) || 0;
-      if (n <= 0) e.nilai = 'Nilai penerimaan wajib diisi (lebih dari 0)';
+      // Update #02 — validasi rincian Transaksi Lainnya
+      if (rincianRows.length === 0) e.rincian = 'Rincian penerimaan wajib diisi';
+      const hasEmptyNilai = rincianRows.some((r) => !r.nilai || parseInt(r.nilai.replace(/\D/g, ''), 10) <= 0);
+      if (hasEmptyNilai) e.rincian = 'Semua rincian harus memiliki nilai lebih dari 0';
     }
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [isEdit, kasBankId, tanggal, noNukti, rincianRows, isBelumTeridentifikasi, nilai, editStatus]);
+  }, [isEdit, kasBankId, tanggal, noNukti, rincianRows]);
 
   // ── Submit ──
   const handleSubmit = useCallback(async () => {
@@ -496,42 +457,27 @@ export default function PenerimaanForm({ mode, id }: Props) {
           noNukti: noNukti.trim(),
           noCek: noCek.trim() || null,
           pemberi: pemberi.trim() || null,
-          catatan: catatan.trim() || null,
-          // Update #02 — nilai tunggal (hanya dokumen Belum Teridentifikasi,
-          // masih DRAFT; backend menolak perubahan nilai dokumen lain)
-          ...(isBelumTeridentifikasi && editStatus === 'DRAFT' ? { nilai: parseInt(nilai.replace(/\D/g, ''), 10) || 0 } : {})
+          catatan: catatan.trim() || null
         };
         await api.put<PenerimaanKasResponse>(`/kas-bank/penerimaan/${id}`, payload);
         toast.success('Penerimaan berhasil diperbarui');
       } else {
-        // Update #02 — payload per jenis transaksi
-        const payload: PenerimaanKasCreate = isBelumTeridentifikasi
-          ? {
-              tanggal,
-              kasBankId,
-              noNukti: noNukti.trim(),
-              noCek: noCek.trim() || undefined,
-              pemberi: pemberi.trim() || undefined,
-              catatan: catatan.trim() || undefined,
-              rincian: [],
-              jenisTransaksi: 'BELUM_TERIDENTIFIKASI',
-              nilai: parseInt(nilai.replace(/\D/g, ''), 10) || 0
-            }
-          : {
-              tanggal,
-              kasBankId,
-              noNukti: noNukti.trim(),
-              noCek: noCek.trim() || undefined,
-              pemberi: pemberi.trim() || undefined,
-              catatan: catatan.trim() || undefined,
-              rincian: rincianRows.map((r) => ({
-                akunPerkiraanId: r.akunPerkiraanId,
-                nilai: parseInt(r.nilai.replace(/\D/g, ''), 10) || 0
-              })),
-              jenisTransaksi: 'TRANSAKSI_LAINNYA'
-            };
+        // Update #02 — payload Transaksi Lainnya (Pelunasan Invoice lewat alur settlement)
+        const payload: PenerimaanKasCreate = {
+          tanggal,
+          kasBankId,
+          noNukti: noNukti.trim(),
+          noCek: noCek.trim() || undefined,
+          pemberi: pemberi.trim() || undefined,
+          catatan: catatan.trim() || undefined,
+          rincian: rincianRows.map((r) => ({
+            akunPerkiraanId: r.akunPerkiraanId,
+            nilai: parseInt(r.nilai.replace(/\D/g, ''), 10) || 0
+          })),
+          jenisTransaksi: 'TRANSAKSI_LAINNYA'
+        };
         await api.post<PenerimaanKasResponse>('/kas-bank/penerimaan', payload);
-        toast.success(isBelumTeridentifikasi ? 'Penerimaan Belum Teridentifikasi dicatat — posting ke akun penampung' : 'Penerimaan berhasil dicatat');
+        toast.success('Penerimaan berhasil dicatat');
       }
       if (isCreate) draft.clearDraft();
       refreshListTab('cash-bank', 'penerimaan');
@@ -545,7 +491,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     } finally {
       setSubmitting(false);
     }
-  }, [validate, isEdit, id, tanggal, kasBankId, noNukti, noCek, pemberi, catatan, rincianRows, isBelumTeridentifikasi, nilai, editStatus, activeTabId, closeTab, refreshListTab]);
+  }, [validate, isEdit, id, tanggal, kasBankId, noNukti, noCek, pemberi, catatan, rincianRows, activeTabId, closeTab, refreshListTab]);
 
   // ── Close tab ──
   const handleClose = useCallback(() => {
@@ -683,57 +629,10 @@ export default function PenerimaanForm({ mode, id }: Props) {
 
             <Separator />
 
-            {/* Rincian Penerimaan (create mode only) — Update #02: jenis
-                BELUM_TERIDENTIFIKASI memakai satu input nilai + akun penampung
-                otomatis (bukan rincian COA bebas) */}
-            {!isEdit && isBelumTeridentifikasi && (
-              <>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    Nilai Penerimaan <span className="text-destructive">*</span>
-                  </Label>
-                  <CurrencyInput placeholder="0" value={nilai} onValueChange={setNilai} className={`text-right font-mono h-9 text-sm ${errors.nilai ? 'border-destructive' : ''}`} />
-                  <FieldError msg={errors.nilai} />
-                  <div className="flex items-start gap-2 rounded-md border bg-amber-50 p-3">
-                    <HelpCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
-                    <p className="text-xs text-amber-700">
-                      Mutasi bank yang asalnya belum diketahui. Nilai diposting ke akun penampung sementara{' '}
-                      {penampungAkun ? (
-                        <strong>
-                          {penampungAkun.kode} — {penampungAkun.nama}
-                        </strong>
-                      ) : (
-                        <strong>KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI</strong>
-                      )}
-                      {penampungAkun ? '' : ' (belum dikonfigurasi — atur di Pengaturan → Setting Akun)'}. Setelah pelanggan/invoice-nya diketahui, buka menu Kas &amp; Bank → Belum Teridentifikasi lalu Identifikasi &amp; Alokasi: pilih pelanggan dan invoice yang dilunasi (reklasifikasi penampung → piutang pelanggan, tanpa jurnal bank ganda).
-                    </p>
-                  </div>
-                </div>
-                <Separator />
-              </>
-            )}
-
-            {!isEdit && !isBelumTeridentifikasi && (
+            {/* Rincian Penerimaan (create mode only) */}
+            {!isEdit && (
               <>
                 <RincianSection label="Rincian Penerimaan" rows={rincianRows} onAddRow={addRincianRow} onRemoveRow={removeRincianRow} onUpdateNilai={updateNilai} error={errors.rincian} coaOptions={coaOptions} coaLoading={dropdownLoading} />
-                <Separator />
-              </>
-            )}
-
-            {/* Edit mode: nilai dokumen Belum Teridentifikasi (hanya DRAFT) */}
-            {isEdit && isBelumTeridentifikasi && (
-              <>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Nilai Penerimaan {editStatus === 'DRAFT' ? <span className="text-destructive">*</span> : ''}</Label>
-                  {editStatus === 'DRAFT' ? (
-                    <>
-                      <CurrencyInput placeholder="0" value={nilai} onValueChange={setNilai} className={`text-right font-mono h-9 text-sm ${errors.nilai ? 'border-destructive' : ''}`} />
-                      <FieldError msg={errors.nilai} />
-                    </>
-                  ) : (
-                    <div className="rounded-md border bg-muted/40 px-3 py-2 text-right font-mono text-sm">{formatRp(editTotalNilai)}</div>
-                  )}
-                </div>
                 <Separator />
               </>
             )}
@@ -767,7 +666,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
             </Button>
             <Button onClick={handleSubmit} disabled={submitting} className={isEdit ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEdit ? 'Simpan Perubahan' : isBelumTeridentifikasi ? 'Catat Penerimaan (Belum Teridentifikasi)' : 'Catat Penerimaan'}
+              {isEdit ? 'Simpan Perubahan' : 'Catat Penerimaan'}
             </Button>
           </div>
         </CardContent>
