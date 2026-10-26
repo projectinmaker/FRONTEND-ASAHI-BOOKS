@@ -23,7 +23,8 @@ import { useAuthStore } from '@/store/auth-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
-import { TrendingUp, Loader2, Trash2, Check, ChevronDown, Search, Info, HelpCircle } from 'lucide-react';
+import { TrendingUp, Loader2, Trash2, Check, ChevronDown, Search, Info, HelpCircle, ListRestart } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { JenisTransaksiSelector, JenisTransaksiBadge } from '@/components/erp/cash-bank/forms/jenis-transaksi-selector';
 import { EmbeddedSettlementForm } from '@/components/erp/pelunasan';
 import type { KasBankAkunResponse, COADropdownResponse, PenerimaanKasResponse, PenerimaanKasCreate, PenerimaanKasUpdate, JenisTransaksiKas, SettingAkunResponse } from '@/types/api';
@@ -311,6 +312,13 @@ export default function PenerimaanForm({ mode, id }: Props) {
   const isBelumTeridentifikasi = jenisTransaksi === 'BELUM_TERIDENTIFIKASI';
   const isPelunasanInvoice = jenisTransaksi === 'PELUNASAN_INVOICE';
 
+  // ── Update #13 (Kas & Bank) — kembali ke kartu pilihan Jenis Transaksi dari
+  // alur Pelunasan Invoice. dirty dilaporkan EmbeddedSettlementForm; isian
+  // pelunasan tersimpan otomatis sebagai draft dan dipulihkan bila user memilih
+  // Pelunasan Invoice kembali, jadi konfirmasi hanya untuk menghindari klik salah. ──
+  const [settlementDirty, setSettlementDirty] = useState(false);
+  const [backConfirmOpen, setBackConfirmOpen] = useState(false);
+
   // ── Update #03 — info akun penampung arah-spesifik (penerimaan →
   // KAS_PENAMPUNG_PENERIMAAN 216001 liabilitas; fallback key legacy
   // KAS_PENAMPUNG_BELUM_TERIDENTIFIKASI bila belum dikonfigurasi). ──
@@ -544,6 +552,21 @@ export default function PenerimaanForm({ mode, id }: Props) {
     if (activeTabId) closeTab(activeTabId);
   }, [activeTabId, closeTab]);
 
+  // ── Update #13 — kembali ke kartu pilihan Jenis Transaksi (alur Pelunasan Invoice) ──
+  const handleBackToJenisSelector = useCallback(() => {
+    if (settlementDirty) {
+      setBackConfirmOpen(true);
+      return;
+    }
+    setJenisTransaksi('TRANSAKSI_LAINNYA');
+  }, [settlementDirty]);
+
+  const confirmBackToJenisSelector = useCallback(() => {
+    setBackConfirmOpen(false);
+    setSettlementDirty(false);
+    setJenisTransaksi('TRANSAKSI_LAINNYA');
+  }, []);
+
   if (loading) {
     return (
       <FormTabShell title={title}>
@@ -558,12 +581,39 @@ export default function PenerimaanForm({ mode, id }: Props) {
   // (pilih pelanggan → invoice penjualan outstanding → nominal → posting).
   // Komponen ini punya field, validasi, draft, dan submit-nya sendiri —
   // jadi form penerimaan umum tidak dirender.
+  // Update #13 — banner jenis transaksi + tombol "Ganti Jenis Transaksi" agar
+  // user bisa kembali ke kartu pilihan Jenis Transaksi tanpa menutup tab.
   if (isCreate && isPelunasanInvoice) {
     return (
       <FormTabShell title="Tambah Penerimaan — Pelunasan Invoice">
-        <div className="max-w-5xl">
-          <EmbeddedSettlementForm jenis="piutang" onFinished={handleClose} />
+        <div className="max-w-5xl space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+            <div className="flex items-center gap-1.5 text-sm">
+              <Info className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+              <span className="text-muted-foreground">Jenis Transaksi:</span>
+              <JenisTransaksiBadge jenis="PELUNASAN_INVOICE" />
+            </div>
+            <Button variant="outline" size="sm" className="gap-2" onClick={handleBackToJenisSelector}>
+              <ListRestart className="h-4 w-4" aria-hidden="true" />
+              Ganti Jenis Transaksi
+            </Button>
+          </div>
+          <EmbeddedSettlementForm jenis="piutang" onFinished={handleClose} onDirtyChange={setSettlementDirty} />
         </div>
+
+        {/* Konfirmasi bila isian pelunasan sudah terisi (draft tetap tersimpan & dipulihkan bila kembali) */}
+        <AlertDialog open={backConfirmOpen} onOpenChange={setBackConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Kembali ke pilihan Jenis Transaksi?</AlertDialogTitle>
+              <AlertDialogDescription>Isian pelunasan Anda sudah tersimpan otomatis sebagai draft — bila nanti memilih &quot;Pelunasan Invoice&quot; kembali, isian akan dipulihkan. Lanjutkan ganti jenis transaksi?</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Batal</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmBackToJenisSelector}>Ya, Ganti Jenis</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </FormTabShell>
     );
   }

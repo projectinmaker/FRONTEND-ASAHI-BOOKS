@@ -156,7 +156,7 @@ interface PelunasanDraftData {
   alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string; pph23Display?: string; noBuktiPotong?: string; masaPajak?: string }[];
 }
 
-function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: JenisPelunasan; refreshKey?: number; embedded?: boolean; onFinished?: () => void }) {
+function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }: { jenis: JenisPelunasan; refreshKey?: number; embedded?: boolean; onFinished?: () => void; onDirtyChange?: (dirty: boolean) => void }) {
   const isPiutang = jenis === 'piutang';
   const pihakLabel = isPiutang ? 'Pelanggan' : 'Supplier';
   const docLabel = isPiutang ? 'Invoice Penjualan' : 'Invoice Pembelian';
@@ -434,6 +434,17 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
   // Update #01 — total kas = Σ nilai − Σ diskon − Σ PPh 23 + penalti
   // (diskon hanya muncul di hutang; untuk piutang Σ diskon = 0).
   const totalPembayaran = totalAllocation - totalDiskon - totalPPh23 + penaltiNum;
+
+  // ── Update #13 (Kas & Bank) — laporkan status "isian terisi" (dirty) ke parent
+  // (form Penerimaan/Pembayaran). Dipakai tombol "Ganti Jenis Transaksi" untuk
+  // meminta konfirmasi sebelum kembali ke kartu pilihan Jenis Transaksi.
+  // Isian pelunasan sendiri tetap aman — draft tersimpan otomatis (useFormDraft)
+  // dan dipulihkan bila user memilih Pelunasan Invoice kembali.
+  const isDirty = Boolean(pihakFilter) || selectedList.length > 0 || Boolean(kasBankId) || Boolean(noNukti) || Boolean(catatan) || Boolean(noCek) || Boolean(tanggalCek) || Boolean(jumlahCek) || Boolean(penaltiDisplay) || Boolean(akunPenaltiId);
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   // Akun penalti: piutang → utamakan akun PENDAPATAN; hutang → utamakan akun BEBAN.
   // Prefilter kosong → fallback seluruh akun AKTIF bertingkat DETAIL.
@@ -1268,8 +1279,8 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished }: { jenis: Jeni
 // EmbeddedSettlementForm di bawah). View standalone dipertahankan hanya
 // untuk backward-compat internal; sidebar/page.tsx sudah tidak meroutenya.
 
-export function EmbeddedSettlementForm({ jenis, onFinished }: { jenis: JenisPelunasan; onFinished?: () => void }) {
-  return <PelunasanTab jenis={jenis} embedded onFinished={onFinished} />;
+export function EmbeddedSettlementForm({ jenis, onFinished, onDirtyChange }: { jenis: JenisPelunasan; onFinished?: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+  return <PelunasanTab jenis={jenis} embedded onFinished={onFinished} onDirtyChange={onDirtyChange} />;
 }
 
 export function PelunasanPiutangView({ refreshKey }: { refreshKey?: number }) {
