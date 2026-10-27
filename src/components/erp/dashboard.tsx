@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { CalendarDays, RefreshCw, TrendingUp, TrendingDown, DollarSign, ArrowUpRight, ArrowDownRight, Package, Clock, Scale, AlertTriangle, CheckCircle2, ChevronRight, Activity, Loader2, Info } from 'lucide-react';
+import { CalendarDays, RefreshCw, TrendingUp, TrendingDown, DollarSign, ArrowUpRight, ArrowDownRight, Package, Clock, Scale, AlertTriangle, CheckCircle2, ChevronRight, Activity, Loader2, Info, Factory, ShoppingCart } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
@@ -14,6 +14,7 @@ import { formatRp as formatRpIDR } from '@/lib/money';
 import { PerusahaanFilter, companyScopeQuery, type PerusahaanFilterValue } from '@/components/erp/perusahaan-filter';
 import type { DashboardSummaryResponse, FakturJatuhTempoItem, AktivitasItem, RekonsiliasiPersediaanRingkasanResponse, AccountingHealthResponse } from '@/types/api';
 import { useTabStore } from '@/store/tab-store';
+import { useAccessStore } from '@/store/access-store';
 import { toast } from 'sonner';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -427,12 +428,207 @@ function DashboardAccountingHealthWidget({ data }: { data: DashboardSummaryRespo
   );
 }
 
+// ─── Update #018 — Dashboard per role (widget per permission) ──────────────
+// Pemetaan section → permission selaras dengan SECTION_PERMISSIONS backend
+// (endpoints/dashboard.py): role berbeda melihat dashboard berbeda.
+// Widget juga ikut tersembunyi bila backend tidak mengirim section-nya.
+const WIDGET_PERM = {
+  labaRugi: 'reports.financial.view', // Laba/Rugi + Beban + KPI neraca + margin
+  cashflow: 'reports.cashbank.view', // Cashflow
+  penjualan: 'sales.sales_invoice.view', // Tren penjualan + invoice jatuh tempo
+  persediaan: 'inventory.stock.view', // Nilai persediaan + stok menipis
+  rekonsiliasi: 'reports.inventory_report.view', // Rekonsiliasi persediaan (endpoint /laporan)
+  health: 'reports.reconciliation_report.view', // Accounting health (endpoint /laporan)
+  produksi: 'production.request_order_part.view',
+  pembelian: 'purchase.purchase_order.view'
+} as const;
+
+/** Badge status ROP untuk widget Produksi. */
+function RopStatusBadge({ status }: { status: string }) {
+  if (status === 'DIBUAT') return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100 text-[10px]">Dibuat</Badge>;
+  return (
+    <Badge variant="outline" className="text-[10px]">
+      Draft
+    </Badge>
+  );
+}
+
+function ProduksiWidget({ data }: { data: DashboardSummaryResponse | null }) {
+  const openNavTab = useTabStore((s) => s.openNavTab);
+  const prod = data?.produksi;
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Factory className="h-4 w-4" />
+            Produksi (Request Order Part)
+          </CardTitle>
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => openNavTab('production', 'request-order-part', 'Request Order Part')}>
+            Detail <ChevronRight className="h-3 w-3" />
+          </Button>
+        </div>
+        <CardDescription className="text-xs">Ringkasan form pre-PO dari Engineering</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!prod ? (
+          <div className="flex h-[100px] items-center justify-center">
+            <p className="text-xs text-muted-foreground">Tidak ada data</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-md border bg-muted/30 p-2">
+                <p className="text-[10px] text-muted-foreground">Total ROP</p>
+                <p className="text-lg font-bold">{prod.totalRop}</p>
+              </div>
+              <div className="rounded-md border bg-amber-50/50 p-2">
+                <p className="text-[10px] text-muted-foreground">Draft</p>
+                <p className="text-lg font-bold text-amber-700">{prod.draft}</p>
+              </div>
+              <div className="rounded-md border bg-emerald-50/50 p-2">
+                <p className="text-[10px] text-muted-foreground">Dibuat (final)</p>
+                <p className="text-lg font-bold text-emerald-700">{prod.dibuat}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between border-t pt-2 text-sm">
+              <span className="text-xs text-muted-foreground">Total baris part</span>
+              <span className="font-medium">{prod.totalPart} part</span>
+            </div>
+            <div className="space-y-1.5">
+              {prod.terbaru.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Belum ada ROP</p>
+              ) : (
+                prod.terbaru.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-xs">{r.noRop}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {r.projectName}
+                        {r.model ? ` — ${r.model}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="text-[10px] text-muted-foreground">{r.totalItem} part</span>
+                      <RopStatusBadge status={r.status} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Badge status PO untuk widget Pembelian. */
+function PoStatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    DRAFT: 'bg-gray-100 text-gray-700 border-gray-200',
+    DIPROSES: 'bg-amber-100 text-amber-700 border-amber-200',
+    SELESAI: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    DIBATALKAN: 'bg-red-100 text-red-700 border-red-200'
+  };
+  return (
+    <Badge variant="outline" className={`text-[10px] ${map[status] || ''}`}>
+      {status}
+    </Badge>
+  );
+}
+
+function PembelianWidget({ data }: { data: DashboardSummaryResponse | null }) {
+  const openNavTab = useTabStore((s) => s.openNavTab);
+  const beli = data?.pembelian;
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShoppingCart className="h-4 w-4" />
+            Pembelian (Pesanan / PO)
+          </CardTitle>
+          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => openNavTab('purchasing', 'pesanan', 'Pesanan Pembelian')}>
+            Detail <ChevronRight className="h-3 w-3" />
+          </Button>
+        </div>
+        <CardDescription className="text-xs">Ringkasan Purchase Order per status</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!beli ? (
+          <div className="flex h-[100px] items-center justify-center">
+            <p className="text-xs text-muted-foreground">Tidak ada data</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="rounded-md border bg-muted/30 p-2">
+                <p className="text-[10px] text-muted-foreground">Total PO</p>
+                <p className="text-lg font-bold">{beli.totalPo}</p>
+              </div>
+              <div className="rounded-md border bg-amber-50/50 p-2">
+                <p className="text-[10px] text-muted-foreground">Draft</p>
+                <p className="text-lg font-bold text-amber-700">{beli.draft}</p>
+              </div>
+              <div className="rounded-md border bg-sky-50/50 p-2">
+                <p className="text-[10px] text-muted-foreground">Diproses</p>
+                <p className="text-lg font-bold text-sky-700">{beli.diproses}</p>
+              </div>
+              <div className="rounded-md border bg-emerald-50/50 p-2">
+                <p className="text-[10px] text-muted-foreground">Selesai</p>
+                <p className="text-lg font-bold text-emerald-700">{beli.selesai}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-between border-t pt-2 text-sm">
+              <span className="text-xs text-muted-foreground">Nilai PO berjalan (draft + diproses)</span>
+              <span className="font-mono font-semibold">{formatRp(beli.nilaiOpen)}</span>
+            </div>
+            <div className="space-y-1.5">
+              {beli.terbaru.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Belum ada pesanan pembelian</p>
+              ) : (
+                beli.terbaru.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-2 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-xs">{p.noPesanan}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {p.supplier || '—'}
+                        {p.tanggal ? ` • ${formatDate(p.tanggal)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="font-mono text-xs">{formatRp(p.grandTotal)}</span>
+                      <PoStatusBadge status={p.status} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<DashboardSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // AUD-17 (update #05) — scope perusahaan untuk /dashboard/summary
   const [companyFilter, setCompanyFilter] = useState<PerusahaanFilterValue>('ALL');
+  // Update #018 — permission user → widget tampil sesuai role
+  const can = useAccessStore((s) => s.can);
+
+  const showLabaRugi = can(WIDGET_PERM.labaRugi);
+  const showCashflow = can(WIDGET_PERM.cashflow);
+  const showPenjualan = can(WIDGET_PERM.penjualan);
+  const showPersediaan = can(WIDGET_PERM.persediaan);
+  const showRekonsiliasi = can(WIDGET_PERM.rekonsiliasi);
+  const showHealth = can(WIDGET_PERM.health);
+  const showProduksi = can(WIDGET_PERM.produksi);
+  const showPembelian = can(WIDGET_PERM.pembelian);
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -468,8 +664,10 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1 text-sm">Ringkasan bisnis perusahaan</p>
         </div>
         <div className="flex flex-wrap items-end justify-end gap-2">
-          {/* AUD-17 — scope perusahaan ringkasan dashboard */}
-          <PerusahaanFilter value={companyFilter} onChange={setCompanyFilter} />
+          {/* AUD-17 — scope perusahaan ringkasan dashboard.
+              Update #018 — hanya untuk role yang boleh melihat laporan
+              keuangan (endpoint /laporan/companies digati permission itu). */}
+          {showLabaRugi && <PerusahaanFilter value={companyFilter} onChange={setCompanyFilter} />}
           <Button variant="outline" size="sm" className="gap-2" onClick={fetchDashboard} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -489,258 +687,281 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* 2x2 Grid - 4 Main Widgets */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Widget 1: Laba / Rugi */}
-        {loading ? (
-          <WidgetSkeleton />
-        ) : data ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Laba / Rugi
-                </CardTitle>
-                {data.labaRugi.labaBersih >= 0 ? <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Laba</Badge> : <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Rugi</Badge>}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Pendapatan</span>
-                  <span className="font-mono">{formatRp(data.labaRugi.pendapatan)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">HPP</span>
-                  <span className="font-mono">{formatRp(data.labaRugi.hpp)}</span>
-                </div>
-                <div className="flex justify-between text-sm font-medium border-t pt-1">
-                  <span>Laba Kotor</span>
-                  <span className="font-mono">{formatRp(data.labaRugi.labaKotor)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Beban</span>
-                  <span className="font-mono">{formatRp(data.labaRugi.beban)}</span>
-                </div>
-                {/* M-02 (Update #7): laba usaha — hanya bila backend mengirim field-nya */}
-                {data.labaRugi.labaUsaha !== undefined && data.labaRugi.labaUsaha !== null && (
-                  <div className="flex justify-between text-sm font-medium border-t pt-1">
-                    <span>Laba Usaha</span>
-                    <span className="font-mono">{formatRp(data.labaRugi.labaUsaha)}</span>
+      {/* 2x2 Grid - 4 Main Widgets (Update #018: widget per permission — role
+          tanpa akses keuangan/penjualan tidak melihat baris ini sama sekali) */}
+      {(showLabaRugi || showCashflow || showPenjualan) && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Widget 1: Laba / Rugi */}
+          {showLabaRugi &&
+            (loading ? (
+              <WidgetSkeleton />
+            ) : data?.labaRugi ? (
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4" />
+                      Laba / Rugi
+                    </CardTitle>
+                    {data.labaRugi.labaBersih >= 0 ? <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Laba</Badge> : <Badge className="bg-red-100 text-red-700 hover:bg-red-100">Rugi</Badge>}
                   </div>
-                )}
-                <div className="flex justify-between text-base font-bold border-t pt-2">
-                  <span>Laba Bersih</span>
-                  <span className={`font-mono ${data.labaRugi.labaBersih >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRp(data.labaRugi.labaBersih)}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Pendapatan</span>
+                      <span className="font-mono">{formatRp(data.labaRugi.pendapatan)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">HPP</span>
+                      <span className="font-mono">{formatRp(data.labaRugi.hpp)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-medium border-t pt-1">
+                      <span>Laba Kotor</span>
+                      <span className="font-mono">{formatRp(data.labaRugi.labaKotor)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Beban</span>
+                      <span className="font-mono">{formatRp(data.labaRugi.beban)}</span>
+                    </div>
+                    {/* M-02 (Update #7): laba usaha — hanya bila backend mengirim field-nya */}
+                    {data.labaRugi.labaUsaha !== undefined && data.labaRugi.labaUsaha !== null && (
+                      <div className="flex justify-between text-sm font-medium border-t pt-1">
+                        <span>Laba Usaha</span>
+                        <span className="font-mono">{formatRp(data.labaRugi.labaUsaha)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-base font-bold border-t pt-2">
+                      <span>Laba Bersih</span>
+                      <span className={`font-mono ${data.labaRugi.labaBersih >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRp(data.labaRugi.labaBersih)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null)}
 
-        {/* Widget 2: Cashflow */}
-        {loading ? (
-          <WidgetSkeleton />
-        ) : data ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Cashflow
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Saldo Awal</span>
-                  <span className="font-mono">{formatRp(data.cashflow.saldoAwal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-emerald-600">Penerimaan</span>
-                  <span className="font-mono text-emerald-600">+{formatRp(data.cashflow.penerimaan)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-red-600">Pengeluaran</span>
-                  <span className="font-mono text-red-600">-{formatRp(data.cashflow.pengeluaran)}</span>
-                </div>
-                <div className="flex justify-between text-base font-bold border-t pt-2">
-                  <span>Saldo Akhir</span>
-                  <span className="font-mono">{formatRp(data.cashflow.saldoAkhir)}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+          {/* Widget 2: Cashflow */}
+          {showCashflow &&
+            (loading ? (
+              <WidgetSkeleton />
+            ) : data?.cashflow ? (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" />
+                    Cashflow
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Saldo Awal</span>
+                      <span className="font-mono">{formatRp(data.cashflow.saldoAwal)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-emerald-600">Penerimaan</span>
+                      <span className="font-mono text-emerald-600">+{formatRp(data.cashflow.penerimaan)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-red-600">Pengeluaran</span>
+                      <span className="font-mono text-red-600">-{formatRp(data.cashflow.pengeluaran)}</span>
+                    </div>
+                    <div className="flex justify-between text-base font-bold border-t pt-2">
+                      <span>Saldo Akhir</span>
+                      <span className="font-mono">{formatRp(data.cashflow.saldoAkhir)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null)}
 
-        {/* Widget 3: Beban Biaya (Bar Chart) */}
-        {loading ? (
-          <ChartSkeleton />
-        ) : data && data.bebanBiaya.items.length > 0 ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Beban Biaya</CardTitle>
-              <CardDescription className="text-xs">Rincian beban operasional bulan ini</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data.bebanBiaya.items} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="namaBeban" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={50} />
-                    <YAxis tick={{ fontSize: 11 }} tickFormatter={formatShort} />
-                    <Tooltip formatter={(val: number) => [formatRp(val), 'Jumlah']} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-                    <Bar dataKey="jumlah" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        ) : !loading ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Beban Biaya</CardTitle>
-              <CardDescription className="text-xs">Rincian beban operasional bulan ini</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex h-[160px] items-center justify-center">
-                <p className="text-muted-foreground">Belum ada data beban</p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
+          {/* Widget 3: Beban Biaya (Bar Chart) */}
+          {showLabaRugi &&
+            (loading ? (
+              <ChartSkeleton />
+            ) : data?.bebanBiaya && data.bebanBiaya.items.length > 0 ? (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Beban Biaya</CardTitle>
+                  <CardDescription className="text-xs">Rincian beban operasional bulan ini</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[200px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data.bebanBiaya.items} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="namaBeban" tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={50} />
+                        <YAxis tick={{ fontSize: 11 }} tickFormatter={formatShort} />
+                        <Tooltip formatter={(val: number) => [formatRp(val), 'Jumlah']} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+                        <Bar dataKey="jumlah" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : !loading ? (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Beban Biaya</CardTitle>
+                  <CardDescription className="text-xs">Rincian beban operasional bulan ini</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex h-[160px] items-center justify-center">
+                    <p className="text-muted-foreground">Belum ada data beban</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null)}
 
-        {/* Widget 4: Tren Penjualan (Line Chart) */}
-        {loading ? (
-          <ChartSkeleton />
-        ) : data && data.trenPenjualan.items.length > 0 ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-1.5">
-                Penjualan (Invoice)
-                {data.trenPenjualan.labelNote && (
-                  <span title={data.trenPenjualan.labelNote} className="text-muted-foreground cursor-help">
-                    <Info className="h-3.5 w-3.5" />
-                  </span>
-                )}
-              </CardTitle>
-              <CardDescription className="text-xs">{data.trenPenjualan.labelNote ? 'Invoice Turnover — bukan GL Revenue' : 'Penjualan 6 bulan terakhir'}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.trenPenjualan.items} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                    <XAxis dataKey="bulan" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} tickFormatter={formatShort} />
-                    <Tooltip formatter={(val: number) => [formatRp(val), 'Penjualan']} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-                    <Line type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-        ) : !loading ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-1.5">
-                Penjualan (Invoice)
-                {data?.trenPenjualan.labelNote && (
-                  <span title={data.trenPenjualan.labelNote} className="text-muted-foreground cursor-help">
-                    <Info className="h-3.5 w-3.5" />
-                  </span>
-                )}
-              </CardTitle>
-              <CardDescription className="text-xs">{data?.trenPenjualan.labelNote ? 'Invoice Turnover — bukan GL Revenue' : 'Penjualan 6 bulan terakhir'}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex h-[200px] items-center justify-center">
-                <p className="text-muted-foreground">Belum ada data penjualan</p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-      </div>
+          {/* Widget 4: Tren Penjualan (Line Chart) */}
+          {showPenjualan &&
+            (loading ? (
+              <ChartSkeleton />
+            ) : data?.trenPenjualan && data.trenPenjualan.items.length > 0 ? (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-1.5">
+                    Penjualan (Invoice)
+                    {data.trenPenjualan.labelNote && (
+                      <span title={data.trenPenjualan.labelNote} className="text-muted-foreground cursor-help">
+                        <Info className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                  </CardTitle>
+                  <CardDescription className="text-xs">{data.trenPenjualan.labelNote ? 'Invoice Turnover — bukan GL Revenue' : 'Penjualan 6 bulan terakhir'}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[200px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={data.trenPenjualan.items} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="bulan" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} tickFormatter={formatShort} />
+                        <Tooltip formatter={(val: number) => [formatRp(val), 'Penjualan']} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
+                        <Line type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : !loading ? (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-1.5">
+                    Penjualan (Invoice)
+                    {data?.trenPenjualan?.labelNote && (
+                      <span title={data.trenPenjualan.labelNote} className="text-muted-foreground cursor-help">
+                        <Info className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                  </CardTitle>
+                  <CardDescription className="text-xs">{data?.trenPenjualan?.labelNote ? 'Invoice Turnover — bukan GL Revenue' : 'Penjualan 6 bulan terakhir'}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex h-[200px] items-center justify-center">
+                    <p className="text-muted-foreground">Belum ada data penjualan</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null)}
+        </div>
+      )}
 
-      {/* Tahap 3 + Phase 10: 3 widget — Rekonsiliasi Persediaan + Nilai Persediaan + Stok Menipis */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <RekonsiliasiPersediaanWidget />
-        <InventoryValueWidget data={data} />
-        <LowStockWidget data={data} />
-      </div>
-      {/* Phase 9 — Accounting Health detail widget (cached, fetches /laporan/accounting-health) + Phase 10 — Accounting Health ringkasan dari dashboard summary */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <AccountingHealthWidget />
-        <DashboardAccountingHealthWidget data={data} />
-      </div>
+      {/* Tahap 3 + Phase 10: 3 widget — Rekonsiliasi Persediaan + Nilai
+          Persediaan + Stok Menipis (Update #018: per permission) */}
+      {(showRekonsiliasi || showPersediaan) && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          {showRekonsiliasi && <RekonsiliasiPersediaanWidget />}
+          {showPersediaan && <InventoryValueWidget data={data} />}
+          {showPersediaan && <LowStockWidget data={data} />}
+        </div>
+      )}
+
+      {/* Phase 9 + Phase 10 — Accounting Health (Update #018: hanya role
+          dengan akses laporan rekonsiliasi) */}
+      {showHealth && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <AccountingHealthWidget />
+          <DashboardAccountingHealthWidget data={data} />
+        </div>
+      )}
+
+      {/* Update #018 — Widget Produksi & Pembelian (dashboard per role) */}
+      {(showProduksi || showPembelian) && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {showProduksi && <ProduksiWidget data={data} />}
+          {showPembelian && <PembelianWidget data={data} />}
+        </div>
+      )}
 
       {/* Bottom Section - Full Width */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Overdue Invoices Table */}
-        {loading ? (
-          <WidgetSkeleton />
-        ) : data ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Package className="h-4 w-4" />
-                Invoice Jatuh Tempo
-              </CardTitle>
-              <CardDescription>Daftar invoice yang perlu segera ditindaklanjuti</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>No. Invoice</TableHead>
-                    <TableHead>Pelanggan</TableHead>
-                    <TableHead className="text-right">Sisa</TableHead>
-                    <TableHead>Jatuh Tempo</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.fakturJatuhTempo.items.length === 0 ? (
+        {showPenjualan &&
+          (loading ? (
+            <WidgetSkeleton />
+          ) : data?.fakturJatuhTempo ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Package className="h-4 w-4" />
+                  Invoice Jatuh Tempo
+                </CardTitle>
+                <CardDescription>Daftar invoice yang perlu segera ditindaklanjuti</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
-                        Tidak ada invoice jatuh tempo
-                      </TableCell>
+                      <TableHead>No. Invoice</TableHead>
+                      <TableHead>Pelanggan</TableHead>
+                      <TableHead className="text-right">Sisa</TableHead>
+                      <TableHead>Jatuh Tempo</TableHead>
+                      <TableHead>Status</TableHead>
                     </TableRow>
-                  ) : (
-                    data.fakturJatuhTempo.items.map((f: FakturJatuhTempoItem) => (
-                      <TableRow key={f.noFaktur}>
-                        <TableCell className="font-mono text-xs">{f.noFaktur}</TableCell>
-                        <TableCell className="text-sm">{f.pelanggan}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          <div>{formatRp(f.jumlah)}</div>
-                          {f.originalNilai != null && f.originalNilai !== f.jumlah && <div className="text-[10px] text-muted-foreground font-normal">Original: {formatRp(f.originalNilai)}</div>}
-                        </TableCell>
-                        <TableCell className="text-sm whitespace-nowrap">{formatDate(f.jatuhTempo)}</TableCell>
-                        <TableCell>
-                          {f.isOverdue ? (
-                            <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100 text-xs gap-1">
-                              <AlertTriangle className="h-3 w-3" />
-                              OVERDUE
-                            </Badge>
-                          ) : (
-                            <Badge variant={f.status === 'SELESAI' ? 'default' : 'secondary'} className="text-xs">
-                              {f.status}
-                            </Badge>
-                          )}
+                  </TableHeader>
+                  <TableBody>
+                    {data.fakturJatuhTempo.items.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                          Tidak ada invoice jatuh tempo
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        ) : null}
+                    ) : (
+                      data.fakturJatuhTempo.items.map((f: FakturJatuhTempoItem) => (
+                        <TableRow key={f.noFaktur}>
+                          <TableCell className="font-mono text-xs">{f.noFaktur}</TableCell>
+                          <TableCell className="text-sm">{f.pelanggan}</TableCell>
+                          <TableCell className="text-right font-mono text-sm">
+                            <div>{formatRp(f.jumlah)}</div>
+                            {f.originalNilai != null && f.originalNilai !== f.jumlah && <div className="text-[10px] text-muted-foreground font-normal">Original: {formatRp(f.originalNilai)}</div>}
+                          </TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">{formatDate(f.jatuhTempo)}</TableCell>
+                          <TableCell>
+                            {f.isOverdue ? (
+                              <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100 text-xs gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                OVERDUE
+                              </Badge>
+                            ) : (
+                              <Badge variant={f.status === 'SELESAI' ? 'default' : 'secondary'} className="text-xs">
+                                {f.status}
+                              </Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ) : null)}
 
-        {/* Recent Activity */}
+        {/* Recent Activity — semua role (Update #018) */}
         {loading ? (
           <WidgetSkeleton />
-        ) : data ? (
+        ) : data?.aktivitasTerbaru ? (
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">

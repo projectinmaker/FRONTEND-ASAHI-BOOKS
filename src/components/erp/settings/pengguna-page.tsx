@@ -30,7 +30,11 @@ const ROLE_OPTIONS: { value: RolePengguna; label: string }[] = [
   { value: 'MANAJER_KEUANGAN', label: 'Manajer Keuangan' },
   { value: 'STAFF_AKUNTANSI', label: 'Staff Akuntansi' },
   { value: 'STAFF_GUDANG', label: 'Staff Gudang' },
-  { value: 'STAFF_PENJUALAN', label: 'Staff Penjualan' }
+  { value: 'STAFF_PENJUALAN', label: 'Staff Penjualan' },
+  // Update #018 — role Pembelian & Engineering (template RBAC sudah ada di
+  // backend; enum+dropdown ini yang membuat keduanya bisa dipilih).
+  { value: 'STAFF_PEMBELIAN', label: 'Staf Pembelian' },
+  { value: 'STAFF_ENGINEERING', label: 'Staf Engineering (Produksi)' }
 ];
 
 // ─── Badge helpers ──────────────────────────────────────────────────────────
@@ -41,7 +45,10 @@ const roleBadge = (role: string) => {
     MANAJER_KEUANGAN: 'bg-emerald-100 text-emerald-700 border-emerald-200',
     STAFF_AKUNTANSI: 'bg-cyan-100 text-cyan-700 border-cyan-200',
     STAFF_GUDANG: 'bg-amber-100 text-amber-700 border-amber-200',
-    STAFF_PENJUALAN: 'bg-rose-100 text-rose-700 border-rose-200'
+    STAFF_PENJUALAN: 'bg-rose-100 text-rose-700 border-rose-200',
+    // Update #018
+    STAFF_PEMBELIAN: 'bg-orange-100 text-orange-700 border-orange-200',
+    STAFF_ENGINEERING: 'bg-teal-100 text-teal-700 border-teal-200'
   };
   const cls = map[role] || 'bg-gray-100 text-gray-700 border-gray-200';
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>{role}</span>;

@@ -35,7 +35,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Loader2, Plus, Trash2, Printer, CheckCircle, FileText, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, PaginatedResponse, ApiError } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { formatDate, todayStr } from '@/lib/pdf-utils';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
@@ -44,7 +44,7 @@ import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
-import type { RequestOrderPart, RequestOrderPartCreate, RequestOrderPartItemCreate, RequestOrderPartStatus, RequestOrderPartUpdate, SalesOrderResponse, SupplierDropdown } from '@/types/api';
+import type { RequestOrderPart, RequestOrderPartCreate, RequestOrderPartItemCreate, RequestOrderPartOptionsResponse, RequestOrderPartStatus, RequestOrderPartUpdate, RopSalesOrderOption, SupplierDropdown } from '@/types/api';
 
 // ─── Konstanta ───────────────────────────────────────────────────────────────
 
@@ -140,7 +140,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
   const can = useAccessStore((s) => s.can);
 
   // ── Dropdown referensi ──
-  const [salesOrderOptions, setSalesOrderOptions] = useState<SalesOrderResponse[]>([]);
+  const [salesOrderOptions, setSalesOrderOptions] = useState<RopSalesOrderOption[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<SupplierDropdown[]>([]);
   const [dropdownsLoading, setDropdownsLoading] = useState(true);
 
@@ -171,15 +171,22 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
   const title = mode === 'create' ? 'ROP Baru' : detail?.noRop || 'Request Order Part';
 
   // ── Muat dropdown SO + supplier ──
+  // Update #018: keduanya digabung di satu endpoint khusus produksi
+  // (GET /produksi/request-order-part/opsi) yang cukup digati permission
+  // production.request_order_part.view — sebelumnya form memanggil
+  // /penjualan/sales-order (butuh sales.sales_order.view) dan
+  // /master/supplier-dropdown (butuh master.supplier.view), yang membuat
+  // role Staf Engineering (produksi saja) tidak bisa membuka form.
   useEffect(() => {
     let cancelled = false;
     const fetchDropdowns = async () => {
       setDropdownsLoading(true);
       try {
-        const [soRes, supplierRes] = await Promise.all([api.get<PaginatedResponse<SalesOrderResponse>>('/penjualan/sales-order?limit=200'), api.get<SupplierDropdown[]>('/master/supplier-dropdown')]);
+        const res = await api.get<RequestOrderPartOptionsResponse>('/produksi/request-order-part/opsi');
         if (cancelled) return;
-        setSalesOrderOptions(soRes.data.filter((so) => so.status !== 'DIBATALKAN'));
-        setSupplierOptions(supplierRes);
+        // Backend sudah menyeragamkan SO tanpa DIBATALKAN & supplier AKTIF.
+        setSalesOrderOptions(res.salesOrders.filter((so) => so.status !== 'DIBATALKAN'));
+        setSupplierOptions(res.suppliers);
       } catch {
         /* non-critical */
       } finally {

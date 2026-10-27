@@ -302,6 +302,24 @@ const DASHBOARD_PERMISSION = 'dashboard.operational.view';
 /** Kode permission modul Laporan — salah satu cukup (dicek sekali per modul). */
 const REPORTS_PERMISSIONS = ['reports.financial.view', 'reports.ledger.view', 'reports.ar_aging.view', 'reports.ap_aging.view', 'reports.cashbank.view', 'reports.inventory_report.view', 'reports.reconciliation_report.view'];
 
+/** Label role untuk footer sidebar (Update #018) — enum legacy dari /auth/login
+ * ditampilkan dengan nama yang sama seperti di halaman Pengguna & template
+ * RBAC backend (sebelumnya tampil mentah, mis. "STAFF_AKUNTANSI"). */
+const ROLE_LABEL: Record<string, string> = {
+  ADMINISTRATOR: 'Administrator',
+  MANAJER_KEUANGAN: 'Manajer Keuangan',
+  STAFF_AKUNTANSI: 'Staff Akuntansi',
+  STAFF_GUDANG: 'Staff Gudang',
+  STAFF_PENJUALAN: 'Staff Penjualan',
+  STAFF_PEMBELIAN: 'Staf Pembelian',
+  STAFF_ENGINEERING: 'Staf Engineering (Produksi)'
+};
+
+function roleLabel(role?: string | null): string {
+  if (!role) return 'Role';
+  return ROLE_LABEL[role] || role;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function ERPSidebar() {
@@ -567,7 +585,7 @@ export function ERPSidebar() {
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-medium truncate block">{user?.namaLengkap || 'User'}</span>
-                  <span className="text-[11px] text-sidebar-foreground/60 block">{user?.role || 'Role'}</span>
+                  <span className="text-[11px] text-sidebar-foreground/60 block">{roleLabel(user?.role)}</span>
                 </div>
                 <button onClick={logout} className="rounded-md p-1.5 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors" title="Keluar">
                   <LogOut className="size-4" />
@@ -593,7 +611,7 @@ export function ERPSidebar() {
               <DropdownMenuContent side="top" align="center" className="min-w-48">
                 <div className="px-2 py-1.5">
                   <p className="text-sm font-medium truncate">{user?.namaLengkap || 'User'}</p>
-                  <p className="text-xs text-muted-foreground truncate">{user?.role || 'Role'}</p>
+                  <p className="text-xs text-muted-foreground truncate">{roleLabel(user?.role)}</p>
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive cursor-pointer">

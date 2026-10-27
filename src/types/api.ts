@@ -11,7 +11,7 @@
 export type HeaderCOA = 'AKTIVA' | 'KEWAJIBAN' | 'MODAL' | 'PENDAPATAN' | 'HPP' | 'BEBAN';
 export type SaldoNormal = 'DEBIT' | 'KREDIT';
 export type TingkatAkun = 'HEADER' | 'GROUP' | 'DETAIL';
-export type RolePengguna = 'ADMINISTRATOR' | 'MANAJER_KEUANGAN' | 'STAFF_AKUNTANSI' | 'STAFF_GUDANG' | 'STAFF_PENJUALAN';
+export type RolePengguna = 'ADMINISTRATOR' | 'MANAJER_KEUANGAN' | 'STAFF_AKUNTANSI' | 'STAFF_GUDANG' | 'STAFF_PENJUALAN' | 'STAFF_PEMBELIAN' | 'STAFF_ENGINEERING';
 
 // ── Auth ──────────────────────────────────────────────────────────────
 
@@ -2719,16 +2719,63 @@ export interface AccountingHealthSummaryWidget {
 }
 
 export interface DashboardSummaryResponse {
-  labaRugi: LabaRugiWidget;
-  cashflow: CashflowWidget;
-  bebanBiaya: BebanBiayaWidget;
-  trenPenjualan: TrenPenjualanWidget;
-  fakturJatuhTempo: { items: FakturJatuhTempoItem[] };
-  aktivitasTerbaru: { items: AktivitasItem[] };
+  // === Update #018 — dashboard per role: SEMUA section opsional. Backend
+  // hanya mengirim section yang cocok dengan permission user
+  // (lihat SECTION_PERMISSIONS di endpoints/dashboard.py). ===
+  labaRugi?: LabaRugiWidget | null;
+  cashflow?: CashflowWidget | null;
+  bebanBiaya?: BebanBiayaWidget | null;
+  trenPenjualan?: TrenPenjualanWidget | null;
+  fakturJatuhTempo?: { items: FakturJatuhTempoItem[] } | null;
+  aktivitasTerbaru?: { items: AktivitasItem[] } | null;
   // === Phase 10 — 3 widget baru (optional, null kalau service error) ===
   inventoryValue?: InventoryValueWidget | null;
   lowStock?: LowStockWidget | null;
   accountingHealth?: AccountingHealthSummaryWidget | null;
+  // === Update #018 — widget Produksi & Pembelian (dashboard per role) ===
+  produksi?: ProduksiWidget | null;
+  pembelian?: PembelianWidget | null;
+}
+
+// === Update #018 — Widget Produksi (role Staf Engineering dll.) ===
+
+export interface ProduksiRopTerbaruItem {
+  id: string;
+  noRop: string;
+  tanggal?: string | null;
+  projectName: string;
+  model?: string | null;
+  status: string; // "DRAFT" | "DIBUAT"
+  totalItem: number;
+}
+
+export interface ProduksiWidget {
+  totalRop: number;
+  draft: number;
+  dibuat: number;
+  totalPart: number;
+  terbaru: ProduksiRopTerbaruItem[];
+}
+
+// === Update #018 — Widget Pembelian (role Staf Pembelian dll.) ===
+
+export interface PembelianPoItem {
+  id: string;
+  noPesanan: string;
+  tanggal?: string | null;
+  supplier: string;
+  grandTotal: number | string;
+  status: string; // DRAFT | DIPROSES | SELESAI | DIBATALKAN
+}
+
+export interface PembelianWidget {
+  totalPo: number;
+  draft: number;
+  diproses: number;
+  selesai: number;
+  dibatalkan: number;
+  nilaiOpen: number | string;
+  terbaru: PembelianPoItem[];
 }
 
 // ── Laporan ───────────────────────────────────────────────────────────
@@ -4121,6 +4168,28 @@ export interface RequestOrderPartUpdate {
   diketahuiOleh?: string | null;
   disetujuiOleh?: string | null;
   items?: RequestOrderPartItemCreate[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Update #018 — Opsi/dropdown form ROP (GET /produksi/request-order-part/opsi)
+// Satu endpoint scoped permission produksi (menggantikan panggilan ke
+// /penjualan/sales-order + /master/supplier-dropdown) supaya role Staf
+// Engineering yang hanya berpermission produksi tetap bisa mengisi form.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Opsi SO ringan untuk dropdown form ROP — hanya field yang dipakai form. */
+export interface RopSalesOrderOption {
+  id: string;
+  noPesanan: string;
+  customerPoNumber?: string | null;
+  tanggal: string;
+  status: string;
+  pelanggan?: { id: string; kode: string; nama: string } | null;
+}
+
+export interface RequestOrderPartOptionsResponse {
+  salesOrders: RopSalesOrderOption[];
+  suppliers: SupplierDropdown[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
