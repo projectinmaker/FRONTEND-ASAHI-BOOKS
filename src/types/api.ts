@@ -1730,6 +1730,11 @@ export interface SalesReturResponse {
   subTotal: number;
   totalPpn: number;
   grandTotal: number;
+  // AUD-12 (update #05) — PPh23 retur derived dari SI sumber (net-of-PPh23):
+  // grand total retur = DPP + PPN − PPh23 retur (dihitung backend).
+  pph23Applicable: boolean;
+  pph23: number;
+  totalPph23: number;
   status: StatusPenjualan;
   jurnalUmumId: string | null;
   createdBy: string;
@@ -1959,6 +1964,10 @@ export interface PurchaseInvoiceCreate {
   alamat?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
+  // AUD-09 (update #04) — PPh 23 opsional di PI (persen 0-100; hutang net +
+  // Cr Hutang PPh 23 saat posting). pph23 hanya dipakai bila pph23Applicable.
+  pph23?: number;
+  pph23Applicable?: boolean;
   keterangan?: string | null;
   autoPostJurnal?: false;
   details: PurchaseInvoiceDetailCreate[];
@@ -1974,6 +1983,9 @@ export interface PurchaseInvoiceUpdate {
   alamat?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
+  // AUD-09 — PPh 23 PI (hanya bisa diubah saat masih draft)
+  pph23?: number;
+  pph23Applicable?: boolean;
   keterangan?: string | null;
   autoPostJurnal?: boolean;
 }
@@ -1990,6 +2002,10 @@ export interface PurchaseInvoiceResponse {
   alamat: string | null;
   diskonGlobal: number;
   ppn: number;
+  // AUD-09 (update #04) — PPh 23 pada Purchase Invoice
+  pph23: number | null;
+  pph23Applicable: boolean;
+  totalPph23: number;
   keterangan: string | null;
   autoPostJurnal: boolean;
   subTotal: number;
@@ -3081,6 +3097,10 @@ export interface SaldoAwalRequest {
 export interface SaldoAwalResponse {
   sudahDiset: boolean;
   tanggal: string | null;
+  /** AUD-15 — tahun buku set yang aktif (SA-{tahun}). */
+  tahun?: number | null;
+  /** AUD-15 — daftar tahun yang sudah punya set saldo awal. */
+  tahunTersedia: number[];
   items: SaldoAwalItem[];
   totalDebit: number;
   totalKredit: number;
@@ -3137,6 +3157,31 @@ export interface PeriodeStatusResponse {
   bulan: number;
   status: string;
   labaRugi: number | null;
+}
+
+// ── Penutupan Tahun (AUD-14 update #04 — closing tahunan) ────────────────────
+// GET  /periode/penutupan-periode/tahun            → PenutupanTahunItem[]
+// POST /periode/penutupan-periode/tutup-tahun/{tahun} → PenutupanTahunItem
+// POST /periode/penutupan-periode/buka-tahun/{tahun}  → PenutupanTahunItem
+//
+// Transfer saldo Laba (Rugi) Tahun Berjalan (322000) → Laba (Rugi) Ditahan
+// (321000) via jurnal CL-YEAR-{tahun}. labaRugi dikirim sebagai string
+// (Decimal) — parse dengan parseFloat/formatRp di UI.
+
+export interface PenutupanTahunItem {
+  tahun: number;
+  /** 'DITUTUP' | 'DIBUKA' (record tahunan) | 'TERBUKA' (belum pernah ditutup tahunan). */
+  status: string;
+  labaRugi: string | null;
+  keterangan: string | null;
+  jurnalPenutupanId: string | null;
+  closedAt: string | null;
+  reopenedAt: string | null;
+  reopenAlasan: string | null;
+  /** Jumlah bulan periode dengan status DITUTUP pada tahun ini (0-12). */
+  bulanDitutup: number;
+  /** True kalau 12/12 bulan sudah DITUTUP — syarat tutup tahun. */
+  semuaBulanDitutup: boolean;
 }
 
 // ── Pre-Close Readiness (Phase 8 — Roadmap §25) ──────────────────────────────
@@ -3868,6 +3913,41 @@ export interface DeletedDocumentLogDetailResponse extends DeletedDocumentLogResp
 
 export interface DeletedDocumentLogListResponse {
   data: DeletedDocumentLogResponse[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+// ── Histori Pembatalan (AUD-01 update #05 — reversal & hard delete) ───────────
+// GET /histori/pembatalan?limit=...&documentType=...
+
+/** Jurnal pembalik yang dibuat saat pembatalan mode REVERSAL. */
+export interface PembatalanReversalJurnal {
+  id: string;
+  noJurnal: string;
+  reversalOf?: string | null;
+}
+
+export interface PembatalanHistoriRow {
+  id: string;
+  documentType: string;
+  documentId: string;
+  documentNumber: string | null;
+  documentDate: string | null;
+  documentStatus: string | null;
+  /** Decimal sebagai string — format dengan formatRp(Number(...)) di UI. */
+  totalAmount: string | null;
+  reason: string | null;
+  /** 'REVERSAL' (jurnal pembalik) | 'HARD_DELETE' (hapus permanen). */
+  mode: string;
+  reversalJurnalIds: PembatalanReversalJurnal[];
+  /** Username user yang membatalkan. */
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+}
+
+export interface PembatalanHistoriListResponse {
+  data: PembatalanHistoriRow[];
   total: number;
   skip: number;
   limit: number;
