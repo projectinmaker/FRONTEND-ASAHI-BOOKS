@@ -29,8 +29,6 @@ import { BookOpen, Search, ChevronLeft, ChevronRight, Eye, ArrowUpRight, ArrowDo
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { workflowApi } from '@/lib/workflow-api';
-// AUD-17 (update #05) — filter perusahaan untuk daftar jurnal
-import { PerusahaanFilter, type PerusahaanFilterValue } from '@/components/erp/perusahaan-filter';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -1178,8 +1176,6 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
   const [tanggalMulai, setTanggalMulai] = useState('');
   const [tanggalAkhir, setTanggalAkhir] = useState('');
   const [skip, setSkip] = useState(0);
-  // AUD-17 (update #05) — scope perusahaan (companyId ke GET /jurnal)
-  const [companyFilter, setCompanyFilter] = useState<PerusahaanFilterValue>('ALL');
 
   // Debounced search
   const searchRef = useRef(search);
@@ -1209,11 +1205,6 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
       if (status && status !== 'ALL') params.set('status', status);
       if (tanggalMulai) params.set('tanggalMulai', tanggalMulai);
       if (tanggalAkhir) params.set('tanggalAkhir', tanggalAkhir);
-      // AUD-17 — scope perusahaan (backend menerima companyId / unassigned)
-      if (companyFilter && companyFilter !== 'ALL') {
-        if (companyFilter === 'UNASSIGNED') params.set('unassigned', 'true');
-        else params.set('companyId', companyFilter);
-      }
 
       const res = await api.get<PaginatedResponse<JurnalUmumListResponse>>(`/jurnal?${params.toString()}`);
       setData(res.data);
@@ -1225,7 +1216,7 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
     } finally {
       setLoading(false);
     }
-  }, [skip, refModule, status, tanggalMulai, tanggalAkhir, companyFilter]);
+  }, [skip, refModule, status, tanggalMulai, tanggalAkhir]);
 
   useEffect(() => {
     fetchData();
@@ -1234,7 +1225,7 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
   // Reset to page 0 when filters change
   useEffect(() => {
     setSkip(0);
-  }, [refModule, status, tanggalMulai, tanggalAkhir, companyFilter]);
+  }, [refModule, status, tanggalMulai, tanggalAkhir]);
 
   // Computed summary values
   const totalDebit = data.reduce((s, d) => s + Number(d.totalDebit), 0);
@@ -1347,9 +1338,6 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
               <Label className="text-xs font-medium text-muted-foreground">Tanggal Akhir</Label>
               <Input type="date" value={tanggalAkhir} onChange={(e) => setTanggalAkhir(e.target.value)} />
             </div>
-
-            {/* AUD-17 — scope perusahaan daftar jurnal */}
-            <PerusahaanFilter value={companyFilter} onChange={setCompanyFilter} label="Perusahaan" widthClass="w-full" />
           </div>
         </CardContent>
       </Card>

@@ -195,12 +195,6 @@ const modules: NavModule[] = [
       }
     ]
   },
-  {
-    id: 'organisasi',
-    label: 'Organisasi',
-    icon: Building2,
-    single: true
-  },
   // === Update ASAHI #019 — modul Pengaturan di-restrukturisasi menjadi dua
   // grup: "Informasi Perusahaan" (Umum[ex-Profil Perusahaan], Periode
   // Akuntansi, Pajak) + "Master Data" (10 item yang sudah ada). ===
@@ -264,8 +258,7 @@ const modules: NavModule[] = [
 // (cash_bank.*, settlement.*, dsb.) yang tidak pernah cocok, sehingga menu
 // Kas & Bank, Laporan, dsb. tersembunyi untuk semua role kecuali Super Admin.
 const SINGLE_MODULE_PERMISSIONS: Record<string, string> = {
-  'workflow-queue': 'workflow.queue.view',
-  organisasi: 'system.organisation.view'
+  'workflow-queue': 'workflow.queue.view'
 };
 
 /** Kode permission subPage per modul (module-id → subPage-id → code). */

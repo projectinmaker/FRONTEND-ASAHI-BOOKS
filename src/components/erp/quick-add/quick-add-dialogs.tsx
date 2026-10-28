@@ -23,7 +23,7 @@ import { Loader2, Package, PackageOpen, Wrench, Layers, Plus } from 'lucide-reac
 import { cn } from '@/lib/utils';
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { useTabStore } from '@/store/tab-store';
-import { getSyaratBayarOptions, clearMasterDataCache, getOrganizationOptions, type SyaratBayarOption, type OrganizationOption } from '@/lib/master-data';
+import { getSyaratBayarOptions, clearMasterDataCache, type SyaratBayarOption } from '@/lib/master-data';
 import { supplierFoundationKeys, supplierFoundationPayload } from '@/lib/phase-a';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -997,18 +997,14 @@ interface GudangQuickForm {
   kode: string;
   nama: string;
   alamat: string;
-  companyId: string;
-  branchId: string;
 }
 
-const emptyGudangForm: GudangQuickForm = { kode: '', nama: '', alamat: '', companyId: '', branchId: '' };
+const emptyGudangForm: GudangQuickForm = { kode: '', nama: '', alamat: '' };
 
 export function QuickAddGudangDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; onCreated: (gudang: GudangResponse) => void }) {
   const refreshListTab = useTabStore((s) => s.refreshListTab);
   const [form, setForm] = useState<GudangQuickForm>(emptyGudangForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [companyOptions, setCompanyOptions] = useState<OrganizationOption[]>([]);
-  const [branchOptions, setBranchOptions] = useState<OrganizationOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -1027,12 +1023,6 @@ export function QuickAddGudangDialog({ open, onOpenChange, onCreated }: { open: 
     setForm(emptyGudangForm);
     setFormErrors({});
     setError('');
-    getOrganizationOptions('COMPANY')
-      .then(setCompanyOptions)
-      .catch(() => setCompanyOptions([]));
-    getOrganizationOptions('BRANCH')
-      .then(setBranchOptions)
-      .catch(() => setBranchOptions([]));
   }, [open]);
 
   const handleSave = async () => {
@@ -1051,9 +1041,7 @@ export function QuickAddGudangDialog({ open, onOpenChange, onCreated }: { open: 
       const payload: GudangCreate = {
         kode: form.kode.trim(),
         nama: form.nama.trim(),
-        alamat: form.alamat.trim() || null,
-        companyId: form.companyId || null,
-        branchId: form.branchId || null
+        alamat: form.alamat.trim() || null
       };
       const created = await api.post<GudangResponse>('/master/gudang', payload);
       toast.success('Gudang berhasil ditambahkan', { description: `${created.kode} — ${created.nama}` });
@@ -1086,38 +1074,6 @@ export function QuickAddGudangDialog({ open, onOpenChange, onCreated }: { open: 
       <div className="space-y-2">
         <Label htmlFor="qa-gdg-alamat">Alamat</Label>
         <Textarea id="qa-gdg-alamat" rows={2} value={form.alamat} onChange={(e) => updateForm('alamat', e.target.value)} placeholder="Alamat gudang (opsional)" />
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label>Company</Label>
-          <Select value={form.companyId} onValueChange={(v) => updateForm('companyId', v)} disabled={submitting}>
-            <SelectTrigger>
-              <SelectValue placeholder="Pilih company" />
-            </SelectTrigger>
-            <SelectContent>
-              {companyOptions.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Branch</Label>
-          <Select value={form.branchId} onValueChange={(v) => updateForm('branchId', v)} disabled={submitting}>
-            <SelectTrigger>
-              <SelectValue placeholder="Pilih branch" />
-            </SelectTrigger>
-            <SelectContent>
-              {branchOptions.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
     </QuickAddShell>
   );

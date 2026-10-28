@@ -23,7 +23,6 @@ const Inventory = dynamic(() => import('@/components/erp/inventory'), { ssr: fal
 const Production = dynamic(() => import('@/components/erp/production'), { ssr: false });
 const GeneralLedger = dynamic(() => import('@/components/erp/general-ledger'), { ssr: false });
 const Reports = dynamic(() => import('@/components/erp/reports'), { ssr: false });
-const Organisasi = dynamic(() => import('@/components/erp/organisasi'), { ssr: false });
 const Settings = dynamic(() => import('@/components/erp/settings'), { ssr: false });
 // === Update ASAHI #019 — modul Preferensi (konfigurasi aplikasi terpusat) ===
 const PreferensiModule = dynamic(() => import('@/components/erp/preferensi'), { ssr: false });
@@ -43,7 +42,6 @@ const moduleLabels: Record<string, string> = {
   'general-ledger': 'Buku Besar',
   'workflow-queue': 'Antrean Persetujuan',
   reports: 'Laporan',
-  organisasi: 'Organisasi',
   settings: 'Pengaturan',
   // === Update ASAHI #019 — modul Preferensi ===
   preferensi: 'Preferensi'
@@ -187,8 +185,6 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
       return <GeneralLedger subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'reports':
       return <Reports subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
-    case 'organisasi':
-      return <Organisasi subPage={subPage} />;
     case 'workflow-queue':
       return <WorkflowQueue />;
     case 'settings':

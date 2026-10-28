@@ -10,8 +10,6 @@ import { CalendarDays, RefreshCw, TrendingUp, TrendingDown, DollarSign, ArrowUpR
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
-// AUD-17 (update #05) — filter perusahaan untuk ringkasan dashboard
-import { PerusahaanFilter, companyScopeQuery, type PerusahaanFilterValue } from '@/components/erp/perusahaan-filter';
 import type { DashboardSummaryResponse, FakturJatuhTempoItem, AktivitasItem, RekonsiliasiPersediaanRingkasanResponse, AccountingHealthResponse } from '@/types/api';
 import { useTabStore } from '@/store/tab-store';
 import { useAccessStore } from '@/store/access-store';
@@ -616,8 +614,6 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // AUD-17 (update #05) — scope perusahaan untuk /dashboard/summary
-  const [companyFilter, setCompanyFilter] = useState<PerusahaanFilterValue>('ALL');
   // Update #018 — permission user → widget tampil sesuai role
   const can = useAccessStore((s) => s.can);
 
@@ -634,8 +630,7 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const cs = companyScopeQuery(companyFilter);
-      const res = await api.get<DashboardSummaryResponse>(`/dashboard/summary?tanggal=${todayStr()}${cs}`);
+      const res = await api.get<DashboardSummaryResponse>(`/dashboard/summary?tanggal=${todayStr()}`);
       setData(res);
     } catch (err) {
       if (err instanceof ApiError) setError(err.detail);
@@ -647,7 +642,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboard();
-  }, [companyFilter]);
+  }, []);
 
   // Chart colors
   const chartColors = useMemo(() => {
@@ -664,10 +659,6 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1 text-sm">Ringkasan bisnis perusahaan</p>
         </div>
         <div className="flex flex-wrap items-end justify-end gap-2">
-          {/* AUD-17 — scope perusahaan ringkasan dashboard.
-              Update #018 — hanya untuk role yang boleh melihat laporan
-              keuangan (endpoint /laporan/companies digati permission itu). */}
-          {showLabaRugi && <PerusahaanFilter value={companyFilter} onChange={setCompanyFilter} />}
           <Button variant="outline" size="sm" className="gap-2" onClick={fetchDashboard} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh

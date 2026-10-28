@@ -9,7 +9,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Warehouse, SearchX } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState } from '@/components/ui/empty-state';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
@@ -17,7 +16,6 @@ import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { ExcelTools } from './excel-tools';
 
 import { api, ApiError } from '@/lib/api';
-import { getOrganizationOptions, type OrganizationOption } from '@/lib/master-data';
 import type { GudangResponse, GudangCreate, GudangUpdate } from '@/types/api';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -39,12 +37,9 @@ interface FormState {
   kode: string;
   nama: string;
   alamat: string;
-  // === Phase 2 — field baru ===
-  companyId: string;
-  branchId: string;
 }
 
-const emptyForm: FormState = { kode: '', nama: '', alamat: '', companyId: '', branchId: '' };
+const emptyForm: FormState = { kode: '', nama: '', alamat: '' };
 
 interface GudangPageProps {
   subPage?: string;
@@ -61,39 +56,9 @@ function GudangForm({ mode, editId, initialData }: { mode: FormMode; editId?: st
   const [form, setForm] = useState<FormState>(initialData || emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  // === Phase 2 — organization options ===
-  const [companyOptions, setCompanyOptions] = useState<OrganizationOption[]>([]);
-  const [branchOptions, setBranchOptions] = useState<OrganizationOption[]>([]);
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
-
-  // ── Phase 2 — fetch organization options on mount ──────────────────────
-  useEffect(() => {
-    getOrganizationOptions('COMPANY')
-      .then(setCompanyOptions)
-      .catch(() => setCompanyOptions([]));
-    getOrganizationOptions('BRANCH')
-      .then(setBranchOptions)
-      .catch(() => setBranchOptions([]));
-  }, []);
-
-  // ── Phase 2 — fetch existing gudang for edit (pre-fill company/branch) ─
-  useEffect(() => {
-    if (mode !== 'edit' || !editId) return;
-    api
-      .get<GudangResponse>(`/master/gudang/${editId}`)
-      .then((res) => {
-        setForm((prev) => ({
-          ...prev,
-          companyId: res.companyId || '',
-          branchId: res.branchId || ''
-        }));
-      })
-      .catch(() => {
-        /* Biarkan nilai dari formProps yang sudah ada */
-      });
-  }, [mode, editId]);
 
   const title = mode === 'create' ? 'Tambah Gudang' : 'Edit Gudang';
 
@@ -158,10 +123,7 @@ function GudangForm({ mode, editId, initialData }: { mode: FormMode; editId?: st
         const payload: GudangCreate = {
           kode: form.kode.trim(),
           nama: form.nama.trim(),
-          alamat: form.alamat.trim() || null,
-          // === Phase 2 — field baru ===
-          companyId: form.companyId || null,
-          branchId: form.branchId || null
+          alamat: form.alamat.trim() || null
         };
         await api.post<GudangResponse>('/master/gudang', payload);
         toast.success('Gudang berhasil ditambahkan');
@@ -169,10 +131,7 @@ function GudangForm({ mode, editId, initialData }: { mode: FormMode; editId?: st
         if (!editId) return;
         const payload: GudangUpdate = {
           nama: form.nama.trim(),
-          alamat: form.alamat.trim() || null,
-          // === Phase 2 — field baru ===
-          companyId: form.companyId || null,
-          branchId: form.branchId || null
+          alamat: form.alamat.trim() || null
         };
         await api.put<GudangResponse>(`/master/gudang/${editId}`, payload);
         toast.success('Gudang berhasil diperbarui');
@@ -214,41 +173,6 @@ function GudangForm({ mode, editId, initialData }: { mode: FormMode; editId?: st
             <Label htmlFor="gdg-alamat">Alamat</Label>
             <Input id="gdg-alamat" placeholder="Alamat gudang (opsional)" value={form.alamat} onChange={(e) => updateForm('alamat', e.target.value)} />
           </div>
-          {/* === Phase 2 — Company & Branch (OrganizationUnit, opsional) === */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Company</Label>
-              <Select value={form.companyId} onValueChange={(v) => updateForm('companyId', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih company (opsional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  {companyOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">Unit organisasi level company (opsional).</p>
-            </div>
-            <div className="space-y-2">
-              <Label>Branch</Label>
-              <Select value={form.branchId} onValueChange={(v) => updateForm('branchId', v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih branch (opsional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branchOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">Unit organisasi level branch (opsional).</p>
-            </div>
-          </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
@@ -280,10 +204,7 @@ export default function GudangPage({ refreshKey, formMode, formProps }: GudangPa
             ? {
                 kode: (formProps?.kode as string) || '',
                 nama: (formProps?.nama as string) || '',
-                alamat: (formProps?.alamat as string) || '',
-                // === Phase 2 — field baru (di-refresh lagi via useEffect di GudangForm) ===
-                companyId: (formProps?.companyId as string) || '',
-                branchId: (formProps?.branchId as string) || ''
+                alamat: (formProps?.alamat as string) || ''
               }
             : undefined
         }
@@ -387,12 +308,6 @@ function GudangListContent({ refreshKey }: { refreshKey?: number }) {
             <Skeleton className="h-4 w-16 text-right" />
           </TableCell>
           <TableCell>
-            <Skeleton className="h-4 w-28" />
-          </TableCell>
-          <TableCell>
-            <Skeleton className="h-4 w-28" />
-          </TableCell>
-          <TableCell>
             <Skeleton className="h-5 w-16 rounded-full" />
           </TableCell>
           <TableCell>
@@ -451,9 +366,6 @@ function GudangListContent({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="whitespace-nowrap">Nama</TableHead>
                   <TableHead className="whitespace-nowrap">Alamat</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Total Barang</TableHead>
-                  {/* === Phase 2 — Company & Branch columns === */}
-                  <TableHead className="whitespace-nowrap">Company</TableHead>
-                  <TableHead className="whitespace-nowrap">Branch</TableHead>
                   <TableHead className="whitespace-nowrap">Status</TableHead>
                   <TableHead className="whitespace-nowrap text-center">Aksi</TableHead>
                 </TableRow>
@@ -463,7 +375,7 @@ function GudangListContent({ refreshKey }: { refreshKey?: number }) {
                   <SkeletonRows />
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="p-0">
+                    <TableCell colSpan={6} className="p-0">
                       {debouncedSearch ? (
                         <EmptyState icon={SearchX} title="Tidak ada hasil pencarian" description={`Tidak ada gudang yang cocok dengan "${debouncedSearch}". Coba kata kunci lain.`} />
                       ) : (
@@ -486,13 +398,10 @@ function GudangListContent({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="whitespace-nowrap font-medium">{row.nama}</TableCell>
                       <TableCell className="max-w-xs truncate text-muted-foreground">{row.alamat || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap text-right tabular-nums font-medium">{row.totalBarang}</TableCell>
-                      {/* === Phase 2 — Company & Branch display === */}
-                      <TableCell className="whitespace-nowrap text-muted-foreground">{row.company?.name || '-'}</TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">{row.branch?.name || '-'}</TableCell>
                       <TableCell className="whitespace-nowrap">{statusBadge(row.status)}</TableCell>
                       <TableCell className="whitespace-nowrap text-center">
                         <div className="inline-flex items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openFormTab({ title: `Edit ${row.nama}`, module: 'settings', subPage: 'gudang', formKey: 'gudang-edit', formProps: { id: row.id, kode: row.kode, nama: row.nama, alamat: row.alamat ?? '', companyId: row.companyId ?? '', branchId: row.branchId ?? '' } })} aria-label={`Edit ${row.nama}`}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openFormTab({ title: `Edit ${row.nama}`, module: 'settings', subPage: 'gudang', formKey: 'gudang-edit', formProps: { id: row.id, kode: row.kode, nama: row.nama, alamat: row.alamat ?? '' } })} aria-label={`Edit ${row.nama}`}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(row)} aria-label={`Hapus ${row.nama}`} disabled={row.status === 'NONAKTIF'}>

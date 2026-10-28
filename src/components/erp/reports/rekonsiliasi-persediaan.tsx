@@ -119,7 +119,7 @@ export default function RekonsiliasiPersediaanPage({ refreshKey }: { refreshKey?
           <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] text-blue-800 flex items-start gap-1.5">
             <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
             <div>
-              <strong>Saldo terkini — seluruh organisasi, termasuk seluruh jurnal POSTED bertanggal masa depan.</strong>{' '}
+              <strong>Saldo terkini — seluruh data, termasuk seluruh jurnal POSTED bertanggal masa depan.</strong>{' '}
               {data?.basis && (
                 <span>
                   Basis: <code>{data.basis}</code>.{' '}

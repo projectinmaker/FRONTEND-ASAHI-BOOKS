@@ -280,13 +280,6 @@ export interface SyaratBayarSimple {
   hari: number | null;
 }
 
-export interface OrganizationSimple {
-  id: string;
-  code: string;
-  name: string;
-  kind: string;
-}
-
 // ── ItemTypeBarang enum (Phase 2 — Master Data Foundation) ─────────────────
 // Sumber: app/models/master/barang.py ItemTypeBarang.
 // Dipakai di Barang.itemType, ganti field legacy `jenisBarang` (string).
@@ -709,18 +702,12 @@ export interface GudangCreate {
   kode: string;
   nama: string;
   alamat?: string | null;
-  // === Phase 2 — field baru ===
-  companyId?: string | null;
-  branchId?: string | null;
 }
 
 export interface GudangUpdate {
   nama?: string | null;
   alamat?: string | null;
   status?: string | null;
-  // === Phase 2 — field baru ===
-  companyId?: string | null;
-  branchId?: string | null;
 }
 
 export interface GudangResponse {
@@ -728,12 +715,6 @@ export interface GudangResponse {
   kode: string;
   nama: string;
   alamat: string | null;
-  // === Phase 2 — field baru ===
-  companyId?: string | null;
-  branchId?: string | null;
-  company?: OrganizationSimple | null;
-  branch?: OrganizationSimple | null;
-  // === Existing ===
   totalBarang: number;
   status: string;
   createdAt: string;
@@ -3614,112 +3595,6 @@ export interface AsetTransaksiResponse {
   jurnalUmumId: string | null;
   sourceJournalId: string | null;
   createdBy: string;
-  createdAt: string;
-}
-
-// ── Organisasi (Tahap 5) ────────────────────────────────────────────────
-
-export type OrgUnitKind = 'COMPANY' | 'BRANCH' | 'DEPARTMENT' | 'COST_CENTER' | 'PROJECT';
-
-export interface OrgUnit {
-  id: string;
-  kind: OrgUnitKind;
-  code: string;
-  name: string;
-  parentId: string | null;
-  status: string;
-}
-
-export interface OrgUnitCreate {
-  kind: OrgUnitKind;
-  code: string;
-  name: string;
-  parentId?: string | null;
-}
-
-export interface OrgUnitUpdate {
-  name: string;
-  status: string;
-}
-
-export interface OrgDimensions {
-  companyId: string | null;
-  branchId: string | null;
-  departmentId: string | null;
-  costCenterId: string | null;
-  projectId: string | null;
-}
-
-export interface OrgDokumenResponse extends OrgDimensions {
-  expectedVersion?: number;
-}
-
-export interface OrgDokumenUpdate extends OrgDimensions {
-  expectedVersion: number;
-}
-
-// ── Klasifikasi Arus Kas (Tahap 5) ──────────────────────────────────────
-
-export type KategoriArusKas = 'OPERASIONAL' | 'INVESTASI' | 'PEMBIAYAAN' | 'BELUM_DIKLASIFIKASIKAN';
-export type KlasifikasiTargetType = 'ACCOUNT' | 'JOURNAL';
-
-export interface KlasifikasiArusKasMapping {
-  id: string;
-  targetType: KlasifikasiTargetType;
-  targetId: string;
-  category: KategoriArusKas;
-}
-
-export interface KlasifikasiArusKasCreate {
-  targetType: KlasifikasiTargetType;
-  targetId: string;
-  category: KategoriArusKas;
-}
-
-// ── Validasi Laporan (Tahap 5) ─────────────────────────────────────────
-
-export interface ValidasiLaporanResponse {
-  periode: { dari: string; sampai: string };
-  valid: boolean;
-  checks: {
-    neraca_saldo_mutasi: string;
-    neraca_saldo_akhir: string;
-    persamaan_neraca: string;
-    perubahan_modal: string;
-    arus_kas: string;
-  };
-  jurnalTidakValid: { journalId: string; noJurnal: string }[];
-  klasifikasiArusKasLengkap: boolean;
-  jumlahJurnalBelumDiklasifikasi: number;
-}
-
-// ── New Report Fields (Tahap 5) ────────────────────────────────────────
-
-export interface NeracaSaldoAkunWithSaldo {
-  kode: string;
-  nama: string;
-  saldoNormal: string;
-  totalDebit: number;
-  totalKredit: number;
-  saldo: number;
-  saldoAwal: number;
-  saldoAkhir: number;
-  saldoDebit: number;
-  saldoKredit: number;
-}
-
-export interface ArusKasBelumDiklasifikasi {
-  items: { journalId: string; noJurnal: string; nama: string; jumlah: string }[];
-  total: string;
-}
-
-export interface AuditLog {
-  id: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  details: Record<string, unknown> | null;
-  actorId: string | null;
   createdAt: string;
 }
 

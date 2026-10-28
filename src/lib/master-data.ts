@@ -3,14 +3,14 @@
  *
  * Phase 2 — Master Data Foundation.
  * Dipakai di form Pelanggan/Supplier/Barang/Gudang/KategoriAset/KasBankAkun
- * untuk fetch options (SyaratBayar, COA, Organization).
+ * untuk fetch options (SyaratBayar, COA).
  *
  * Cache TTL 5 menit supaya tidak fetch berkali-kali.
  */
 
 import { api } from '@/lib/api';
 import { loadCOA } from '@/lib/coa';
-import type { SyaratBayarResponse, COAResponse, OrganizationSimple, AkunPerkiraanSimple } from '@/types/api';
+import type { SyaratBayarResponse, COAResponse, AkunPerkiraanSimple } from '@/types/api';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 menit
 
@@ -95,13 +95,8 @@ export async function getCOAOptions(filter: COAFilter = {}): Promise<COAOption[]
   const hasOrCondition = Boolean(filter.systemAccountType || filter.orNamaInclude);
   const filtered = hasOrCondition
     ? list.filter((c) => {
-        const sysMatch = filter.systemAccountType
-          ? c.systemAccountType === filter.systemAccountType
-          : false;
-        const namaMatch = filter.orNamaInclude
-          ? c.nama.toLowerCase().includes(filter.orNamaInclude.toLowerCase()) &&
-            (!filter.orHeaders || filter.orHeaders.includes(c.header))
-          : false;
+        const sysMatch = filter.systemAccountType ? c.systemAccountType === filter.systemAccountType : false;
+        const namaMatch = filter.orNamaInclude ? c.nama.toLowerCase().includes(filter.orNamaInclude.toLowerCase()) && (!filter.orHeaders || filter.orHeaders.includes(c.header)) : false;
         return sysMatch || namaMatch;
       })
     : list;
@@ -111,45 +106,6 @@ export async function getCOAOptions(filter: COAFilter = {}): Promise<COAOption[]
     label: `${c.kode} — ${c.nama}`,
     kode: c.kode,
     nama: c.nama
-  }));
-
-  cache[cacheKey] = { data: options, timestamp: Date.now() };
-  return options;
-}
-
-// ── Organization options ─────────────────────────────────────────────────────
-
-export interface OrganizationOption {
-  value: string;
-  label: string;
-  code: string;
-  name: string;
-  kind: string;
-}
-
-export type OrganizationKind = 'COMPANY' | 'BRANCH' | 'DEPARTMENT' | 'COST_CENTER' | 'PROJECT';
-
-/**
- * Ambil daftar OrganizationUnit untuk dropdown. Pakai endpoint
- * GET /organisasi/units?kind=... yang sudah ada dari Phase 1.
- */
-export async function getOrganizationOptions(kind?: OrganizationKind): Promise<OrganizationOption[]> {
-  const cacheKey = `org:${kind || 'all'}`;
-  const cached = cache[cacheKey] as CacheEntry<OrganizationOption[]> | undefined;
-  if (isFresh(cached)) return cached.data;
-
-  const params = new URLSearchParams();
-  if (kind) params.set('kind', kind);
-  params.set('skip', '0');
-  params.set('limit', '500');
-
-  const data = await api.get<OrganizationSimple[]>(`/organisasi/units?${params.toString()}`);
-  const options = data.map((o) => ({
-    value: o.id,
-    label: `${o.code} — ${o.name}`,
-    code: o.code,
-    name: o.name,
-    kind: o.kind
   }));
 
   cache[cacheKey] = { data: options, timestamp: Date.now() };

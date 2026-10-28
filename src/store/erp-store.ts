@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 
 // === Update ASAHI #019 — ModuleId tambah 'preferensi' (modul Preferensi baru). ===
-export type ModuleId = 'dashboard' | 'cash-bank' | 'sales' | 'purchasing' | 'fixed-assets' | 'inventory' | 'production' | 'general-ledger' | 'reports' | 'organisasi' | 'settings' | 'preferensi' | 'workflow-queue';
+// === Update ASAHI #020 — ModuleId hapus 'organisasi' (fitur dihapus). ===
+export type ModuleId = 'dashboard' | 'cash-bank' | 'sales' | 'purchasing' | 'fixed-assets' | 'inventory' | 'production' | 'general-ledger' | 'reports' | 'settings' | 'preferensi' | 'workflow-queue';
 
 export type SubPageId = string;
 
