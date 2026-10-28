@@ -15,7 +15,7 @@ import { useReportExportStore } from '@/store/report-export-store';
 import { api, ApiError, downloadFile } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
 import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse, LaporanAkunItem, RekapPpnResponse, RekapPpnMasaItem, RekapPph23Response } from '@/types/api';
-import { Printer, FileSpreadsheet, Loader2, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileSpreadsheet, Loader2, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
 import dynamic from 'next/dynamic';
@@ -111,9 +111,11 @@ const subPageTitles: Record<string, string> = {
   'rekap-pph23': 'Rekap PPh 23'
 };
 
-// ─── Shared: Report Actions (Print / Export Excel) ──────────────────────────
+// ─── Shared: Report Actions (Export Excel) ─────────────────────────────
 
 function ReportActions({ reportName = 'laporan' }: { reportName?: string }) {
+  // === Update ASAHI #024 — tombol Cetak DIHAPUS (output laporan kini
+  // Excel saja, mengikuti permintaan user; window.print tidak dipakai lagi).
   // === Update ASAHI #023 — Export Excel via backend (.xlsx), menggantikan
   // export CSV scraping DOM (angka jadi teks & hanya tabel pertama di halaman).
   // Spec endpoint dibaca dari registry report-export-store yang ditulis
@@ -121,11 +123,6 @@ function ReportActions({ reportName = 'laporan' }: { reportName?: string }) {
   // sudah pernah ditampilkan (spec teregistrasi). ===
   const spec = useReportExportStore((s) => s.specs[reportName] ?? null);
   const [exporting, setExporting] = useState(false);
-
-  const handlePrint = () => {
-    toast.info('Membuka dialog cetak...');
-    window.print();
-  };
 
   const handleExportExcel = async () => {
     if (!spec) return;
@@ -142,10 +139,6 @@ function ReportActions({ reportName = 'laporan' }: { reportName?: string }) {
 
   return (
     <div className="flex items-center gap-2">
-      <Button size="sm" variant="outline" className="gap-2" onClick={handlePrint}>
-        <Printer className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Cetak</span>
-      </Button>
       {spec && (
         <Button size="sm" variant="outline" className="gap-2" onClick={handleExportExcel} disabled={exporting}>
           {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}
