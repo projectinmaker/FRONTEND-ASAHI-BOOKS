@@ -1,12 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory } from 'lucide-react';
+// === Update ASAHI #019 — ikon baru modul Preferensi (SlidersHorizontal) + submenu ===
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory, SlidersHorizontal, Bell, Type, Hash, CalendarRange } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail } from '@/components/ui/sidebar';
 import { useERPStore, type ModuleId } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
@@ -14,6 +16,8 @@ import { useAuthStore } from '@/store/auth-store';
 import { useAccessStore } from '@/store/access-store';
 // Update ASAHI: prefetch identitas perusahaan (logo + nama) untuk header cetak/PDF
 import { useCompanyStore } from '@/store/company-store';
+// === Update ASAHI #019 — preferensi (KONFIRMASI_KELUAR, font, format tanggal) ===
+import { usePreferensiStore } from '@/store/preferensi-store';
 
 // ── Data definitions ──────────────────────────────────────────────────────────
 
@@ -197,24 +201,57 @@ const modules: NavModule[] = [
     icon: Building2,
     single: true
   },
+  // === Update ASAHI #019 — modul Pengaturan di-restrukturisasi menjadi dua
+  // grup: "Informasi Perusahaan" (Umum[ex-Profil Perusahaan], Periode
+  // Akuntansi, Pajak) + "Master Data" (10 item yang sudah ada). ===
   {
     id: 'settings',
     label: 'Pengaturan',
     icon: Settings,
+    subPageGroups: [
+      {
+        label: 'Informasi Perusahaan',
+        items: [
+          // Update ASAHI: identitas perusahaan (logo + nama) untuk kop dokumen cetak/PDF
+          // — rename dari 'profil-perusahaan' (tab lama di-remap di page.tsx).
+          { id: 'umum', label: 'Umum', icon: Building2 },
+          { id: 'periode-akuntansi', label: 'Periode Akuntansi', icon: CalendarRange },
+          { id: 'pajak', label: 'Pajak', icon: Percent }
+        ]
+      },
+      {
+        label: 'Master Data',
+        items: [
+          { id: 'coa', label: 'Akun Perkiraan', icon: Layers },
+          { id: 'setting-akun', label: 'Setting Akun', icon: Settings2 },
+          { id: 'pelanggan', label: 'Pelanggan', icon: UserPlus },
+          { id: 'supplier', label: 'Supplier', icon: Store },
+          // Tahap 1: menu Barang dipindah ke modul Persediaan (tab "Barang & Jasa")
+          { id: 'gudang', label: 'Gudang', icon: Warehouse },
+          { id: 'kategori-barang', label: 'Kategori Barang', icon: FolderTree },
+          { id: 'satuan', label: 'Satuan', icon: Ruler },
+          { id: 'syarat-bayar', label: 'Syarat Pembayaran', icon: Clock },
+          { id: 'pengguna', label: 'Pengguna', icon: Users },
+          { id: 'karyawan', label: 'Karyawan', icon: UserCircle }
+        ]
+      }
+    ]
+  },
+  // === Update ASAHI #019 — modul BARU Preferensi (konfigurasi aplikasi
+  // terpusat; sebelumnya tersebar/hardcoded di beberapa halaman). ===
+  {
+    id: 'preferensi',
+    label: 'Preferensi',
+    icon: SlidersHorizontal,
     subPages: [
-      // Update ASAHI: identitas perusahaan (logo + nama) untuk kop dokumen cetak/PDF
-      { id: 'profil-perusahaan', label: 'Profil Perusahaan', icon: Building2 },
-      { id: 'coa', label: 'Akun Perkiraan', icon: Layers },
-      { id: 'setting-akun', label: 'Setting Akun', icon: Settings2 },
-      { id: 'pelanggan', label: 'Pelanggan', icon: UserPlus },
-      { id: 'supplier', label: 'Supplier', icon: Store },
-      // Tahap 1: menu Barang dipindah ke modul Persediaan (tab "Barang & Jasa")
-      { id: 'gudang', label: 'Gudang', icon: Warehouse },
-      { id: 'kategori-barang', label: 'Kategori Barang', icon: FolderTree },
-      { id: 'satuan', label: 'Satuan', icon: Ruler },
-      { id: 'syarat-bayar', label: 'Syarat Pembayaran', icon: Clock },
-      { id: 'pengguna', label: 'Pengguna', icon: Users },
-      { id: 'karyawan', label: 'Karyawan', icon: UserCircle }
+      { id: 'perusahaan', label: 'Perusahaan', icon: Building2 },
+      { id: 'fitur', label: 'Fitur', icon: Settings2 },
+      { id: 'akun-default', label: 'Akun Default', icon: Landmark },
+      { id: 'pengingat', label: 'Pengingat', icon: Bell },
+      { id: 'penjualan-pembelian', label: 'Penjualan & Pembelian', icon: ArrowLeftRight },
+      { id: 'perpajakan', label: 'Perpajakan', icon: Percent },
+      { id: 'font', label: 'Font', icon: Type },
+      { id: 'penomoran', label: 'Penomoran Dokumen', icon: Hash }
     ]
   }
 ];
@@ -282,7 +319,12 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
   // Modul Laporan: seluruh subPageGroups digating satu kode (dicek sekali per modul).
   reports: {},
   settings: {
+    // === Update ASAHI #019 — Umum (rename dari 'profil-perusahaan'; mapping
+    // lama dipertahankan agar tab tersimpan versi sebelumnya tetap lolos). ===
+    umum: 'master.company_profile.view',
     'profil-perusahaan': 'master.company_profile.view',
+    'periode-akuntansi': 'master.company_profile.view',
+    pajak: 'master.company_profile.view',
     coa: 'accounting.coa.view',
     'setting-akun': 'master.setting_akun.view',
     pelanggan: 'master.pelanggan.view',
@@ -293,6 +335,19 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     'syarat-bayar': 'master.syarat_bayar.view',
     pengguna: 'system.users.view',
     karyawan: 'master.karyawan.view'
+  },
+  // === Update ASAHI #019 — modul Preferensi: seluruh submenu digating
+  // 'master.preference.view' (view; pengeditan tetap dicek backend via
+  // 'master.preference.edit'). ===
+  preferensi: {
+    perusahaan: 'master.preference.view',
+    fitur: 'master.preference.view',
+    'akun-default': 'master.preference.view',
+    pengingat: 'master.preference.view',
+    'penjualan-pembelian': 'master.preference.view',
+    perpajakan: 'master.preference.view',
+    font: 'master.preference.view',
+    penomoran: 'master.preference.view'
   }
 };
 
@@ -353,6 +408,14 @@ export function ERPSidebar() {
     ensureCompanyProfile();
   }, [ensureCompanyProfile]);
 
+  // === Update ASAHI #019 — muat preferensi saat shell termuat (dipakai untuk
+  // gating dialog konfirmasi keluar KONFIRMASI_KELUAR; font diterapkan store). ===
+  const prefs = usePreferensiStore((s) => s.prefs);
+  const ensurePreferensi = usePreferensiStore((s) => s.ensureLoaded);
+  React.useEffect(() => {
+    ensurePreferensi();
+  }, [ensurePreferensi]);
+
   const can = React.useCallback((code: string) => isSuperAdmin || permissions.includes(code), [isSuperAdmin, permissions]);
   const canAny = React.useCallback((codes: string[]) => isSuperAdmin || codes.some((c) => permissions.includes(c)), [isSuperAdmin, permissions]);
 
@@ -372,9 +435,23 @@ export function ERPSidebar() {
           const code = permMap[sp.id];
           return !!code && can(code);
         });
-        // Modul disembunyikan bila SEMUA subPage-nya tersembunyi.
-        if (subPages.length === 0) return null;
-        return { ...mod, subPages };
+        // === Update ASAHI #019 — PERBAIKI gating subPageGroups: item dalam grup
+        // juga wajib lolos filter SUBPAGE_PERMISSIONS (sebelumnya hanya subPages
+        // flat yang difilter, sehingga item grup selalu tampil). Grup kosong
+        // dibuang; modul disembunyikan bila subPages DAN subPageGroups kosong.
+        // (Modul Laporan tidak lewat jalur ini — tetap digating
+        // REPORTS_PERMISSIONS di cabang khusus di atas.) ===
+        const subPageGroups = (mod.subPageGroups ?? [])
+          .map((group) => ({
+            ...group,
+            items: group.items.filter((sp) => {
+              const code = permMap[sp.id];
+              return !!code && can(code);
+            })
+          }))
+          .filter((group) => group.items.length > 0);
+        if (subPages.length === 0 && subPageGroups.length === 0) return null;
+        return { ...mod, subPages, subPageGroups };
       })
       .filter((m): m is NavModule => m !== null);
   }, [can, canAny]);
@@ -407,6 +484,16 @@ export function ERPSidebar() {
   const toggleGroup = React.useCallback((id: string) => {
     setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
+
+  // === Update ASAHI #019 — Preferensi → Perusahaan: KONFIRMASI_KELUAR.
+  // Kedua tombol keluar (footer expanded + dropdown collapsed) menampilkan
+  // AlertDialog konfirmasi dulu bila preferensi aktif (truthy). ===
+  const [confirmLogout, setConfirmLogout] = React.useState(false);
+  const konfirmasiKeluar = !!prefs['KONFIRMASI_KELUAR'];
+  const handleLogout = () => {
+    if (konfirmasiKeluar) setConfirmLogout(true);
+    else logout();
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -587,7 +674,7 @@ export function ERPSidebar() {
                   <span className="text-sm font-medium truncate block">{user?.namaLengkap || 'User'}</span>
                   <span className="text-[11px] text-sidebar-foreground/60 block">{roleLabel(user?.role)}</span>
                 </div>
-                <button onClick={logout} className="rounded-md p-1.5 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors" title="Keluar">
+                <button onClick={handleLogout} className="rounded-md p-1.5 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors" title="Keluar">
                   <LogOut className="size-4" />
                 </button>
               </div>
@@ -614,7 +701,7 @@ export function ERPSidebar() {
                   <p className="text-xs text-muted-foreground truncate">{roleLabel(user?.role)}</p>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive cursor-pointer">
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
                   <LogOut className="size-4 mr-2" />
                   Keluar
                 </DropdownMenuItem>
@@ -623,6 +710,29 @@ export function ERPSidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+
+      {/* === Update ASAHI #019 — dialog konfirmasi keluar (Preferensi →
+          Perusahaan: KONFIRMASI_KELUAR). Ditampilkan sebelum logout bila
+          preferensi aktif; bila tidak, tombol keluar langsung logout. === */}
+      <AlertDialog open={confirmLogout} onOpenChange={setConfirmLogout}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Keluar dari aplikasi?</AlertDialogTitle>
+            <AlertDialogDescription>Anda akan keluar dari ASAHI Books dan kembali ke halaman login. Pastikan semua perubahan sudah disimpan.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmLogout(false);
+                logout();
+              }}
+              className="bg-destructive text-white hover:bg-destructive/90">
+              Keluar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <SidebarRail />
     </Sidebar>

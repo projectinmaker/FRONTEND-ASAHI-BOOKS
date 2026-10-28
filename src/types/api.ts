@@ -217,6 +217,49 @@ export interface AppSettingUpdate {
   value: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// === Update ASAHI #019 — PREFERENSI (GET/PUT /master/preferensi) ===
+// Konfigurasi aplikasi terpusat (konfirmasi keluar, format tanggal, metode
+// valuasi, pengingat, penjualan-pembelian, perpajakan, font, penomoran
+// dokumen). Registry sumber kebenaran ada di backend preferensi_service.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface PreferensiOption {
+  value: string;
+  label: string;
+}
+
+export type PreferensiItemType = 'boolean' | 'select' | 'number' | 'text';
+
+export interface PreferensiItem {
+  key: string;
+  label: string;
+  type: PreferensiItemType;
+  /** Nilai saat ini (dari app_setting; fallback default registry). */
+  value: string | number | boolean;
+  default: string | number | boolean;
+  options?: PreferensiOption[];
+  min?: number;
+  max?: number;
+  help?: string | null;
+}
+
+export interface PreferensiGroup {
+  id: string;
+  label: string;
+  description?: string | null;
+  items: PreferensiItem[];
+}
+
+export interface PreferensiResponse {
+  groups: PreferensiGroup[];
+}
+
+/** Body PUT /master/preferensi — hanya key yang berubah dikirim. */
+export interface PreferensiUpdatePayload {
+  updates: Record<string, string | number | boolean>;
+}
+
 export interface KategoriSimple {
   id: string;
   nama: string;
@@ -3996,6 +4039,21 @@ export interface CompanyProfileResponse {
   /** Update ASAHI #6: rekening bank AKTIF (embed dari backend). */
   rekeningBank: RekeningBankResponse[];
   updatedAt: string | null;
+  // === Update ASAHI #019 — kolom baru Pengaturan (Umum/Periode/Pajak); semua
+  // opsional/nullable karena additive migration (backend kirim null bila kosong). ===
+  fax?: string | null;
+  negara?: string | null;
+  mataUang?: string | null;
+  /** ISO date (YYYY-MM-DD) — null bila belum diisi. */
+  tanggalMulai?: string | null;
+  tahunFiskal?: string | null;
+  periodeDefault?: string | null;
+  noSeriFakturPajak?: string | null;
+  npwp?: string | null;
+  noPengukuhanPkp?: string | null;
+  branchCode?: string | null;
+  jenisUsaha?: string | null;
+  kluSpt?: string | null;
 }
 
 export interface CompanyProfileUpdate {
@@ -4006,6 +4064,21 @@ export interface CompanyProfileUpdate {
   logo?: string | null;
   /** Update ASAHI #6: slogan opsional (null/kosong = invoice tanpa slogan). */
   slogan?: string | null;
+  // === Update ASAHI #019 — field baru; semua opsional karena backend kini
+  // partial-update (exclude_unset) — halaman Periode/Pajak/Umum boleh kirim
+  // subset field saja tanpa menimpa field lain. ===
+  fax?: string | null;
+  negara?: string | null;
+  mataUang?: string | null;
+  tanggalMulai?: string | null;
+  tahunFiskal?: string | null;
+  periodeDefault?: string | null;
+  noSeriFakturPajak?: string | null;
+  npwp?: string | null;
+  noPengukuhanPkp?: string | null;
+  branchCode?: string | null;
+  jenisUsaha?: string | null;
+  kluSpt?: string | null;
 }
 
 // ═════════════════════════════════════════════════════════════════════════

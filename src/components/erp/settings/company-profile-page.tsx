@@ -44,6 +44,10 @@ interface FormState {
   logo: string | null; // data URL
   // Update ASAHI #6: slogan — tampil khusus di header cetak Invoice Penjualan
   slogan: string;
+  // === Update ASAHI #019 — Umum: fax, negara, mata uang default perusahaan ===
+  fax: string;
+  negara: string;
+  mataUang: string;
 }
 
 interface CompanyProfilePageProps {
@@ -85,7 +89,7 @@ interface PendingDelete {
 export default function CompanyProfilePage({ refreshKey }: CompanyProfilePageProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<FormState>({ namaPerusahaan: '', alamat: '', telepon: '', email: '', logo: null, slogan: '' });
+  const [form, setForm] = useState<FormState>({ namaPerusahaan: '', alamat: '', telepon: '', email: '', logo: null, slogan: '', fax: '', negara: '', mataUang: 'IDR' });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refreshStore = useCompanyStore((s) => s.fetch);
 
@@ -117,7 +121,11 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
         telepon: res.telepon || '',
         email: res.email || '',
         logo: res.logo || null,
-        slogan: res.slogan || ''
+        slogan: res.slogan || '',
+        // === Update ASAHI #019 — kolom baru Umum (fax/negara/mataUang) ===
+        fax: res.fax || '',
+        negara: res.negara || '',
+        mataUang: res.mataUang || 'IDR'
       });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat profil perusahaan');
@@ -328,7 +336,12 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
         email: form.email.trim() || null,
         logo: form.logo,
         // Update ASAHI #6: slogan — kosong = null (invoice tanpa slogan)
-        slogan: form.slogan.trim() || null
+        slogan: form.slogan.trim() || null,
+        // === Update ASAHI #019 — Umum: fax/negara kosong = null; mataUang
+        // default dikirim apa adanya (string, mis. 'IDR'). ===
+        fax: form.fax.trim() || null,
+        negara: form.negara.trim() || null,
+        mataUang: form.mataUang
       });
       // Refresh store supaya header cetak/PDF langsung memakai identitas baru.
       await refreshStore(true);
@@ -354,7 +367,8 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight">Profil Perusahaan</h2>
-        <p className="text-muted-foreground">Identitas yang tampil di header semua dokumen cetak/PDF — Sales Order, Purchase Order, Invoice, Surat Jalan, Retur, Penawaran, Tukar Faktur, dan bukti Kas &amp; Bank.</p>
+        {/* === Update ASAHI #019 — subtitle disesuaikan (submenu sidebar kini "Umum") === */}
+        <p className="text-muted-foreground">Identitas &amp; informasi umum perusahaan — dipakai kop dokumen cetak.</p>
       </div>
 
       <Card className="max-w-2xl">
@@ -428,7 +442,7 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
             </p>
           </div>
 
-          {/* ── Telepon & email ── */}
+          {/* ── Telepon, email, fax, negara, mata uang ── */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="telepon">Telepon</Label>
@@ -438,6 +452,37 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" value={form.email} onChange={(e) => updateForm('email', e.target.value)} placeholder="Opsional" maxLength={100} />
             </div>
+            {/* === Update ASAHI #019 — fax & negara (kolom company_profile baru) === */}
+            <div className="space-y-2">
+              <Label htmlFor="fax">Fax</Label>
+              <Input id="fax" value={form.fax} onChange={(e) => updateForm('fax', e.target.value)} placeholder="Opsional — contoh: 021-89905678" maxLength={50} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="negara">Negara</Label>
+              <Input id="negara" value={form.negara} onChange={(e) => updateForm('negara', e.target.value)} placeholder="Opsional — contoh: Indonesia" maxLength={100} />
+            </div>
+          </div>
+
+          {/* === Update ASAHI #019 — mata uang default perusahaan (dropdown dari
+              daftar mata uang yang sudah dimuat halaman ini; default 'IDR') === */}
+          <div className="space-y-2 max-w-xs">
+            <Label htmlFor="mata-uang-default">Mata Uang Default</Label>
+            <Select value={form.mataUang} onValueChange={(v) => updateForm('mataUang', v)} disabled={saving}>
+              <SelectTrigger id="mata-uang-default">
+                <SelectValue placeholder="Pilih mata uang" />
+              </SelectTrigger>
+              <SelectContent>
+                {mataUang.filter((m) => m.isAktif).length === 0 && <SelectItem value="IDR">IDR — Rupiah</SelectItem>}
+                {mataUang
+                  .filter((m) => m.isAktif || m.kode === form.mataUang)
+                  .map((m) => (
+                    <SelectItem key={m.id} value={m.kode}>
+                      {m.kode} — {m.nama}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Dipakai sebagai nilai awal transaksi baru. Kelola daftar mata uang di Card Mata Uang di bawah.</p>
           </div>
 
           <div className="flex justify-end pt-2">

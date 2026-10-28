@@ -4,7 +4,11 @@ import dynamic from 'next/dynamic';
 
 const COAPage = dynamic(() => import('@/components/erp/settings/coa-page'), { ssr: false });
 // Update ASAHI: identitas perusahaan untuk header cetak/PDF (logo + nama)
+// === Update ASAHI #019 — subPage 'umum' (rename dari 'profil-perusahaan') ===
 const CompanyProfilePage = dynamic(() => import('@/components/erp/settings/company-profile-page'), { ssr: false });
+// === Update ASAHI #019 — halaman baru grup "Informasi Perusahaan" ===
+const PeriodeAkuntansiPage = dynamic(() => import('@/components/erp/settings/periode-akuntansi-page'), { ssr: false });
+const PajakPage = dynamic(() => import('@/components/erp/settings/pajak-page'), { ssr: false });
 const SettingAkunPage = dynamic(() => import('@/components/erp/settings/setting-akun-page'), { ssr: false });
 const PelangganPage = dynamic(() => import('@/components/erp/settings/pelanggan-page'), { ssr: false });
 const SupplierPage = dynamic(() => import('@/components/erp/settings/supplier-page'), { ssr: false });
@@ -56,12 +60,20 @@ export default function SettingsModule({ subPage, refreshKey, formMode, formProp
 
   return (
     <div className="space-y-6">
+      {/* === Update ASAHI #019 — judul modul diperbarui: Pengaturan kini dua
+          grup (Informasi Perusahaan + Master Data); konfigurasi perilaku
+          aplikasi pindah ke modul Preferensi. === */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Pengaturan</h1>
-        <p className="text-muted-foreground">Konfigurasi profil perusahaan, akun, pelanggan, supplier, barang, satuan, gudang, dan data master lainnya</p>
+        <p className="text-muted-foreground">Informasi perusahaan (umum, periode akuntansi, pajak) dan data master — akun perkiraan, pelanggan, supplier, gudang, satuan, pengguna, karyawan. Konfigurasi perilaku aplikasi ada di modul Preferensi.</p>
       </div>
+      {/* === Update ASAHI #019 — routing grup "Informasi Perusahaan":
+          'umum' (ex-Profil Perusahaan; tab lama tetap diarahkan ke sini),
+          'periode-akuntansi', 'pajak'. === */}
+      {(sp === 'umum' || sp === 'profil-perusahaan') && <CompanyProfilePage refreshKey={refreshKey} />}
+      {sp === 'periode-akuntansi' && <PeriodeAkuntansiPage refreshKey={refreshKey} />}
+      {sp === 'pajak' && <PajakPage refreshKey={refreshKey} />}
       {sp === 'coa' && <COAPage {...pageProps} subPage={sp} />}
-      {sp === 'profil-perusahaan' && <CompanyProfilePage refreshKey={refreshKey} />}
       {sp === 'setting-akun' && <SettingAkunPage refreshKey={refreshKey} />}
       {sp === 'pelanggan' && <PelangganPage {...pageProps} subPage={sp} />}
       {sp === 'supplier' && <SupplierPage {...pageProps} subPage={sp} />}

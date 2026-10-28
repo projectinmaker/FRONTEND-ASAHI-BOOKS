@@ -9,6 +9,8 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { TabBar } from '@/components/erp/tab-bar';
 import dynamic from 'next/dynamic';
 import LoginPage from '@/components/erp/login-page';
+// === Update ASAHI #019 — preferensi app-wide (font, format tanggal) ===
+import { usePreferensiStore } from '@/store/preferensi-store';
 
 // Dynamic imports for all modules
 const Dashboard = dynamic(() => import('@/components/erp/dashboard'), { ssr: false });
@@ -23,6 +25,8 @@ const GeneralLedger = dynamic(() => import('@/components/erp/general-ledger'), {
 const Reports = dynamic(() => import('@/components/erp/reports'), { ssr: false });
 const Organisasi = dynamic(() => import('@/components/erp/organisasi'), { ssr: false });
 const Settings = dynamic(() => import('@/components/erp/settings'), { ssr: false });
+// === Update ASAHI #019 — modul Preferensi (konfigurasi aplikasi terpusat) ===
+const PreferensiModule = dynamic(() => import('@/components/erp/preferensi'), { ssr: false });
 const WorkflowQueue = dynamic(() => import('@/components/erp/workflow-queue'), { ssr: false });
 // Tukar Faktur (update #4) — routing subPage 'tukar-faktur' di-render langsung di sini
 // (mirror pola Penawaran; sales/index.tsx tidak disentuh).
@@ -40,7 +44,9 @@ const moduleLabels: Record<string, string> = {
   'workflow-queue': 'Antrean Persetujuan',
   reports: 'Laporan',
   organisasi: 'Organisasi',
-  settings: 'Pengaturan'
+  settings: 'Pengaturan',
+  // === Update ASAHI #019 — modul Preferensi ===
+  preferensi: 'Preferensi'
 };
 
 const subPageLabels: Record<string, string> = {
@@ -103,7 +109,24 @@ const subPageLabels: Record<string, string> = {
   karyawan: 'Karyawan',
   'kategori-barang': 'Kategori Barang',
   satuan: 'Satuan',
-  'syarat-bayar': 'Syarat Pembayaran'
+  'syarat-bayar': 'Syarat Pembayaran',
+  // === Update ASAHI #019 — subPage baru Pengaturan (grup Informasi
+  // Perusahaan) + seluruh submenu Preferensi. 'profil-perusahaan' label
+  // lama dipertahankan untuk tab tersimpan versi sebelumnya (di-remap
+  // ke 'umum' di ModuleContent). ===
+  'profil-perusahaan': 'Profil Perusahaan',
+  umum: 'Umum',
+  'periode-akuntansi': 'Periode Akuntansi',
+  pajak: 'Pajak',
+  // Preferensi
+  perusahaan: 'Perusahaan',
+  fitur: 'Fitur',
+  'akun-default': 'Akun Default',
+  pengingat: 'Pengingat',
+  'penjualan-pembelian': 'Penjualan & Pembelian',
+  perpajakan: 'Perpajakan',
+  font: 'Font',
+  penomoran: 'Penomoran Dokumen'
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -134,6 +157,12 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
   if (activeModule === 'cash-bank' && subPage === 'belum-teridentifikasi') {
     activeSubPage = 'penerimaan';
   }
+  // === Update ASAHI #019 — tab lama Pengaturan → 'profil-perusahaan'
+  // di-remap ke subPage 'umum' (rename menu; router settings.tsx juga
+  // menerima keduanya). ===
+  if (activeModule === 'settings' && subPage === 'profil-perusahaan') {
+    activeSubPage = 'umum';
+  }
   switch (activeModule) {
     case 'dashboard':
       return <Dashboard />;
@@ -163,7 +192,10 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
     case 'workflow-queue':
       return <WorkflowQueue />;
     case 'settings':
-      return <Settings subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
+      return <Settings subPage={activeSubPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
+    // === Update ASAHI #019 — modul Preferensi ===
+    case 'preferensi':
+      return <PreferensiModule subPage={activeSubPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     default:
       return <Dashboard />;
   }
@@ -175,6 +207,14 @@ export default function HomePage() {
   const activeTabId = useTabStore((s) => s.activeTabId);
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const [mounted, setMounted] = useState(false);
+
+  // === Update ASAHI #019 — pastikan preferensi termuat sejak awal sesi
+  // (font aplikasi + format tanggal dipakai app-wide; sidebar juga memanggil
+  // ensureLoaded, ini menutup kasus restore tab saat refresh). ===
+  const ensurePreferensi = usePreferensiStore((s) => s.ensureLoaded);
+  useEffect(() => {
+    if (isAuthenticated) ensurePreferensi();
+  }, [isAuthenticated, ensurePreferensi]);
 
   useEffect(() => {
     setMounted(true);

@@ -2,14 +2,56 @@
 // Delegasi ke formatter sentral di @/lib/money (standard 20.000.000).
 
 import { formatNumberIDR, formatRp as formatRpIDR } from '@/lib/money';
+// === Update ASAHI #019 — formatDate sadar preferensi FORMAT_TANGGAL ===
+import { usePreferensiStore } from '@/store/preferensi-store';
 
 export const formatRp = (val: string | number) => formatRpIDR(val);
 
 export const formatNumber = (val: string | number) => formatNumberIDR(val);
 
+// === Update ASAHI #019 — Preferensi → Fitur: FORMAT_TANGGAL ===
+// Singkatan bulan Indonesia untuk pattern "DD MMM YYYY".
+const BULAN_SINGKAT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+/**
+ * Format tanggal sesuai pattern preferensi (privat — dipakai formatDate).
+ * Pattern yang didukung: DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, YYYY-MM-DD,
+ * "DD MMM YYYY" (MMM = singkatan Indonesia Jan..Des), MM/DD/YYYY.
+ * Pattern tak dikenal → null (pemanggil jatuh ke format default lama).
+ */
+function formatDatePattern(d: Date, pattern: string): string | null {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(d.getFullYear());
+  switch (pattern) {
+    case 'DD/MM/YYYY':
+      return `${dd}/${mm}/${yyyy}`;
+    case 'DD-MM-YYYY':
+      return `${dd}-${mm}-${yyyy}`;
+    case 'DD.MM.YYYY':
+      return `${dd}.${mm}.${yyyy}`;
+    case 'YYYY-MM-DD':
+      return `${yyyy}-${mm}-${dd}`;
+    case 'DD MMM YYYY':
+      return `${dd} ${BULAN_SINGKAT[d.getMonth()]} ${yyyy}`;
+    case 'MM/DD/YYYY':
+      return `${mm}/${dd}/${yyyy}`;
+    default:
+      return null;
+  }
+}
+
 export function formatDate(dateStr: string): string {
   if (!dateStr) return '';
   const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  // Preferensi FORMAT_TANGGAL (Preferensi → Fitur); bila belum termuat /
+  // pattern tak dikenal → fallback perilaku lama (id-ID numeric/short).
+  const pattern = usePreferensiStore.getState().prefs['FORMAT_TANGGAL'];
+  if (typeof pattern === 'string' && pattern) {
+    const formatted = formatDatePattern(d, pattern);
+    if (formatted !== null) return formatted;
+  }
   return d.toLocaleDateString('id-ID', {
     day: 'numeric',
     month: 'short',
