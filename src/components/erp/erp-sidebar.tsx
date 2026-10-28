@@ -45,6 +45,23 @@ interface NavModule {
 }
 
 const modules: NavModule[] = [
+  // === Update ASAHI #022 — Antrean Persetujuan dipindah ke posisi teratas
+  // (tepat setelah tombol Dashboard). Ini "kotak masuk pekerjaan" operasional
+  // harian untuk approver (pola My Inbox di SAP / Approvals di Odoo), jadi
+  // BUKAN milik area konfigurasi — dimasukkan ke Pengaturan ditolak karena
+  // Pengaturan berisi konfigurasi & master data yang jarang diakses, sementara
+  // antrean persetujuan diakses approver setiap hari. Posisi lama (sendirian
+  // di antara Buku Besar dan Laporan) terlihat nyasar. Urutan sidebar kini
+  // mengikuti area semantik: kerja personal (Dashboard, Antrean) → transaksi
+  // → analisis (Laporan) → konfigurasi (Pengaturan, Preferensi). RBAC tetap
+  // digating workflow.queue.view — tersembunyi bagi non-approver. ===
+  {
+    id: 'workflow-queue',
+    label: 'Antrean Persetujuan',
+    icon: ClipboardCheck,
+    subPages: [{ id: 'queue', label: 'Antrean Persetujuan', icon: ClipboardCheck }],
+    single: true
+  },
   {
     id: 'cash-bank',
     label: 'Kas & Bank',
@@ -129,13 +146,8 @@ const modules: NavModule[] = [
     icon: BookOpen,
     subPages: [{ id: 'jurnal-umum', label: 'Jurnal Umum', icon: Landmark }]
   },
-  {
-    id: 'workflow-queue',
-    label: 'Antrean Persetujuan',
-    icon: ClipboardCheck,
-    subPages: [{ id: 'queue', label: 'Antrean Persetujuan', icon: ClipboardCheck }],
-    single: true
-  },
+  // Update ASAHI #022 — modul workflow-queue dipindah ke posisi teratas
+  // (lihat komentar di awal array modules).
   {
     id: 'reports',
     label: 'Laporan',
