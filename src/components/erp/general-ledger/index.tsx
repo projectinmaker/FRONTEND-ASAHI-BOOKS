@@ -19,13 +19,13 @@ import { useAuthStore } from '@/store/auth-store';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
-import { api, PaginatedResponse, ApiError } from '@/lib/api';
+import { api, PaginatedResponse, ApiError, downloadFile } from '@/lib/api';
 import { formatRp, formatDate } from '@/lib/pdf-utils';
 import { toCentsHalfUp, hasSubCentPrecision } from '@/lib/money';
 import { toast } from 'sonner';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import type { JurnalUmumListResponse, JurnalUmumDetailResponse, JurnalManualCreate, COADropdownResponse, RefModule, StatusJurnal, WorkflowResponse } from '@/types/api';
-import { BookOpen, Search, ChevronLeft, ChevronRight, Eye, ArrowUpRight, ArrowDownRight, Loader2, Plus, Trash2, FilePlus, Pencil } from 'lucide-react';
+import { BookOpen, Search, ChevronLeft, ChevronRight, Eye, ArrowUpRight, ArrowDownRight, Loader2, Plus, Trash2, FilePlus, Pencil, FileSpreadsheet } from 'lucide-react';
 import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { workflowApi } from '@/lib/workflow-api';
@@ -1222,6 +1222,29 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
     fetchData();
   }, [fetchData, refreshKey]);
 
+  // === Update ASAHI #023 — export daftar jurnal ke Excel (.xlsx) ===
+  // Filter sama dengan fetchData (searchRef.current — nilai debounced — agar
+  // konsisten dengan apa yang sedang ditampilkan di tabel).
+  const [exporting, setExporting] = useState(false);
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (searchRef.current) params.set('search', searchRef.current);
+      if (refModule && refModule !== 'ALL') params.set('ref_module', refModule);
+      if (status && status !== 'ALL') params.set('status', status);
+      if (tanggalMulai) params.set('tanggalMulai', tanggalMulai);
+      if (tanggalAkhir) params.set('tanggalAkhir', tanggalAkhir);
+      const qs = params.toString();
+      const filename = await downloadFile(`/jurnal/export${qs ? `?${qs}` : ''}`, 'jurnal-umum.xlsx');
+      toast.success('Export Excel berhasil', { description: `File "${filename}" telah diunduh.` });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.detail : 'Gagal export Excel');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // Reset to page 0 when filters change
   useEffect(() => {
     setSkip(0);
@@ -1254,19 +1277,26 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
           </h1>
           <p className="text-muted-foreground mt-1">{pageSubtitle}</p>
         </div>
-        <Button
-          className="gap-2 shrink-0"
-          onClick={() =>
-            openFormTab({
-              title: 'Buat Jurnal Manual',
-              module: 'general-ledger',
-              subPage: 'jurnal-umum',
-              formKey: 'jurnal-manual-create'
-            })
-          }>
-          <FilePlus className="h-4 w-4" />
-          Buat Jurnal Manual
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* === Update ASAHI #023 — tombol Export Excel daftar jurnal (.xlsx) === */}
+          <Button variant="outline" size="sm" className="gap-2" onClick={handleExportExcel} disabled={exporting}>
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline">Excel</span>
+          </Button>
+          <Button
+            className="gap-2 shrink-0"
+            onClick={() =>
+              openFormTab({
+                title: 'Buat Jurnal Manual',
+                module: 'general-ledger',
+                subPage: 'jurnal-umum',
+                formKey: 'jurnal-manual-create'
+              })
+            }>
+            <FilePlus className="h-4 w-4" />
+            Buat Jurnal Manual
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}

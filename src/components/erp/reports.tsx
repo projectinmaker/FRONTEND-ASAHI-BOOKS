@@ -11,10 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
-import { api, ApiError } from '@/lib/api';
+import { useReportExportStore } from '@/store/report-export-store';
+import { api, ApiError, downloadFile } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
 import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse, LaporanAkunItem, RekapPpnResponse, RekapPpnMasaItem, RekapPph23Response } from '@/types/api';
-import { Printer, FileSpreadsheet, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Printer, FileSpreadsheet, Loader2, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
 import dynamic from 'next/dynamic';
@@ -110,64 +111,47 @@ const subPageTitles: Record<string, string> = {
   'rekap-pph23': 'Rekap PPh 23'
 };
 
-// ─── Shared: Report Actions (Print / Export) ────────────────────────────────
-
-function exportTableToCSV(filename: string) {
-  // Find the first table in the report content area
-  const table = document.querySelector('table');
-  if (!table) {
-    toast.error('Tidak ada tabel untuk diekspor');
-    return;
-  }
-  const rows = table.querySelectorAll('tr');
-  const csv: string[] = [];
-  rows.forEach((row) => {
-    const cells = row.querySelectorAll('th, td');
-    const rowData = Array.from(cells).map((cell) => {
-      const text = cell.textContent?.trim().replace(/\s+/g, ' ') || '';
-      // Escape quotes and wrap in quotes if contains comma, quote, or newline
-      if (text.includes(',') || text.includes('"') || text.includes('\n')) {
-        return `"${text.replace(/"/g, '""')}"`;
-      }
-      return text;
-    });
-    csv.push(rowData.join(','));
-  });
-  const csvContent = csv.join('\n');
-  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-  toast.success('Data berhasil diekspor ke CSV');
-}
+// ─── Shared: Report Actions (Print / Export Excel) ──────────────────────────
 
 function ReportActions({ reportName = 'laporan' }: { reportName?: string }) {
+  // === Update ASAHI #023 — Export Excel via backend (.xlsx), menggantikan
+  // export CSV scraping DOM (angka jadi teks & hanya tabel pertama di halaman).
+  // Spec endpoint dibaca dari registry report-export-store yang ditulis
+  // komponen laporan aktif — tombol Excel hanya muncul bila laporan tersebut
+  // sudah pernah ditampilkan (spec teregistrasi). ===
+  const spec = useReportExportStore((s) => s.specs[reportName] ?? null);
+  const [exporting, setExporting] = useState(false);
+
   const handlePrint = () => {
     toast.info('Membuka dialog cetak...');
     window.print();
   };
-  const handleExport = () => {
-    // Tanggal lokal (bukan UTC) untuk nama file ekspor
-    const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    exportTableToCSV(`${reportName}-${today}.csv`);
+
+  const handleExportExcel = async () => {
+    if (!spec) return;
+    setExporting(true);
+    try {
+      const filename = await downloadFile(spec.endpoint, spec.filename);
+      toast.success('Export Excel berhasil', { description: `File "${filename}" telah diunduh.` });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.detail : 'Gagal export Excel');
+    } finally {
+      setExporting(false);
+    }
   };
+
   return (
     <div className="flex items-center gap-2">
       <Button size="sm" variant="outline" className="gap-2" onClick={handlePrint}>
         <Printer className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Cetak</span>
       </Button>
-      <Button size="sm" variant="outline" className="gap-2" onClick={handleExport}>
-        <FileSpreadsheet className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Export</span>
-      </Button>
+      {spec && (
+        <Button size="sm" variant="outline" className="gap-2" onClick={handleExportExcel} disabled={exporting}>
+          {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}
+          <span className="hidden sm:inline">Excel</span>
+        </Button>
+      )}
     </div>
   );
 }
@@ -281,7 +265,14 @@ function LabaRugiReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('laba-rugi', {
+      endpoint: `/laporan/laba-rugi/export?dari=${dari}&sampai=${sampai}`,
+      filename: `laba-rugi_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -294,7 +285,7 @@ function LabaRugiReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -477,7 +468,14 @@ function NeracaReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('neraca', {
+      endpoint: `/laporan/neraca/export?tanggal=${tanggal}`,
+      filename: `neraca_${tanggal}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -490,7 +488,7 @@ function NeracaReport() {
     } finally {
       setLoading(false);
     }
-  }, [tanggal]);
+  }, [tanggal, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -773,7 +771,14 @@ function ArusKasReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('arus-kas', {
+      endpoint: `/laporan/arus-kas/export?dari=${dari}&sampai=${sampai}`,
+      filename: `arus-kas_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -786,7 +791,7 @@ function ArusKasReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -890,11 +895,20 @@ function BukuBesarReport() {
     }
   }, []);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
     if (!akunId) {
       toast.error('Pilih akun terlebih dahulu.');
       return;
     }
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan;
+    // hanya saat akun terpilih — mirror gerbang fetch di atas)
+    const akunKode = coaOptions.find((c) => c.id === akunId)?.kode || akunId.slice(0, 8);
+    registerExport('rincian-buku-besar', {
+      endpoint: `/laporan/buku-besar/export?akun_id=${akunId}&dari=${dari}&sampai=${sampai}`,
+      filename: `buku-besar_${akunKode.replace(/\s+/g, '-')}_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     setFetched(true);
@@ -908,7 +922,7 @@ function BukuBesarReport() {
     } finally {
       setLoading(false);
     }
-  }, [akunId, dari, sampai]);
+  }, [akunId, dari, sampai, coaOptions, registerExport]);
 
   useEffect(() => {
     fetchCOA();
@@ -1045,7 +1059,14 @@ function MutasiKasReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('mutasi-kas', {
+      endpoint: `/laporan/mutasi-kas/export?dari=${dari}&sampai=${sampai}`,
+      filename: `mutasi-kas_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1058,7 +1079,7 @@ function MutasiKasReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -1139,7 +1160,14 @@ function MutasiBankReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('mutasi-bank', {
+      endpoint: `/laporan/mutasi-bank/export?dari=${dari}&sampai=${sampai}`,
+      filename: `mutasi-bank_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1152,7 +1180,7 @@ function MutasiBankReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -1233,7 +1261,14 @@ function RekapKasBankReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('rekap-kas-bank', {
+      endpoint: `/laporan/rekap-kas-bank/export?dari=${dari}&sampai=${sampai}`,
+      filename: `rekap-kas-bank_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1246,7 +1281,7 @@ function RekapKasBankReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -1347,7 +1382,14 @@ function NeracaSaldoReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('neraca-saldo', {
+      endpoint: `/laporan/neraca-saldo/export?dari=${dari}&sampai=${sampai}`,
+      filename: `neraca-saldo_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1360,7 +1402,7 @@ function NeracaSaldoReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -1453,7 +1495,14 @@ function PerubahanModalReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('perubahan-modal', {
+      endpoint: `/laporan/perubahan-modal/export?dari=${dari}&sampai=${sampai}`,
+      filename: `perubahan-modal_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1466,7 +1515,7 @@ function PerubahanModalReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -1555,7 +1604,14 @@ function UmurPiutangReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('umur-piutang', {
+      endpoint: `/laporan/umur-piutang/export?as_of=${tanggal}`,
+      filename: `umur-piutang_${tanggal}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1568,7 +1624,7 @@ function UmurPiutangReport() {
     } finally {
       setLoading(false);
     }
-  }, [tanggal]);
+  }, [tanggal, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -1663,7 +1719,14 @@ function UmurHutangReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('umur-hutang', {
+      endpoint: `/laporan/umur-hutang/export?as_of=${tanggal}`,
+      filename: `umur-hutang_${tanggal}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1676,7 +1739,7 @@ function UmurHutangReport() {
     } finally {
       setLoading(false);
     }
-  }, [tanggal]);
+  }, [tanggal, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -1834,7 +1897,14 @@ function RekapPpnReport() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('rekap-ppn', {
+      endpoint: `/laporan/rekap-ppn/export?dari=${dari}&sampai=${sampai}`,
+      filename: `rekap-ppn_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1847,7 +1917,7 @@ function RekapPpnReport() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
@@ -1971,7 +2041,14 @@ function RekapPph23Report() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const registerExport = useReportExportStore((s) => s.register);
+
   const fetchData = useCallback(async () => {
+    // Update ASAHI #023 — daftarkan spec export Excel (sinkron filter tampilan)
+    registerExport('rekap-pph23', {
+      endpoint: `/laporan/rekap-pph23/export?dari=${dari}&sampai=${sampai}`,
+      filename: `rekap-pph23_${dari}_sd_${sampai}.xlsx`
+    });
     setLoading(true);
     setError(null);
     try {
@@ -1984,7 +2061,7 @@ function RekapPph23Report() {
     } finally {
       setLoading(false);
     }
-  }, [dari, sampai]);
+  }, [dari, sampai, registerExport]);
 
   useEffect(() => {
     fetchData();
