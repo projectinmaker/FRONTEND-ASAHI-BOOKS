@@ -1254,9 +1254,18 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
   const totalDebit = data.reduce((s, d) => s + Number(d.totalDebit), 0);
   const totalKredit = data.reduce((s, d) => s + Number(d.totalKredit), 0);
 
+  // === Update ASAHI #026 — hanya poll workflow untuk jurnal MANUAL ===
+  // Jurnal sistem (auto-posting dari modul Penjualan/Pembelian/Kas&Bank/
+  // Produksi/dll.) dan jurnal reversal TIDAK punya dokumen workflow —
+  // backend menolaknya dengan 404 "Dokumen workflow tidak ditemukan"
+  // (workflow_service.get_document, aturan by-design). Mem-poll status
+  // workflow untuk SEMUA baris menghasilkan deretan request 404 per
+  // halaman (terlihat merah di console/Network). Kolom Workflow bagi
+  // jurnal sistem memang selalu tampil "—" (hook tanpa state), jadi cukup
+  // filter di sini — hilang sama sekali request 404-nya.
   const wfStates = useWorkflowStates(
     'jurnal_umum',
-    data.map((d) => d.id),
+    data.filter((d) => d.refModule === 'MANUAL' && !d.reversalOfId).map((d) => d.id),
     refreshKey
   );
 
