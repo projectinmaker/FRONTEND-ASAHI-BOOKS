@@ -2180,6 +2180,38 @@ export default function ReportsModule({ subPage: propsSubPage, refreshKey, formM
   const { activeSubPage } = useERPStore();
   const subPage = propsSubPage || activeSubPage || 'laba-rugi';
 
+  // === Update ASAHI #027 — Export Excel Laporan Lainnya (Fase 2) ===
+  // Register spec export DEFAULT untuk 6 sub-menu Laporan Lainnya yang
+  // endpoint backend-nya kini tersedia (rekonsiliasi persediaan, audit
+  // persediaan, GRNI vs GL, Cash Flow vs Neraca, Ekuitas vs Neraca,
+  // Accounting Health). ReportActions di judul halaman membaca store ini —
+  // tombol Excel muncul otomatis di keenam sub-menu tersebut.
+  //
+  // Catatan batasan: state filter DI DALAM halaman (rentang tanggal audit
+  // persediaan & rekonsiliasi CF/Ekuitas) belum terbaca dari sini — export
+  // memakai parameter default berikut. Untuk rekonsiliasi-persediaan, GRNI,
+  // dan accounting-health, default endpoint memang sama dengan tampilan
+  // awal halaman (posisi hari ini); audit-persediaan tanpa parameter =
+  // seluruh periode (sama seperti default halaman); CF & Ekuitas memakai
+  // rentang bulan berjalan.
+  const registerExport = useReportExportStore((s) => s.register);
+  useEffect(() => {
+    const now = new Date();
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const bulanIni = iso(new Date(now.getFullYear(), now.getMonth(), 1));
+    const hariIni = iso(now);
+    const specDefaults: Record<string, { endpoint: string; filename: string }> = {
+      'rekonsiliasi-persediaan': { endpoint: '/laporan/rekonsiliasi-persediaan/export', filename: 'rekonsiliasi-persediaan.xlsx' },
+      'audit-persediaan': { endpoint: '/laporan/audit-persediaan/export', filename: 'audit-persediaan.xlsx' },
+      'rekonsiliasi-grni': { endpoint: '/laporan/rekonsiliasi/grni/export', filename: 'rekonsiliasi-grni.xlsx' },
+      'rekonsiliasi-cf-bs': { endpoint: `/laporan/rekonsiliasi/cashflow-vs-bs/export?dari=${bulanIni}&sampai=${hariIni}`, filename: 'rekonsiliasi-cashflow-vs-bs.xlsx' },
+      'rekonsiliasi-eq-bs': { endpoint: `/laporan/rekonsiliasi/equity-vs-bs/export?dari=${bulanIni}&sampai=${hariIni}`, filename: 'rekonsiliasi-equity-vs-bs.xlsx' },
+      'accounting-health': { endpoint: '/laporan/accounting-health/export', filename: 'accounting-health.xlsx' }
+    };
+    const spec = specDefaults[subPage];
+    if (spec) registerExport(subPage, spec);
+  }, [subPage, registerExport]);
+
   const renderSubPage = () => {
     switch (subPage) {
       case 'laba-rugi':
