@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Link2, FileText, Power, Users, SearchX } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Link2, FileText, Power, Users, SearchX, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
@@ -26,6 +26,8 @@ import { api, ApiError } from '@/lib/api';
 import { getSyaratBayarOptions, clearMasterDataCache, type SyaratBayarOption } from '@/lib/master-data';
 // Update #007 — quick add syarat bayar langsung dari form supplier
 import { QuickAddSyaratBayarButton } from '@/components/erp/quick-add';
+// Update #028 — dialog set saldo awal hutang per supplier
+import { SaldoAwalDialog } from './saldo-awal-dialog';
 import type { SupplierResponse, SupplierCreate, SupplierUpdate, SupplierCOAItem, TaxStatus } from '@/types/api';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -464,6 +466,9 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
   const [deleteTarget, setDeleteTarget] = useState<SupplierCOAItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // ── Saldo awal dialog state (Update #028) ──
+  const [saldoAwalMitra, setSaldoAwalMitra] = useState<{ id: string; kode: string; nama: string } | null>(null);
+
   // ── Reactivate state ──
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
@@ -739,6 +744,22 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
                                 aria-label={`Edit ${row.namaSupplier || row.nama}`}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
+                              {/* Update #028 — set saldo awal hutang (dialog jurnal otomatis) */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-teal-600 hover:text-teal-700"
+                                onClick={() =>
+                                  setSaldoAwalMitra({
+                                    id: row.supplierId!,
+                                    kode: row.kodeSupplier || row.kode || '-',
+                                    nama: row.namaSupplier || row.nama || ''
+                                  })
+                                }
+                                aria-label={`Saldo Awal Hutang ${row.namaSupplier || row.nama}`}
+                                title="Set Saldo Awal Hutang">
+                                <BookOpen className="h-3.5 w-3.5" />
+                              </Button>
                               {/* Reactivate (untuk NONAKTIF) atau Delete (untuk AKTIF) */}
                               {row.status === 'NONAKTIF' ? (
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700" onClick={() => handleReactivate(row)} disabled={reactivatingId === row.supplierId} aria-label={`Aktifkan ${row.namaSupplier || row.nama}`} title="Aktifkan kembali">
@@ -868,6 +889,9 @@ function SupplierListContent({ refreshKey }: { refreshKey?: number }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ══════ Saldo Awal Hutang Dialog (Update #028) ══════ */}
+      <SaldoAwalDialog open={!!saldoAwalMitra} onOpenChange={(o) => !o && setSaldoAwalMitra(null)} jenis="hutang" mitra={saldoAwalMitra} onSuccess={fetchData} />
     </div>
   );
 }

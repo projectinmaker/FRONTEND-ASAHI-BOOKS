@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Link2, FileText, Power, Users, SearchX } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, Link2, FileText, Power, Users, SearchX, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
@@ -24,6 +24,8 @@ import { api, ApiError } from '@/lib/api';
 import { getSyaratBayarOptions, clearMasterDataCache, type SyaratBayarOption } from '@/lib/master-data';
 // Update #007 — quick add syarat bayar langsung dari form pelanggan
 import { QuickAddSyaratBayarButton } from '@/components/erp/quick-add';
+// Update #028 — dialog set saldo awal piutang per pelanggan
+import { SaldoAwalDialog } from './saldo-awal-dialog';
 import type { PelangganResponse, PelangganCreate, PelangganUpdate, AkunPerkiraanSimple, PelangganCOAItem, PelangganFromCOACreate, COADropdownResponse, SettingAkunResponse, TaxStatus } from '@/types/api';
 import { TAX_STATUS_OPTIONS } from '@/types/api';
 
@@ -635,6 +637,9 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
   const [deleteTarget, setDeleteTarget] = useState<PelangganCOAItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // ── Saldo awal dialog state (Update #028) ──
+  const [saldoAwalMitra, setSaldoAwalMitra] = useState<{ id: string; kode: string; nama: string } | null>(null);
+
   // ── Debounce search ──
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -923,6 +928,22 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
                                 aria-label={`Edit ${row.namaPelanggan || row.nama}`}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
+                              {/* Update #028 — set saldo awal piutang (dialog jurnal otomatis) */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-teal-600 hover:text-teal-700"
+                                onClick={() =>
+                                  setSaldoAwalMitra({
+                                    id: row.pelangganId!,
+                                    kode: row.kodePelanggan || row.kode || '-',
+                                    nama: row.namaPelanggan || row.nama || ''
+                                  })
+                                }
+                                aria-label={`Saldo Awal Piutang ${row.namaPelanggan || row.nama}`}
+                                title="Set Saldo Awal Piutang">
+                                <BookOpen className="h-3.5 w-3.5" />
+                              </Button>
                               {/* Reactivate (untuk NONAKTIF) atau Delete (untuk AKTIF) */}
                               {row.status === 'NONAKTIF' ? (
                                 <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700" onClick={() => handleReactivate(row)} disabled={reactivatingId === row.pelangganId} aria-label={`Aktifkan ${row.namaPelanggan || row.nama}`} title="Aktifkan kembali">
@@ -1015,6 +1036,9 @@ function PelangganListContent({ refreshKey }: { refreshKey?: number }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ══════ Saldo Awal Piutang Dialog (Update #028) ══════ */}
+      <SaldoAwalDialog open={!!saldoAwalMitra} onOpenChange={(o) => !o && setSaldoAwalMitra(null)} jenis="piutang" mitra={saldoAwalMitra} onSuccess={fetchData} />
     </div>
   );
 }

@@ -821,6 +821,45 @@ export interface COADropdownResponse {
   status: string;
 }
 
+// ═══ Update #028 — Saldo Awal Piutang/Hutang per mitra ════════════════════
+// Dialog "Set Saldo Awal" di modul Pelanggan/Supplier: sistem membuat jurnal
+// POSTED (RefModule.SALDO_AWAL) D/K sub-akun mitra vs akun penyeimbang ekuitas.
+
+export interface SaldoAwalAkunSimple {
+  id: string;
+  kode: string;
+  nama: string;
+}
+
+export interface SaldoAwalSetRequest {
+  nominal: number;
+  /** YYYY-MM-DD — tanggal jurnal saldo awal (awal periode) */
+  tanggal: string;
+  /** Akun penyeimbang (wajib kelompok EKUITAS; disarankan Laba (Rugi) Ditahan) */
+  akunPenyeimbangId: string;
+}
+
+export interface SaldoAwalSetResponse {
+  jurnalId: string;
+  noJurnal: string;
+  tanggal: string;
+  nominal: number;
+  subAkun: SaldoAwalAkunSimple;
+  akunPenyeimbang: SaldoAwalAkunSimple;
+}
+
+export interface SaldoAwalInfoResponse {
+  exists: boolean;
+  nominal?: number | null;
+  tanggal?: string | null;
+  noJurnal?: string | null;
+  jurnalId?: string | null;
+  akunPenyeimbang?: SaldoAwalAkunSimple | null;
+  subAkun?: SaldoAwalAkunSimple | null;
+  /** Saldo sub-akun mitra sekarang di GL (saldo awal + seluruh mutasi) */
+  saldoBerjalan?: number | null;
+}
+
 // ── Workflow (Tahap 2) ─────────────────────────────────────────────────
 
 export type WorkflowState = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'POSTED' | 'EXECUTED' | 'CANCELLED';
