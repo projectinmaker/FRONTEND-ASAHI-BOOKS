@@ -858,6 +858,11 @@ export interface SaldoAwalInfoResponse {
   subAkun?: SaldoAwalAkunSimple | null;
   /** Saldo sub-akun mitra sekarang di GL (saldo awal + seluruh mutasi) */
   saldoBerjalan?: number | null;
+  /** #030 — khusus pintu per-akun (daftar Akun Perkiraan): terisi bila akun
+   *  belum punya saldo awal per-akun tetapi sudah masuk set Saldo Awal
+   *  global dari form Tambah/Edit Akun Perkiraan (dialog menampilkan
+   *  penjelasan alih-alih form yang bakal ditolak guard 409). */
+  catatanGlobal?: string | null;
 }
 
 // ── Workflow (Tahap 2) ─────────────────────────────────────────────────
@@ -2723,6 +2728,9 @@ export interface CashflowWidget {
   saldoAwal: number;
   penerimaan: number;
   pengeluaran: number;
+  /** #030 — net jurnal saldo awal kas/bank bulan berjalan (set global +
+   *  per-akun, dikurangi pembaliknya) — BUKAN penerimaan operasional. */
+  inputSaldoAwal?: number | null;
   saldoAkhir: number;
 }
 

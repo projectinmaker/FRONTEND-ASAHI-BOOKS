@@ -16,12 +16,17 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, FolderTree, SearchX, RefreshCw, Check, ChevronsUpDown, AlertTriangle, Info, Lock } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, FolderTree, SearchX, RefreshCw, Check, ChevronsUpDown, AlertTriangle, Info, Lock, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { classifyCoaCategory, getCoaCategoryInfo, isSaldoAwalEligible } from '@/lib/coa-category';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
+// === Update #030 — dialog Saldo Awal per akun, dipasang LANGSUNG di daftar
+// Akun Perkiraan (ikon buku per baris akun DETAIL yang kategorinya
+// didukung saldo awal; piutang/hutang tetap lewat Pelanggan/Supplier #028
+// supaya daftar COA rapih). ===
+import { SaldoAwalDialog, type SaldoAwalMitra } from './saldo-awal-dialog';
 
 import { api, ApiError } from '@/lib/api';
 import { formatNumberIDR } from '@/lib/money';
@@ -530,6 +535,11 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
   const saldoAwalEligible = !!saldoAwalInfo?.saldoAwalEligible && tingkatIsDetail && form.status === 'AKTIF';
   const saldoNormalDisplay = (mode === 'edit' ? editAccount?.saldoNormal : (preview?.saldoNormal ?? selectedTemplate?.saldoNormal ?? saldoAwalInfo?.saldoNormal ?? null)) || null;
   const saldoSekarang = mode === 'edit' ? (editAccount?.saldo ?? 0) : 0;
+  // === Update #030 — nilai saldo awal akun ini DI SET GLOBAL AKTIF. 0 = akun
+  // tidak terdaftar di set (saldo berjalannya bisa berasal dari jurnal lain,
+  // mis. jurnal manual / ikon Saldo Awal per akun di daftar). Dipakai untuk
+  // hint form + feedback jujur saat "set 0" di-save tanpa efek. ===
+  const saldoAwalSetNilai = mode === 'edit' && editId ? Number(saldoAwal?.items.find((i) => i.akunPerkiraanId === editId)?.nilai ?? 0) || 0 : 0;
 
   // Kelayakan berubah (ganti tipe akun / induk / status) → kosongkan nilai yang belum tersimpan
   useEffect(() => {
@@ -540,9 +550,25 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
   const saveSaldoAwal = async (coa: COAResponse) => {
     const nilai = Number(form.saldoAwalNilai || 0);
     const existingItem = saldoAwal?.items.find((item) => item.akunPerkiraanId === coa.id);
-    const oldNilai = existingItem?.nilai ?? 0;
+    // === Update #030 — bandingkan numerik: backend menserialisasi Decimal
+    // bisa sebagai string, sehingga === lama bisa salah deteksi "berubah". ===
+    const oldNilai = Number(existingItem?.nilai ?? 0) || 0;
 
-    if (nilai === oldNilai) return;
+    if (nilai === oldNilai) {
+      // === Update #030 — feedback jujur untuk kasus "set 0" yang tidak
+      // berefek: akun TIDAK ada di set saldo awal global (0 === 0), jadi
+      // tidak ada yang bisa dihapus dari form ini. Saldo berjalan akun
+      // berasal dari jurnal lain (mis. ikon Saldo Awal per akun di daftar
+      // #030, atau jurnal manual). Arahkan ke sumber yang benar — jangan
+      // biarkan "sukses" palsu membingungkan. ===
+      if (nilai === 0 && saldoSekarang > 0) {
+        toast.info('Tidak ada saldo awal global untuk akun ini — field memang sudah 0, tidak ada yang dihapus.', {
+          description: `Saldo berjalan ${formatSaldo(saldoSekarang)} berasal dari jurnal lain (mis. ikon Saldo Awal per akun di daftar, atau jurnal manual). Bila ingin dinolkan, batalkan jurnal sumbernya lewat Buku Besar → Jurnal Umum.`,
+          duration: 9000
+        });
+      }
+      return;
+    }
     if (!Number.isFinite(nilai) || nilai < 0) {
       throw new Error('Saldo awal harus berupa angka nol atau lebih');
     }
@@ -943,6 +969,10 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
                     <p className="text-[11px] text-muted-foreground">Saldo akun saat ini, terisi otomatis.</p>
                   </div>
                 </div>
+                {/* === Update #030 — hint: saldo berjalan BUKAN dari set saldo
+                    awal global → mengosongkan field ini tidak menghapusnya.
+                    Mencegah kebingungan "set 0 kok saldonya tidak berubah". === */}
+                {mode === 'edit' && saldoAwalEligible && saldoAwalSetNilai === 0 && saldoSekarang > 0 && <p className="text-[11px] text-amber-600 dark:text-amber-400">Catatan: saldo berjalan {formatSaldo(saldoSekarang)} tidak berasal dari set Saldo Awal global — mengosongkan field ini tidak menghapusnya. Saldo tersebut tercatat lewat jurnal lain (mis. ikon Saldo Awal per akun di daftar, atau jurnal manual); batalkan jurnal sumbernya bila perlu dinolkan.</p>}
               </div>
             </TabsContent>
 
@@ -1062,6 +1092,9 @@ function COAListContent({ refreshKey }: { refreshKey?: number }) {
   // ── Delete dialog state ──
   const [deleteTarget, setDeleteTarget] = useState<COAResponse | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // ── Saldo awal per akun dialog state (Update #030) ──
+  const [saldoAwalTarget, setSaldoAwalTarget] = useState<SaldoAwalMitra | null>(null);
 
   // ── Filter / pagination state ──
   const [search, setSearch] = useState('');
@@ -1324,6 +1357,16 @@ function COAListContent({ refreshKey }: { refreshKey?: number }) {
                 ) : (
                   data.map((row) => {
                     const isHeader = row.tingkat === 'HEADER';
+                    // === Update #030 — kelayakan ikon Saldo Awal per baris:
+                    // hanya akun DETAIL + AKTIF yang kategorinya didukung
+                    // saldo awal (9 kategori via classifier yang sama dengan
+                    // form). Piutang/hutang OTOMATIS tidak dapat ikon
+                    // (kategori PIUTANG_USAHA/HUTANG_USAHA → saldo awalnya
+                    // diinput per mitra di halaman Pelanggan/Supplier #028
+                    // supaya daftar COA rapih); persediaan/aset tetap/hutang
+                    // jangka panjang juga dialihkan ke modulnya. ===
+                    const kategoriAkun = classifyCoaCategory({ kode: row.kode, indukKode: row.indukKode, accountSubclass: row.accountSubclass, systemAccountType: row.systemAccountType });
+                    const bolehSetSaldoAwal = isSaldoAwalEligible(kategoriAkun) && row.tingkat === 'DETAIL' && isActive(row);
                     return (
                       <TableRow key={row.id}>
                         <TableCell className="whitespace-nowrap font-mono font-medium">{row.kode}</TableCell>
@@ -1339,6 +1382,17 @@ function COAListContent({ refreshKey }: { refreshKey?: number }) {
                             const lockHint = locked ? 'Akun sistem/legacy tidak bisa diedit atau dihapus. Gunakan tombol nonaktifkan (toggle Aktif) untuk menyembunyikan dari transaksi baru.' : `Edit ${row.nama}`;
                             return (
                               <>
+                                {/* === Update #030 — Set Saldo Awal per akun
+                                    (popup mirror ikon piutang/hutang di
+                                    Pelanggan/Supplier #028): jurnal kategori
+                                    SALDO_AWAL — sisi mengikuti saldo normal
+                                    akun, sekali per akun, batal = jurnal
+                                    pembalik. === */}
+                                {bolehSetSaldoAwal && (
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-teal-600 hover:text-teal-700" onClick={() => setSaldoAwalTarget({ id: row.id, kode: row.kode, nama: row.nama, saldoNormal: row.saldoNormal })} aria-label={`Set Saldo Awal ${row.nama}`} title="Set Saldo Awal">
+                                    <BookOpen className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -1418,6 +1472,22 @@ function COAListContent({ refreshKey }: { refreshKey?: number }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ══════ Saldo Awal per Akun Dialog (Update #030) ══════ */}
+      {/* Dipanggil dari ikon buku pada baris akun DETAIL yang kategorinya
+          didukung saldo awal (kecuali piutang/hutang — itu lewat halaman
+          Pelanggan/Supplier). Target = ID akun perkiraan; jurnal kategori
+          SALDO_AWAL (sisi mengikuti saldo normal akun), sekali per akun,
+          batal = jurnal pembalik. */}
+      <SaldoAwalDialog
+        open={!!saldoAwalTarget}
+        onOpenChange={(o) => {
+          if (!o) setSaldoAwalTarget(null);
+        }}
+        jenis="akun"
+        mitra={saldoAwalTarget}
+        onSuccess={() => fetchData()}
+      />
     </div>
   );
 }

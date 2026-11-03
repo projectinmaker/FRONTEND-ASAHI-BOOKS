@@ -757,6 +757,23 @@ export default function Dashboard() {
                       <span className="text-red-600">Pengeluaran</span>
                       <span className="font-mono text-red-600">-{formatRp(data.cashflow.pengeluaran)}</span>
                     </div>
+                    {/* === Update #030 — input saldo awal kas/bank (jurnal
+                        RefModule.SALDO_AWAL, dari ikon daftar Akun Perkiraan
+                        maupun set global form Akun Perkiraan) TIDAK lagi
+                        dihitung sebagai Penerimaan. Baris hanya muncul bila
+                        ada set/batal saldo awal bulan ini (net, pembatalan
+                        bertanda minus). === */}
+                    {!!data.cashflow.inputSaldoAwal && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-amber-600 dark:text-amber-500" title="Jurnal kategori Saldo Awal (bukan transaksi operasional)">
+                          Input Saldo Awal
+                        </span>
+                        <span className="font-mono text-amber-600 dark:text-amber-500">
+                          {data.cashflow.inputSaldoAwal > 0 ? '+' : ''}
+                          {formatRp(data.cashflow.inputSaldoAwal)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-base font-bold border-t pt-2">
                       <span>Saldo Akhir</span>
                       <span className="font-mono">{formatRp(data.cashflow.saldoAkhir)}</span>

@@ -2,23 +2,34 @@
 
 // ═════════════════════════════════════════════════════════════════════════════
 // SALDO AWAL PIUTANG/HUTANG PER MITRA — Update #028.
+// SALDO AWAL PER AKUN PERKIRAAN — Update #030.
 //
-// Dialog "Set Saldo Awal" untuk modul Pelanggan (piutang) & Supplier (hutang):
-// mencatat sisa piutang/hutang sebelum sistem dipakai SEKALI per mitra.
+// Dialog "Set Saldo Awal":
+//  • Pelanggan (piutang) : sisa piutang sebelum sistem dipakai, sekali per mitra.
+//  • Supplier (hutang)   : sisa hutang sebelum sistem dipakai, sekali per mitra.
+//  • Akun perkiraan (#030): saldo awal akun tingkat DETAIL (9 kategori yang
+//    didukung — kas/bank, aset lancar lainnya, kewajiban lainnya, modal,
+//    pendapatan, HPP, beban, dll.) langsung dari ikon di daftar Akun
+//    Perkiraan. Piutang/hutang TIDAK di sini — tetap lewat Pelanggan/
+//    Supplier supaya daftar COA rapih (keputusan user #030).
+//
 // Sistem membuat jurnal POSTED (RefModule.SALDO_AWAL):
 //   Piutang : D [Piutang - {Nama}] / K [akun penyeimbang ekuitas]
 //   Hutang  : D [akun penyeimbang] / K [Hutang - {Nama}]
+//   Akun    : sisi mengikuti saldo normal akun —
+//            DEBIT-normal  : D [akun]             / K [akun penyeimbang]
+//            KREDIT-normal : D [akun penyeimbang] / K [akun]
 // Penyeimbang disarankan "Laba (Rugi) Ditahan" (mirror sheet SaldoAwal
 // template Master MAS). Pembatalan = jurnal pembalik → set ulang diperbolehkan.
 //
 // Komponen ini SELF-CONTAINED (fetch info + COA ekuitas sendiri) supaya
-// pemasangan di pelanggan-page.tsx / supplier-page.tsx cukup 3 baris —
-// lihat BACA-DULU update #028.
+// pemasangan di pelanggan-page.tsx / supplier-page.tsx / coa-page.tsx
+// cukup 3 baris — lihat BACA-DULU update #028 / #030.
 // ═════════════════════════════════════════════════════════════════════════════
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, BookOpen, ShieldCheck, XCircle } from 'lucide-react';
+import { Loader2, BookOpen, ShieldCheck, XCircle, Info } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -32,13 +43,17 @@ export interface SaldoAwalMitra {
   id: string;
   kode: string;
   nama: string;
+  /** #030 — khusus jenis 'akun': saldo normal akun (arah jurnal D/K).
+   *  Diteruskan dari baris daftar Akun Perkiraan (row.saldoNormal). */
+  saldoNormal?: 'DEBIT' | 'KREDIT' | null;
 }
 
 interface SaldoAwalDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** 'piutang' = Pelanggan (AR) · 'hutang' = Supplier (AP) */
-  jenis: 'piutang' | 'hutang';
+  /** 'piutang' = Pelanggan (AR) · 'hutang' = Supplier (AP) · 'akun' = akun
+   *  perkiraan DETAIL dari daftar Akun Perkiraan (#030) */
+  jenis: 'piutang' | 'hutang' | 'akun';
   mitra: SaldoAwalMitra | null;
   /** Callback setelah set/batal sukses (mis. refresh daftar) */
   onSuccess?: () => void;
@@ -54,8 +69,16 @@ const fmtTanggal = (iso?: string | null) => {
 };
 
 export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }: SaldoAwalDialogProps) {
-  const labelJenis = jenis === 'piutang' ? 'Piutang' : 'Hutang';
-  const basePath = jenis === 'piutang' ? 'pelanggan' : 'supplier';
+  const labelJenis = jenis === 'piutang' ? 'Piutang' : jenis === 'hutang' ? 'Hutang' : 'Akun';
+  // #030 — jenis 'akun': endpoint keyed by id akun perkiraan
+  // (/master/coa/{id}/saldo-awal), dipanggil dari daftar Akun Perkiraan.
+  const basePath = jenis === 'piutang' ? 'pelanggan' : jenis === 'hutang' ? 'supplier' : 'coa';
+  const jenisLower = labelJenis.toLowerCase();
+  const subAkunText = jenis === 'akun' ? 'Akun perkiraan' : `Sub-akun ${jenisLower}`;
+  const entitasText = jenis === 'akun' ? 'akun' : 'mitra';
+  // #030 — arah jurnal untuk jenis 'akun' mengikuti saldo normal akun
+  // (akun kontra tetap diposting ke sisi yang benar).
+  const debitNormal = jenis !== 'akun' || mitra?.saldoNormal !== 'KREDIT';
 
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<SaldoAwalInfoResponse | null>(null);
@@ -169,7 +192,7 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
     }
   };
 
-  const subAkunLabel = info?.subAkun ? `${info.subAkun.kode} — ${info.subAkun.nama}` : `Sub-akun ${labelJenis.toLowerCase()} (dibuat otomatis bila belum ada)`;
+  const subAkunLabel = info?.subAkun ? `${info.subAkun.kode} — ${info.subAkun.nama}` : jenis === 'akun' ? `${mitra.kode} — ${mitra.nama}` : `Sub-akun ${jenisLower} (dibuat otomatis bila belum ada)`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -180,11 +203,21 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
             Saldo Awal {labelJenis} — {mitra.nama}
           </DialogTitle>
           <DialogDescription>
-            Mencatat sisa {labelJenis.toLowerCase()} sebelum sistem dipakai (sekali per mitra). Sistem membuat jurnal:{' '}
+            Mencatat {jenis === 'akun' ? `saldo ${jenisLower}` : `sisa ${jenisLower}`} sebelum sistem dipakai (sekali per {entitasText}). Sistem membuat jurnal:{' '}
             {jenis === 'piutang' ? (
               <>
                 D <span className="font-medium">Piutang - {mitra.nama}</span> / K <span className="font-medium">akun penyeimbang ekuitas</span>.
               </>
+            ) : jenis === 'akun' ? (
+              debitNormal ? (
+                <>
+                  D <span className="font-medium">{mitra.nama}</span> / K <span className="font-medium">akun penyeimbang ekuitas</span> — kategori <span className="font-medium">Saldo Awal</span>, bukan transaksi penerimaan/pengeluaran.
+                </>
+              ) : (
+                <>
+                  D <span className="font-medium">akun penyeimbang ekuitas</span> / K <span className="font-medium">{mitra.nama}</span> — kategori <span className="font-medium">Saldo Awal</span>, bukan transaksi penerimaan/pengeluaran.
+                </>
+              )
             ) : (
               <>
                 D <span className="font-medium">akun penyeimbang ekuitas</span> / K <span className="font-medium">Hutang - {mitra.nama}</span>.
@@ -202,11 +235,11 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
             {/* Ringkasan saldo berjalan */}
             <div className="rounded-md border bg-muted/40 p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Sub-akun {labelJenis.toLowerCase()}</span>
+                <span className="text-muted-foreground">{subAkunText}</span>
                 <span className="font-medium">{subAkunLabel}</span>
               </div>
               <div className="mt-1.5 flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">Saldo {labelJenis.toLowerCase()} berjalan (GL)</span>
+                <span className="text-muted-foreground">Saldo {jenisLower} berjalan (GL)</span>
                 <span className="font-semibold tabular-nums">{fmtIDR(info?.saldoBerjalan ?? 0)}</span>
               </div>
             </div>
@@ -217,7 +250,7 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
                 <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900 dark:bg-emerald-950/40">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                   <div className="w-full space-y-1">
-                    <p className="font-medium text-emerald-800 dark:text-emerald-300">Saldo awal {labelJenis.toLowerCase()} sudah tercatat</p>
+                    <p className="font-medium text-emerald-800 dark:text-emerald-300">Saldo awal {jenisLower} sudah tercatat</p>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 tabular-nums">
                       <span className="text-muted-foreground">Nominal</span>
                       <span className="text-right font-semibold">{fmtIDR(info.nominal)}</span>
@@ -233,7 +266,7 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
                 <p className="text-xs text-muted-foreground">Mengganti nilai? Batalkan dulu — sistem membuat jurnal pembalik (jejak audit tetap utuh), lalu set ulang.</p>
                 {konfirmasiBatal ? (
                   <div className="flex items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
-                    <span className="text-sm font-medium text-destructive">Yakin batalkan saldo awal {labelJenis.toLowerCase()} ini?</span>
+                    <span className="text-sm font-medium text-destructive">Yakin batalkan saldo awal {jenisLower} ini?</span>
                     <div className="flex shrink-0 gap-2">
                       <Button variant="outline" size="sm" onClick={() => setKonfirmasiBatal(false)} disabled={cancelling}>
                         Tidak
@@ -250,6 +283,17 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
                   </Button>
                 )}
               </div>
+            ) : info?.catatanGlobal ? (
+              /* ── #030 — akun dikelola set Saldo Awal global: tampilkan
+                  penjelasan, JANGAN tampilkan form set (bakal ditolak guard
+                  409 anti-dobel). ── */
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div className="space-y-1">
+                  <p className="font-medium text-amber-800 dark:text-amber-300">Dikelola set Saldo Awal global</p>
+                  <p className="text-amber-800/90 dark:text-amber-300/90">{info.catatanGlobal}</p>
+                </div>
+              </div>
             ) : (
               /* ── Form set saldo awal ── */
               <div className="space-y-3">
@@ -258,7 +302,7 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
                     Nominal Saldo Awal <span className="text-destructive">*</span>
                   </Label>
                   <CurrencyInput id="sa-nominal" allowDecimal placeholder="0" value={nominal} onValueChange={(v) => setNominal(v)} disabled={submitting} />
-                  <p className="text-[11px] text-muted-foreground">Sisa {labelJenis.toLowerCase()} mitra ini per tanggal di bawah (bukan tambahan bulanan).</p>
+                  <p className="text-[11px] text-muted-foreground">{jenis === 'akun' ? `Saldo ${entitasText} ini per tanggal di bawah (bukan transaksi penerimaan/pengeluaran bulanan).` : `Sisa ${jenisLower} ${entitasText} ini per tanggal di bawah (bukan tambahan bulanan).`}</p>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -277,7 +321,7 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Hanya akun kelompok EKUITAS yang bisa dipilih — disarankan <span className="font-medium">Laba (Rugi) Ditahan</span> (penyeimbang saldo awal piutang/hutang, tidak mempengaruhi laba rugi periode).
+                  Hanya akun kelompok EKUITAS yang bisa dipilih — disarankan <span className="font-medium">Laba (Rugi) Ditahan</span> (penyeimbang saldo awal {jenis === 'akun' ? 'akun' : 'piutang/hutang'}, tidak mempengaruhi laba rugi periode).
                 </p>
               </div>
             )}
@@ -290,7 +334,7 @@ export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }:
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting || cancelling}>
             Tutup
           </Button>
-          {!loading && !info?.exists && (
+          {!loading && !info?.exists && !info?.catatanGlobal && (
             <Button onClick={simpan} disabled={submitting}>
               {submitting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
               Simpan Saldo Awal
