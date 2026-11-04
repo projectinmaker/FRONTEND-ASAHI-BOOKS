@@ -1220,6 +1220,9 @@ export interface SalesOrderSisaDetail {
   sisaFaktur: number;
   harga: number;
   diskon: number;
+  // === Update #041 — DP baris SO (ditarik form invoice: baris invoice
+  // ber-DP mengikuti nilai ini, subTotal = dp). ===
+  dp?: number | null;
 }
 
 // === Update #039 — SO turunan penawaran (kartu pemakaian/sisa di detail
@@ -1264,7 +1267,11 @@ export interface SalesOrderSisaResponse {
 export interface PengirimanSisaDetail {
   deliveryDetailId: string;
   salesOrderDetailId?: string | null;
-  barangId: string;
+  // === Update #041 — barangId NULLABLE: baris DO item bebas (SO
+  // manufaktur/jasa/custom). dp ditarik dari line SO asal bila ada. ===
+  barangId?: string | null;
+  itemNama?: string | null;
+  itemSatuan?: string | null;
   kodeBarang: string | null;
   namaBarang: string | null;
   satuanId?: string | null;
@@ -1274,6 +1281,7 @@ export interface PengirimanSisaDetail {
   sisaFaktur: number;
   harga: number;
   diskon: number;
+  dp?: number | null;
 }
 
 export interface PengirimanSisaResponse {
@@ -1660,6 +1668,10 @@ export interface SalesOrderDetailCreate {
   qty: number;
   diskon?: number | null;
   subTotal?: number;
+  // === Update #041 — DP per baris (alur DP bertahap): nominal uang muka
+  // yang ditagih untuk baris ini. Terisi (> 0) → subTotal baris = dp —
+  // harga satuan & qty tetap utuh; grand total SO mengikuti Σ dp. ===
+  dp?: number | null;
 }
 
 export interface SalesOrderDetailResponse extends SalesOrderDetailCreate {
@@ -1771,6 +1783,9 @@ export interface SalesInvoiceDetailCreate {
   qty: number;
   diskon?: number | null;
   subTotal: number;
+  // === Update #041 — DP per baris invoice (tarikan baris SO ber-DP / isi
+  // manual). Terisi (> 0) → subTotal baris = dp. ===
+  dp?: number | null;
   // === Phase 4 — source-line trace (optional, kalau di-set dari delivery line) ===
   salesOrderDetailId?: string | null;
   deliveryDetailId?: string | null;
@@ -1944,9 +1959,14 @@ export interface SalesReturResponse {
 }
 
 export interface PengirimanBarangDetailCreate {
-  barangId: string;
+  // === Update #041 — barangId/satuanId NULLABLE + item bebas: baris DO bisa
+  // berupa ITEM BEBAS dari SO manufaktur/jasa/custom (wajib itemNama bila
+  // barangId null). Baris bebas tidak menggerakkan stok/HPP. ===
+  barangId?: string | null;
+  itemNama?: string | null;
+  itemSatuan?: string | null;
   qty: number;
-  satuanId: string;
+  satuanId?: string | null;
   // === Phase 4 — source-line trace (optional, kalau di-set dari SO line) ===
   salesOrderDetailId?: string | null;
 }

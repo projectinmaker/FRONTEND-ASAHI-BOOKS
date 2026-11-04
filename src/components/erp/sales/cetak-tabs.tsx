@@ -158,11 +158,13 @@ function mapPengirimanData(d: PengirimanBarangResponse): PengirimanData {
     noPo: d.salesOrder?.customerPoNumber || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
-      barang: r.barang?.nama || '',
+      // Update #041 — fallback nama/satuan ITEM BEBAS (baris DO dari SO
+      // manufaktur/jasa/custom tanpa barang master).
+      barang: r.barang?.nama || r.itemNama || '',
       harga: 0,
       qty: Number(r.qty) || 0,
       diskon: 0,
-      satuan: r.satuan?.nama || ''
+      satuan: r.satuan?.nama || r.itemSatuan || ''
     })),
     keterangan: d.keterangan || ''
   };
@@ -261,7 +263,10 @@ function mapInvoiceData(d: SalesInvoiceResponse): InvoiceData {
       qty: Number(r.qty) || 0,
       diskon: Number(r.diskon) || 0,
       // Update #5: nama satuan per baris dari backend (SalesInvoiceDetailResponse.satuan).
-      satuan: r.satuan ?? r.itemSatuan ?? null
+      satuan: r.satuan ?? r.itemSatuan ?? null,
+      // Update #041 — DP per baris: nilai baris yang ditagih = DP (Total
+      // Harga baris & ringkasan mengikuti nilai efektif).
+      dp: Number(r.dp) || 0
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,

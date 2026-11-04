@@ -15,6 +15,9 @@ export interface DetailRow {
   qty: number;
   diskon: number;
   satuan?: string | null; // nama satuan per baris — kolom "Satuan" di semua cetakan (Update #5)
+  // === Update #041 — DP per baris (invoice): terisi (> 0) → nilai baris
+  // yang ditagih = DP (harga & qty tetap utuh — alur DP bertahap). ===
+  dp?: number;
 }
 
 export interface BiayaTambahan {
@@ -163,9 +166,15 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // tetap menyebut TOTAL.
 
 function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0, hideDiskon = false }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number; hideDiskon?: boolean }) {
-  const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const diskonAmt = diskonGlobal ? (subTotal * diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
+  // === Update #041 — baris ber-DP: "Sub Total" tetap menampilkan nilai penuh
+  // (Σ qty × harga), baris "DP Diterapkan" memotong ke nilai yang ditagih
+  // (Σ dp); pajak & Total mengikuti nilai efektif. ===
+  const gross = detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const effective = detail.reduce((s, r) => s + (r.dp && r.dp > 0 ? r.dp : r.qty * r.harga), 0);
+  const dpAdjust = gross - effective;
+  const subTotal = gross;
+  const diskonAmt = diskonGlobal ? (effective * diskonGlobal) / 100 : 0;
+  const afterDiskon = effective - diskonAmt;
   // Update ASAHI: PPN hanya bila dipilih; PPh23 (jika dipilih) memotong total.
   const ppnAmt = ppnApplicable && ppn ? (afterDiskon * ppn) / 100 : 0;
   const pph23Amt = pph23Applicable && pph23 ? (afterDiskon * pph23) / 100 : 0;
@@ -179,6 +188,13 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable 
           <td style={{ ...cellStyle, width: '160px' }}>Sub Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', width: '140px' }}>{formatNumber(subTotal)}</td>
         </tr>
+        {/* Update #041 — potongan DP (nilai ditagih tahap ini) bila ada baris DP. */}
+        {dpAdjust > 0 && (
+          <tr>
+            <td style={cellStyle}>DP Diterapkan</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(dpAdjust)}</td>
+          </tr>
+        )}
         {/* Update #004: baris Diskon setelah Sub Total dihapus dari invoice (hideDiskon). */}
         {!hideDiskon && (
           <tr>
@@ -234,7 +250,8 @@ function DetailTableWithPrice({ detail, hideDiskon = false, hideAt = false }: { 
       </thead>
       <tbody>
         {detail.map((row, i) => {
-          const totalHarga = row.qty * row.harga;
+          // Update #041 — baris ber-DP: nilai yang ditagih = DP.
+          const totalHarga = row.dp && row.dp > 0 ? row.dp : row.qty * row.harga;
           return (
             <tr key={row.id}>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
@@ -243,7 +260,10 @@ function DetailTableWithPrice({ detail, hideDiskon = false, hideAt = false }: { 
               <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(row.harga)}</td>
               {!hideDiskon && <td style={{ ...cellStyle, textAlign: 'center' }}>{row.diskon || 0}</td>}
-              <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(totalHarga)}</td>
+              <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                {formatNumber(totalHarga)}
+                {row.dp && row.dp > 0 && <span style={{ fontSize: '9px' }}> (DP)</span>}
+              </td>
             </tr>
           );
         })}
@@ -494,7 +514,9 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
   // memotong grand total — konsisten dengan perhitungan backend.
   const ppnOn = data.ppnApplicable ?? true;
   const pph23On = data.pph23Applicable ?? false;
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  // Update #041 — baris ber-DP: nilai yang ditagih = DP (terbilang & total
+  // mengikuti nilai efektif, bukan Σ qty × harga).
+  const subTotal = data.detail.reduce((s, r) => s + (r.dp && r.dp > 0 ? r.dp : r.qty * r.harga), 0);
   const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
   const ppnAmt = ppnOn && data.ppn ? (afterDiskon * data.ppn) / 100 : 0;

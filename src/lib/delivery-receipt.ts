@@ -1,17 +1,29 @@
 import { api, type PaginatedResponse } from '@/lib/api';
 import type { PurchaseInvoiceResponse } from '@/types/api';
 
-export interface StockFormLine { barangId: string; satuanId: string; qty: string | number }
+export interface StockFormLine {
+  barangId: string;
+  satuanId: string;
+  qty: string | number;
+  bebas?: boolean;
+  itemNama?: string;
+}
 
 // Only the required input constraints from the API are mirrored here.
 // Availability, over-delivery, GRNI and PO/supplier compatibility stay on the server.
+// Update #041 — baris ITEM BEBAS (pengiriman dari SO manufaktur/jasa/custom):
+// bebas=true → wajib itemNama (tanpa barang/satuan master); validasi qty tetap.
 export function stockLineError(lines: StockFormLine[]): string | null {
-  if (!lines.some(line => line.barangId)) return 'Minimal satu barang harus dipilih.';
+  if (!lines.some((line) => line.barangId || (line.bebas && (line.itemNama || '').trim()))) return 'Minimal satu barang / item harus diisi.';
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    if (!line.barangId && !line.satuanId) continue;
-    if (!line.barangId) return `Baris ${index + 1}: pilih barang.`;
-    if (!line.satuanId) return `Baris ${index + 1}: satuan wajib dipilih.`;
+    if (line.bebas) {
+      if (!(line.itemNama || '').trim()) return `Baris ${index + 1}: nama item bebas wajib diisi.`;
+    } else {
+      if (!line.barangId && !line.satuanId) continue;
+      if (!line.barangId) return `Baris ${index + 1}: pilih barang.`;
+      if (!line.satuanId) return `Baris ${index + 1}: satuan wajib dipilih.`;
+    }
     if (!Number.isInteger(Number(line.qty)) || Number(line.qty) < 1) return `Baris ${index + 1}: qty harus bilangan bulat minimal 1.`;
   }
   return null;
@@ -49,7 +61,7 @@ export async function loadReceiptInvoiceOptions(supplierId: string): Promise<Pur
   for (let skip = 0; ; ) {
     const query = new URLSearchParams({ supplier_id: supplierId, skip: String(skip), limit: '200' });
     const page = await api.get<PaginatedResponse<PurchaseInvoiceResponse>>(`/pembelian/purchase-invoice?${query}`);
-    invoices.push(...page.data.filter(invoice => !invoice.jurnalUmumId && (invoice.status === 'DRAFT' || invoice.status === 'DIPROSES')));
+    invoices.push(...page.data.filter((invoice) => !invoice.jurnalUmumId && (invoice.status === 'DRAFT' || invoice.status === 'DIPROSES')));
     skip += page.data.length;
     if (skip >= page.total) return invoices;
     if (!page.data.length) throw new Error('Daftar invoice belum lengkap. Coba muat ulang.');

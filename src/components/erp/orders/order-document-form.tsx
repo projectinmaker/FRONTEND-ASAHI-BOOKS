@@ -349,6 +349,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
           harga: String(Number(d.harga) || 0),
           qty: String(d.qty ?? 1),
           diskon: String(d.diskon ?? 0),
+          // Update #041 — DP baris selalu kosong saat ditarik dari penawaran
+          // (nilai DP ditentukan per tahap SO: isi kolom DP per baris).
+          dp: '',
           salesOrderId: '',
           jenisPembelian: '',
           // Update #037 — default kosong (baris dari penawaran tidak punya link ROP).
@@ -364,7 +367,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
       // (penawaran.tsx sudah menampilkan toast sendiri).
       if (!opts?.silent) {
         toast.info(`Item penawaran ${p.noPenawaran}${rev} ditarik ke form`, {
-          description: `${(p.details || []).length} baris — barang master & item bebas apa adanya.${p.digunakanCount ? ` Penawaran sudah dipakai ${p.digunakanCount}× SO (repeat order).` : ''} Sesuaikan nilai SO sesuai tahap pembayaran — lihat Sisa Penawaran di bawah (Update #040: pembayaran lewat Invoice, tanpa termin).`
+          description: `${(p.details || []).length} baris — barang master & item bebas apa adanya.${p.digunakanCount ? ` Penawaran sudah dipakai ${p.digunakanCount}× SO (repeat order).` : ''} Isi kolom DP per baris (setelah Diskon) sesuai tahap pembayaran — harga satuan tidak perlu diubah (Update #041: pembayaran lewat Invoice, tanpa termin).`
         });
       }
     } catch (e) {
@@ -562,12 +565,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
 
   // ── Update ASAHI (PPh23/PPN opsional) — preview total PO mengikuti
   // pilihan pajak (rumus sama dengan backend: DPP + PPN + biaya − PPh23). ──
-  const liveSubtotal = lines.reduce((sum, line) => {
-    const qty = Number(line.qty) || 0;
-    const harga = Number(line.harga) || 0;
-    const diskon = Number(line.diskon) || 0;
-    return sum + qty * harga * (1 - diskon / 100);
-  }, 0);
+  // Update #041 — lineDpAwareTotal: nilai efektif satu baris (DP bila
+  // terisi — khusus SO; selain itu rumus lama). Dipakai kolom Jumlah +
+  // ringkasan live form SO.
+  const lineDpAwareTotal = (line: OrderLine) => (Number(line.dp) > 0 ? Number(line.dp) : (Number(line.qty) || 0) * (Number(line.harga) || 0) * (1 - (Number(line.diskon) || 0) / 100));
+  const liveSubtotal = lines.reduce((sum, line) => sum + lineDpAwareTotal(line), 0);
   const liveDiskon = liveSubtotal * ((Number(header.diskonGlobal) || 0) / 100);
   const liveDpp = liveSubtotal - liveDiskon;
   const livePpn = header.ppnApplicable === 'true' ? liveDpp * ((Number(header.ppn) || 0) / 100) : 0;
@@ -667,7 +669,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                           {penawaranDetail.revisiKe > 1 ? ` · Rev. ${penawaranDetail.revisiKe}` : ''}
                         </span>{' '}
                         · pelanggan <span className="font-medium">{penawaranDetail.pelanggan?.nama || '-'}</span> (terkunci) · Grand Total penawaran <span className="font-mono font-medium">{formatOrderMoney(penawaranDetail.grandTotal, penawaranDetail.mataUang)}</span>
-                        {penawaranDetail.digunakanCount > 0 ? ` · sudah dipakai ${penawaranDetail.digunakanCount}× SO (repeat order)` : ''} · item bebas ditarik apa adanya (tidak masuk master barang/gudang — bisa difakturkan, tidak bisa dikirim).
+                        {penawaranDetail.digunakanCount > 0 ? ` · sudah dipakai ${penawaranDetail.digunakanCount}× SO (repeat order)` : ''} · item bebas ditarik apa adanya (tidak masuk master barang/gudang — bisa difakturkan, bisa dikirim sebagai baris surat jalan tanpa stok).
                       </p>
                       {/* === Update #039 — SISA PENAWARAN: patokan nilai SO ini
                           (alur DP bertahap: SO DP → invoice; sisa → SO baru
@@ -683,7 +685,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         )}
                         <span className="text-muted-foreground">
                           {' '}
-                          (nilai {formatOrderMoney(penawaranDetail.grandTotal, penawaranDetail.mataUang)} − sudah jadi SO {formatOrderMoney(penawaranDetail.dipakaiSoTotal, penawaranDetail.mataUang)}) — patokan nilai SO ini: buat SO sebesar DP, sisa pembayaran bikin SO baru lagi dari penawaran yang sama.
+                          (nilai {formatOrderMoney(penawaranDetail.grandTotal, penawaranDetail.mataUang)} − sudah jadi SO {formatOrderMoney(penawaranDetail.dipakaiSoTotal, penawaranDetail.mataUang)}) — patokan nilai SO ini: isi kolom DP per baris (setelah Diskon) sesuai tahap pembayaran tanpa mengubah harga satuan; sisa pembayaran bikin SO baru lagi dari penawaran yang sama.
                         </span>
                       </p>
                       {/* Update #039 — WARNING melebihi sisa (NON-BLOKING:
@@ -871,6 +873,13 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         <TableHead className="min-w-24">Qty</TableHead>
                         <TableHead className="min-w-32">Harga ({header.currency || '-'})</TableHead>
                         <TableHead className="min-w-24">Diskon %</TableHead>
+                        {/* === Update #041 — kolom DP (Rp) SETELAH Diskon (khusus
+                            SO): nominal uang muka yang ditagih untuk baris ini
+                            — harga satuan & qty TIDAK diganggu (tetap nilai
+                            penuh dari penawaran). Jumlah = nilai efektif baris
+                            (DP bila terisi, selain itu rumus biasa). === */}
+                        {isSales && <TableHead className="min-w-36">DP ({header.currency || '-'})</TableHead>}
+                        {isSales && <TableHead className="min-w-32 text-right">Jumlah</TableHead>}
                         {/* Update #002 (khusus PO): Total Harga + tracking Keterangan SO & Jenis Belanja per baris. */}
                         {!isSales && <TableHead className="min-w-32">Total Harga</TableHead>}
                         {!isSales && <TableHead className="min-w-44">Keterangan SO</TableHead>}
@@ -938,9 +947,34 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                               </div>
                             )}
                           </TableCell>
-                          {(['qty', 'harga', 'diskon'] as const).map((key) => (
-                            <TableCell key={key}>{key === 'harga' ? <CurrencyInput aria-label={`harga baris ${index + 1}`} allowDecimal value={line.harga} onValueChange={(value) => updateLine(line.key, 'harga', value)} disabled={disabled} /> : <Input aria-label={`${key} baris ${index + 1}`} type="number" step="any" value={line[key]} onChange={(event) => updateLine(line.key, key, event.target.value)} disabled={disabled} />}</TableCell>
-                          ))}
+                          <TableCell>
+                            <Input aria-label={`qty baris ${index + 1}`} type="number" step="any" value={line.qty} onChange={(event) => updateLine(line.key, 'qty', event.target.value)} disabled={disabled} />
+                          </TableCell>
+                          <TableCell>
+                            <CurrencyInput aria-label={`harga baris ${index + 1}`} allowDecimal value={line.harga} onValueChange={(value) => updateLine(line.key, 'harga', value)} disabled={disabled} />
+                          </TableCell>
+                          <TableCell>
+                            <Input aria-label={`diskon baris ${index + 1}`} type="number" step="any" value={line.diskon} onChange={(event) => updateLine(line.key, 'diskon', event.target.value)} disabled={disabled} />
+                          </TableCell>
+                          {/* === Update #041 — DP (Rp) per baris (khusus SO, setelah
+                              Diskon): terisi → nilai baris yang ditagih = DP;
+                              harga satuan & qty tetap utuh. Kolom Jumlah di
+                              sebelahnya menampilkan nilai efektif baris. === */}
+                          {isSales && (
+                            <TableCell>
+                              <CurrencyInput aria-label={`DP baris ${index + 1}`} allowDecimal value={line.dp} onValueChange={(value) => updateLine(line.key, 'dp', value)} disabled={disabled} />
+                            </TableCell>
+                          )}
+                          {isSales && (
+                            <TableCell className="whitespace-nowrap text-right font-mono text-xs">
+                              {formatOrderMoney(lineDpAwareTotal(line), header.currency)}
+                              {Number(line.dp) > 0 && (
+                                <span className="ml-1 align-middle rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-amber-700" title="Baris ditagih sebesar DP (alur DP bertahap — sisa tagihan dibuat SO baru dari penawaran yang sama)">
+                                  DP
+                                </span>
+                              )}
+                            </TableCell>
+                          )}
                           {/* Update #002 (khusus PO): Total Harga read-only = qty × harga × (1 − diskon%), lalu relasi SO + jenis belanja per baris. */}
                           {!isSales && <TableCell className="whitespace-nowrap text-right font-mono text-xs">{formatOrderMoney((Number(line.qty) || 0) * (Number(line.harga) || 0) * (1 - (Number(line.diskon) || 0) / 100), header.currency)}</TableCell>}
                           {!isSales && (
@@ -969,7 +1003,28 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                     {isSales ? 'Tambah Barang / Item' : 'Tambah Barang'}
                   </Button>
                 )}
-                <p className="text-xs text-muted-foreground">{isSales ? 'Baris bisa barang master (dropdown) atau ITEM BEBAS (klik ikon Type di kiri baris — jasa/custom, tidak masuk master barang; bisa difakturkan, tidak bisa dikirim).' : ''}Grand total final dihitung ulang server saat disimpan. Jika detail diubah, seluruh daftar barang di atas akan menggantikan detail sebelumnya.</p>
+                {/* === Update #041 — ringkasan live (khusus SO): nilai penuh item
+                    vs nilai yang ditagih (Σ DP) + sisa untuk SO berikutnya —
+                    patokan alur DP bertahap (#039/#040) tanpa mengubah harga
+                    satuan. Grand total final tetap dihitung ulang server. === */}
+                {isSales &&
+                  (() => {
+                    const nilaiPenuh = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.harga) || 0) * (1 - (Number(l.diskon) || 0) / 100), 0);
+                    const dpTotal = lines.reduce((s, l) => s + (Number(l.dp) > 0 ? Number(l.dp) : 0), 0);
+                    const ditagih = lines.reduce((s, l) => s + lineDpAwareTotal(l), 0);
+                    if (dpTotal <= 0)
+                      return (
+                        <p className="text-xs text-muted-foreground">
+                          Nilai item: <span className="font-mono font-medium text-foreground">{formatOrderMoney(nilaiPenuh, header.currency)}</span> — isi kolom DP untuk menagih sebagian (DP) tanpa mengubah harga satuan.
+                        </p>
+                      );
+                    return (
+                      <p className="text-xs text-muted-foreground">
+                        Nilai penuh item: <span className="font-mono font-medium text-foreground">{formatOrderMoney(nilaiPenuh, header.currency)}</span> · ditagih tahap ini (DP): <span className="font-mono font-medium text-amber-600">{formatOrderMoney(ditagih, header.currency)}</span> · sisa untuk SO berikutnya: <span className="font-mono font-medium text-foreground">{formatOrderMoney(Math.max(nilaiPenuh - ditagih, 0), header.currency)}</span>
+                      </p>
+                    );
+                  })()}
+                <p className="text-xs text-muted-foreground">{isSales ? 'Baris bisa barang master (dropdown) atau ITEM BEBAS (klik ikon Type di kiri baris — jasa/custom, tidak masuk master barang; bisa difakturkan, bisa dikirim sebagai baris surat jalan tanpa stok).' : ''}Grand total final dihitung ulang server saat disimpan. Jika detail diubah, seluruh daftar barang di atas akan menggantikan detail sebelumnya.</p>
               </div>
               <div className="space-y-3">
                 <Label>Biaya Tambahan</Label>
@@ -1074,6 +1129,15 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                 {input('diskonGlobal', 'Diskon Global %', 'number')}
                 {isSales && input('ppn', 'PPN %', 'number')}
               </div>
+              {/* === Update #041 — petunjuk PPN (khusus SO): harga satuan yang
+                  sudah TERMASUK PPN → isi PPN 0; invoice yang ditarik dari SO
+                  ini otomatis tidak menambah PPN lagi (PPN invoice mengikuti
+                  SO terpilih). === */}
+              {isSales && (
+                <p className="-mt-2 text-xs text-muted-foreground">
+                  Isi <span className="font-medium text-foreground">PPN 0</span> bila harga satuan di atas sudah termasuk PPN — invoice yang ditarik dari SO ini otomatis ikut (tanpa PPN tambahan). DP per baris diisi pada kolom <span className="font-medium text-foreground">DP</span> di tabel item.
+                </p>
+              )}
               {/* === Update #040 — BLOK PEMBAYARAN TERMIN (SO) kini HANYA
                   HISTORI (edit/detail SO lama yang dibuat sebelum #040).
                   Input termin di form create DIHAPUS penuh (#031→#035):
