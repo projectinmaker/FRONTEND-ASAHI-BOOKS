@@ -30,7 +30,7 @@ import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 import { PenawaranPDFTemplate, type PenawaranData, type DetailRow, type BiayaTambahan } from '@/components/erp/sales/pdf-templates';
-import type { PenawaranResponse, PenawaranCreate, PenawaranDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, BarangResponse, SatuanResponse, TransaksiBiayaCreate, HardDeleteResponse, PenawaranKatalogItemResponse, NomorQuotationPreviewResponse } from '@/types/api';
+import type { PenawaranResponse, PenawaranCreate, PenawaranDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, BarangResponse, SatuanResponse, TransaksiBiayaCreate, HardDeleteResponse, PenawaranKatalogItemResponse, NomorQuotationPreviewResponse, PenawaranSoRingkas } from '@/types/api';
 // Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 // Update #007 — quick add master data langsung dari form transaksi
@@ -43,6 +43,21 @@ const PAGE_SIZE = 100;
 // === Update #031 — pilihan bulan & angka romawi utk No Quotation ===
 const ROMAN_BULAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const BULAN_OPTIONS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'].map((label, i) => ({ value: String(i + 1), label: `${label} (${ROMAN_BULAN[i]})` }));
+
+// ─── Update #039 — badge status SO turunan (kartu pemakaian penawaran) ──────
+
+function SoStatusBadge({ status }: { status: string }) {
+  switch (status) {
+    case 'DRAFT':
+      return <Badge className="border-yellow-200 bg-yellow-100 text-yellow-700 hover:bg-yellow-100">Draft</Badge>;
+    case 'DIPROSES':
+      return <Badge className="border-sky-200 bg-sky-100 text-sky-700 hover:bg-sky-100">Diproses</Badge>;
+    case 'SELESAI':
+      return <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Selesai</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+}
 
 // ─── Status Badge (mirror StatusBadge sales/index.tsx, status penawaran) ─────
 
@@ -961,6 +976,11 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const [editRevisiKe, setEditRevisiKe] = useState(1);
   const [editStatus, setEditStatus] = useState('');
   const [editGrandTotal, setEditGrandTotal] = useState(0);
+  // === Update #039 — kartu pemakaian/sisa penawaran di form edit/detail:
+  // Σ SO aktif turunan + sisa + daftar SO-SOnya (alur DP bertahap). ===
+  const [editDipakaiSoTotal, setEditDipakaiSoTotal] = useState(0);
+  const [editSisaPenawaran, setEditSisaPenawaran] = useState(0);
+  const [editSoList, setEditSoList] = useState<PenawaranSoRingkas[]>([]);
   // Nama referensi historis (pelanggan/syarat bayar) — dipertahankan sebagai label
   // bila data sudah tidak ada di dropdown aktif (mirror includeCurrent order-form).
   const [editPelangganNama, setEditPelangganNama] = useState('');
@@ -1031,6 +1051,10 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         setEditStatus(p.status);
         setEditRevisiKe(p.revisiKe || 1);
         setEditGrandTotal(Number(p.grandTotal) || 0);
+        // Update #039 — sisa penawaran (Σ SO aktif; negatif = melebihi).
+        setEditDipakaiSoTotal(Number(p.dipakaiSoTotal) || 0);
+        setEditSisaPenawaran(Number(p.sisaPenawaran) || 0);
+        setEditSoList(p.soList || []);
         setEditPelangganNama(p.pelanggan?.nama || '');
         setEditSyaratNama(p.syaratBayar?.nama || '');
         setFPelangganId(p.pelangganId || '');
@@ -1235,6 +1259,73 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
                 <span>Grand Total:</span>
                 <span className="font-mono font-semibold text-foreground">{formatRp(editGrandTotal)}</span>
               </div>
+            </div>
+          )}
+
+          {/* === Update #039 — PEMAKAIAN PENAWARAN (alur DP bertahap: satu
+              penawaran → SO DP → SO sisa; sisa = nilai penawaran − Σ SO aktif,
+              dihitung backend on-the-fly — SO dibatalkan otomatis mengembalikan
+              sisanya). Kartu tampil di semua status; baris SO = SO aktif saja. === */}
+          {editId && (
+            <div className="space-y-3 rounded-md border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Info className="h-4 w-4 text-muted-foreground" />
+                  Pemakaian Penawaran
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>
+                    Nilai: <span className="font-mono font-semibold text-foreground">{formatRp(editGrandTotal)}</span>
+                  </span>
+                  <span>
+                    Sudah jadi SO {editSoList.length}×: <span className="font-mono font-semibold text-foreground">{formatRp(editDipakaiSoTotal)}</span>
+                  </span>
+                  <span>
+                    Sisa:{' '}
+                    {editSisaPenawaran < 0 ? (
+                      <span className="font-mono font-semibold text-amber-700" title="SO-SO turunan melebihi nilai penawaran">
+                        {formatRp(editSisaPenawaran)}
+                      </span>
+                    ) : (
+                      <span className="font-mono font-semibold text-emerald-700">{formatRp(editSisaPenawaran)}</span>
+                    )}
+                  </span>
+                </div>
+              </div>
+              {editSisaPenawaran < 0 && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="alert">
+                  SO-SO turunan melebihi nilai penawaran sebesar {formatRp(Math.abs(editSisaPenawaran))} — tetap diperbolehkan (repeat order / penambahan scope), sekadar pengingat.
+                </p>
+              )}
+              {editSoList.length > 0 ? (
+                <div className="max-h-44 overflow-y-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead>No. Pesanan</TableHead>
+                        <TableHead className="w-[120px]">Tanggal</TableHead>
+                        <TableHead className="w-[110px]">Status</TableHead>
+                        <TableHead className="text-right">Nilai SO</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editSoList.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-mono text-xs font-medium">{s.noPesanan}</TableCell>
+                          <TableCell className="text-xs">{formatDate(s.tanggal)}</TableCell>
+                          <TableCell>
+                            <SoStatusBadge status={s.status} />
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-xs font-medium">{formatRp(Number(s.grandTotal) || 0)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">Belum ada Sales Order aktif dari penawaran ini — nilai penuh {formatRp(editGrandTotal)} masih tersedia sebagai sisa.</p>
+              )}
+              <p className="text-[11px] text-muted-foreground">Alur DP bertahap: buat SO sebesar DP dari penawaran ini → turunkan invoice-nya; sisa pembayaran dibuat SO baru lagi dari penawaran yang sama → invoice baru (pembayaran tetap mengacu invoice). Sisa dihitung otomatis dan berubah mengikuti status SO.</p>
             </div>
           )}
 

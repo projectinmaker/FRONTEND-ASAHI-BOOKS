@@ -1116,6 +1116,12 @@ export interface PenawaranResponse {
   // pemakaian SO (repeat order). ===
   revisiKe: number;
   digunakanCount: number;
+  // === Update #039 — sisa penawaran (alur DP bertahap: 1 penawaran → SO DP
+  // → SO sisa; sisa = grandTotal − Σ grandTotal SO aktif turunan). Negatif
+  // = SO-SO turunan melebihi nilai penawaran (warning, bukan blok). ===
+  dipakaiSoTotal: string;
+  sisaPenawaran: string;
+  soList: PenawaranSoRingkas[];
   tanggal: string;
   berlakuHingga?: string | null;
   pelangganId: string;
@@ -1212,6 +1218,16 @@ export interface SalesOrderSisaDetail {
   diskon: number;
 }
 
+// === Update #039 — SO turunan penawaran (kartu pemakaian/sisa di detail
+// penawaran; hanya SO AKTIF non-DIBATALKAN yang dikirim backend). ===
+export interface PenawaranSoRingkas {
+  id: string;
+  noPesanan: string;
+  tanggal: string;
+  status: string;
+  grandTotal: string;
+}
+
 // === Update #032 — baris dropdown "Pilih Penawaran" di form Sales Order
 // (endpoint GET /penjualan/penawaran/untuk-so; hanya DRAFT/SELESAI —
 // SELESAI tetap bisa dipilih untuk REPEAT ORDER). ===
@@ -1225,6 +1241,9 @@ export interface PenawaranUntukSoItem {
   pelangganNama?: string | null;
   grandTotal: number | string;
   digunakanCount: number;
+  // Update #039 — sisa penawaran (subtitle dropdown: patokan nilai SO
+  // berikutnya saat DP bertahap dari penawaran yang sama).
+  sisaPenawaran: number | string;
   jumlahItem: number;
 }
 

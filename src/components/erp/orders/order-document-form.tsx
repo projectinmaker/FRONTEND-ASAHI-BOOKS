@@ -563,7 +563,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
     const options: SearchableDropdownOption[] = penawaranOptions.map((p) => ({
       id: p.id,
       label: `${p.noPenawaran}${p.revisiKe > 1 ? ` (Rev. ${p.revisiKe})` : ''}`,
-      subtitle: `${p.pelangganNama || '-'} · ${p.jumlahItem} item · dipakai ${p.digunakanCount}× SO${p.status === 'SELESAI' ? ' · repeat order' : ' · draft'}`
+      // Update #039 — sisa penawaran langsung di subtitle: patokan nilai SO
+      // berikutnya saat DP bertahap dari penawaran yang sama.
+      subtitle: `${p.pelangganNama || '-'} · ${p.jumlahItem} item · dipakai ${p.digunakanCount}× SO · sisa ${formatOrderMoney(Number(p.sisaPenawaran) || 0, 'IDR')}${p.status === 'SELESAI' ? ' · repeat order' : ' · draft'}`
     }));
     if (penawaranDetail && !options.some((option) => option.id === penawaranDetail.id)) {
       options.unshift({
@@ -590,24 +592,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
   const liveBiaya = costs.reduce((sum, cost) => sum + (Number(cost.jumlah) || 0), 0);
   const liveGrandTotal = liveDpp + livePpn + liveBiaya - livePph23;
 
-  // === Update #034 — BAGI CEPAT termin (SO create): pecah Grand Total jadi N
-  // termin sama rata SEKALI KLIK (jawab kebutuhan "SO dibayar 2x / 3x").
-  // Baris terakhir menyerap pembulatan sehingga total PERSIS = Grand Total
-  // (tidak menyandar toleransi ±0,05). Mengganti baris yang sedang ada;
-  // nominal tiap baris tetap bisa diubah manual setelahnya. ===
-  const bagiTermin = (jumlah: number) => {
-    if (liveGrandTotal <= 0) {
-      toast.info('Isi item SO dulu — Grand Total masih 0');
-      return;
-    }
-    const perBaris = Math.floor((liveGrandTotal / jumlah) * 100) / 100;
-    const terakhir = Math.round((liveGrandTotal - perBaris * (jumlah - 1)) * 100) / 100;
-    const sebelumnya = termins.length;
-    setTermins(Array.from({ length: jumlah }, (_, i) => ({ key: crypto.randomUUID(), nominal: String(i === jumlah - 1 ? terakhir : perBaris) })));
-    toast.success(`Pembayaran dipecah ${jumlah} termin sama rata`, {
-      description: sebelumnya > 0 ? `Mengganti ${sebelumnya} baris yang tadi — nominal tiap baris bebas diubah sesuai kebutuhan.` : 'Nominal tiap baris bebas diubah sesuai kebutuhan — total tidak harus sama dengan Grand Total.'
-    });
-  };
+  // === Update #039 — tombol BAGI CEPAT (Bagi 2 / Bagi 3, #034) DIHAPUS atas
+  // permintaan user: input termin kini murni BEBAS (Tambah Termin + nominal
+  // manual). Fungsi bagiTermin ikut dihapus. ===
 
   return (
     <FormTabShell title={`${original ? (readOnly ? 'Detail' : 'Edit') : 'Buat'} ${title}`}>
@@ -689,15 +676,41 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                     </div>
                   </div>
                   {penawaranDetail && (
-                    <p className="text-[11px] leading-relaxed text-amber-800">
-                      Sumber:{' '}
-                      <span className="font-mono font-medium">
-                        {penawaranDetail.noPenawaran}
-                        {penawaranDetail.revisiKe > 1 ? ` · Rev. ${penawaranDetail.revisiKe}` : ''}
-                      </span>{' '}
-                      · pelanggan <span className="font-medium">{penawaranDetail.pelanggan?.nama || '-'}</span> (terkunci) · Grand Total penawaran <span className="font-mono font-medium">{formatOrderMoney(penawaranDetail.grandTotal, penawaranDetail.mataUang)}</span>
-                      {penawaranDetail.digunakanCount > 0 ? ` · sudah dipakai ${penawaranDetail.digunakanCount}× SO (repeat order)` : ''} · item bebas ditarik apa adanya (tidak masuk master barang/gudang — bisa difakturkan, tidak bisa dikirim).
-                    </p>
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] leading-relaxed text-amber-800">
+                        Sumber:{' '}
+                        <span className="font-mono font-medium">
+                          {penawaranDetail.noPenawaran}
+                          {penawaranDetail.revisiKe > 1 ? ` · Rev. ${penawaranDetail.revisiKe}` : ''}
+                        </span>{' '}
+                        · pelanggan <span className="font-medium">{penawaranDetail.pelanggan?.nama || '-'}</span> (terkunci) · Grand Total penawaran <span className="font-mono font-medium">{formatOrderMoney(penawaranDetail.grandTotal, penawaranDetail.mataUang)}</span>
+                        {penawaranDetail.digunakanCount > 0 ? ` · sudah dipakai ${penawaranDetail.digunakanCount}× SO (repeat order)` : ''} · item bebas ditarik apa adanya (tidak masuk master barang/gudang — bisa difakturkan, tidak bisa dikirim).
+                      </p>
+                      {/* === Update #039 — SISA PENAWARAN: patokan nilai SO ini
+                          (alur DP bertahap: SO DP → invoice; sisa → SO baru
+                          lagi dari penawaran yang sama). === */}
+                      <p className="text-[11px] leading-relaxed">
+                        <span className="text-muted-foreground">Sisa penawaran:</span>{' '}
+                        {Number(penawaranDetail.sisaPenawaran) < 0 ? (
+                          <span className="font-mono font-semibold text-amber-700" title="SO-SO turunan melebihi nilai penawaran">
+                            {formatOrderMoney(Number(penawaranDetail.sisaPenawaran), penawaranDetail.mataUang)}
+                          </span>
+                        ) : (
+                          <span className="font-mono font-semibold text-emerald-700">{formatOrderMoney(Number(penawaranDetail.sisaPenawaran), penawaranDetail.mataUang)}</span>
+                        )}
+                        <span className="text-muted-foreground">
+                          {' '}
+                          (nilai {formatOrderMoney(penawaranDetail.grandTotal, penawaranDetail.mataUang)} − sudah jadi SO {formatOrderMoney(penawaranDetail.dipakaiSoTotal, penawaranDetail.mataUang)}) — patokan nilai SO ini: buat SO sebesar DP, sisa pembayaran bikin SO baru lagi dari penawaran yang sama.
+                        </span>
+                      </p>
+                      {/* Update #039 — WARNING melebihi sisa (NON-BLOKING:
+                      repeat order / nambah scope tetap diperbolehkan). */}
+                      {liveGrandTotal > 0 && Number(penawaranDetail.sisaPenawaran) < liveGrandTotal && (
+                        <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-900" role="alert">
+                          Nilai SO ini ({formatOrderMoney(liveGrandTotal, header.currency)}) melebihi sisa penawaran sebesar {formatOrderMoney(liveGrandTotal - Number(penawaranDetail.sisaPenawaran), header.currency)} — tetap bisa disimpan (repeat order / penambahan scope), pastikan disengaja.
+                        </p>
+                      )}
+                    </div>
                   )}
                   {!penawaranLocked && <p className="text-[11px] text-muted-foreground">Sarankan alur: Penawaran → (customer setuju) → buat SO dari sini. Penawaran berstatus Selesai tetap muncul — boleh dipakai berulang kali (repeat order).</p>}
                 </div>
@@ -1090,16 +1103,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                     <Label>Pembayaran Termin</Label>
                     {isCreate && !original && (
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {/* === Update #034 — bagi cepat: 2x / 3x pembayaran
-                            sekali klik (nonaktif selama Grand Total masih 0). === */}
-                        <span className="text-xs text-muted-foreground">Bagi cepat:</span>
-                        <Button variant="outline" size="sm" disabled={disabled || liveGrandTotal <= 0} onClick={() => bagiTermin(2)} title="Pecah Grand Total jadi 2 termin sama rata (mis. DP 50% + pelunasan 50%)">
-                          Bagi 2
-                        </Button>
-                        <Button variant="outline" size="sm" disabled={disabled || liveGrandTotal <= 0} onClick={() => bagiTermin(3)} title="Pecah Grand Total jadi 3 termin sama rata">
-                          Bagi 3
-                        </Button>
-                        <span className="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
+                        {/* === Update #039 — tombol Bagi 2 / Bagi 3 (bagi cepat
+                            #034) DIHAPUS atas permintaan user: termin murni
+                            input bebas (Tambah Termin + nominal manual). === */}
                         <Button variant="outline" size="sm" disabled={disabled} onClick={() => setTermins((prev) => [...prev, { key: crypto.randomUUID(), nominal: '' }])}>
                           <Plus className="mr-2 h-4 w-4" /> Tambah Termin
                         </Button>
@@ -1191,7 +1197,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Klik <span className="font-medium text-foreground">Bagi 2</span> / <span className="font-medium text-foreground">Bagi 3</span> untuk memecah pembayaran otomatis sama rata, atau <span className="font-medium text-foreground">Tambah Termin</span> untuk mengatur nominal sendiri — nominal bebas ditentukan Anda (mis. Termin 1 = DP 5.000.000 saja; total tidak harus sama dengan Grand Total — sisanya mengikuti alur Invoice). Tiap termin dibayarkan satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice.
+                      Klik <span className="font-medium text-foreground">Tambah Termin</span> lalu isi nominalnya sendiri — bebas ditentukan Anda (mis. Termin 1 = DP 5.000.000 saja; total tidak harus sama dengan Grand Total — sisanya mengikuti alur Invoice). Tiap termin dibayarkan satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice. Alur DP bertahap dari satu penawaran: SO ini sebesar DP → turunkan invoice-nya; sisa pembayaran bikin SO baru lagi dari penawaran yang sama → invoice baru.
                     </p>
                   )}
                 </div>
