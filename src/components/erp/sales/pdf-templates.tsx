@@ -91,6 +91,8 @@ export interface ReturData {
 
 export interface PenawaranData {
   nomor: string;
+  /** Update #032 — revisi dokumen: 1 = asal; 2+ tampil "Rev. N" di cetakan. */
+  revisiKe?: number;
   tanggal: string;
   berlakuHingga: string;
   kepada: string;
@@ -698,8 +700,10 @@ export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
           {/* Update #031: label nomor = "No. Quotation" (field Nomor PO dihapus
-              dari form penawaran; baris No PO hanya tampil bila ada nilainya). */}
-          <InfoCell label="No. Quotation" value={data.nomor} />
+              dari form penawaran; baris No PO hanya tampil bila ada nilainya).
+              Update #032: revisi tampil "— Rev. N" di sebelah nomor (nomor
+              quotation TIDAK berubah antar revisi). */}
+          <InfoCell label="No. Quotation" value={`${data.nomor}${data.revisiKe && data.revisiKe > 1 ? ` — Rev. ${data.revisiKe}` : ''}`} />
           {data.noPo ? <InfoCell label="No PO" value={data.noPo} /> : null}
           <InfoCell label="Berlaku Hingga" value={formatDate(data.berlakuHingga)} />
           <InfoCell label="Syarat Pembayaran" value={data.syaratPembayaran} />

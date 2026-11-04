@@ -1112,6 +1112,10 @@ export type PenawaranUpdate = Partial<PenawaranCreate>;
 export interface PenawaranResponse {
   id: string;
   noPenawaran: string;
+  // === Update #032 — revisi dokumen (1 = asal; 2 = Rev. 2) + jumlah
+  // pemakaian SO (repeat order). ===
+  revisiKe: number;
+  digunakanCount: number;
   tanggal: string;
   berlakuHingga?: string | null;
   pelangganId: string;
@@ -1188,9 +1192,15 @@ export interface TukarFakturResponse {
 
 export interface SalesOrderSisaDetail {
   salesOrderDetailId: string;
-  barangId: string;
-  kodeBarang: string;
-  namaBarang: string;
+  // === Update #032 — barangId OPSIONAL (baris item bebas). isBebas=true →
+  // tidak bisa dikirim (disembunyikan dari form Pengiriman) tapi tetap bisa
+  // difakturkan (namaBarang = nama item bebas). ===
+  barangId?: string | null;
+  itemNama?: string | null;
+  itemSatuan?: string | null;
+  isBebas?: boolean;
+  kodeBarang: string | null;
+  namaBarang: string | null;
   satuanId?: string | null;
   satuanNama?: string | null;
   qtyPesanan: number;
@@ -1200,6 +1210,22 @@ export interface SalesOrderSisaDetail {
   sisaFaktur: number;
   harga: number;
   diskon: number;
+}
+
+// === Update #032 — baris dropdown "Pilih Penawaran" di form Sales Order
+// (endpoint GET /penjualan/penawaran/untuk-so; hanya DRAFT/SELESAI —
+// SELESAI tetap bisa dipilih untuk REPEAT ORDER). ===
+export interface PenawaranUntukSoItem {
+  id: string;
+  noPenawaran: string;
+  revisiKe: number;
+  status: string;
+  tanggal: string;
+  pelangganId: string;
+  pelangganNama?: string | null;
+  grandTotal: number | string;
+  digunakanCount: number;
+  jumlahItem: number;
 }
 
 export interface SalesOrderSisaResponse {
@@ -1598,7 +1624,12 @@ export interface TransferBankUpdate {
 
 export interface SalesOrderDetailCreate {
   satuanId?: string | null;
-  barangId: string;
+  // === Update #032 — barangId OPSIONAL: baris bisa item BEBAS (ditarik dari
+  // penawaran / diketik manual; wajib itemNama bila tanpa barang). Item
+  // bebas tidak bisa dikirim tapi bisa difakturkan. ===
+  barangId?: string | null;
+  itemNama?: string | null;
+  itemSatuan?: string | null;
   harga: number;
   qty: number;
   diskon?: number | null;
@@ -1618,6 +1649,9 @@ export interface SalesOrderCreate {
   customerPoDate?: string | null;
   /** Update ASAHI (revisi SO): singkatan bebas nama perusahaan customer — segmen nomor SO "SO ASI/TBI/2026/001"; kosong → "SO ASI/-/2026/001". */
   customerCode?: string | null;
+  // === Update #032 — link penawaran sumber ("Pilih Penawaran" di form SO /
+  // tombol konversi). Repeat order: satu penawaran boleh dipakai banyak SO. ===
+  penawaranId?: string | null;
 
   tanggal: string;
   pelangganId: string;
@@ -1664,6 +1698,10 @@ export interface SalesOrderResponse {
 
   id: string;
   noPesanan: string;
+  // === Update #032 — penawaran sumber (repeat order; null = SO manual). ===
+  penawaranId?: string | null;
+  penawaranNo?: string | null;
+  penawaranRevisi?: number | null;
   tanggal: string;
   pelangganId: string;
   syaratBayarId: string | null;
@@ -1697,7 +1735,11 @@ export interface SalesOrderResponse {
 }
 
 export interface SalesInvoiceDetailCreate {
-  barangId: string;
+  // === Update #032 — barangId OPSIONAL: baris invoice bisa item BEBAS
+  // (jasa/custom dari penawaran → SO; wajib itemNama bila tanpa barang). ===
+  barangId?: string | null;
+  itemNama?: string | null;
+  itemSatuan?: string | null;
   harga: number;
   qty: number;
   diskon?: number | null;

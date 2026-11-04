@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2 } from 'lucide-react';
+import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2, Package, Type } from 'lucide-react';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 // Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
@@ -138,6 +138,12 @@ interface FormDetailRow {
   salesOrderDetailId?: string;
   // === Update #004: link baris invoice ke line DO (tarik No DO) ===
   deliveryDetailId?: string;
+  // === Update #032 — baris ITEM BEBAS (khusus form Invoice): jasa/custom
+  // tanpa barang master (ditarik dari SO / diketik manual). barangId kosong
+  // + itemNama terisi saat submit (dikirim sebagai null + itemNama). ===
+  bebas?: boolean;
+  itemNama?: string;
+  itemSatuan?: string;
 }
 
 interface FormBiayaRow {
@@ -147,7 +153,9 @@ interface FormBiayaRow {
 }
 
 function newDetailRow(): FormDetailRow {
-  return { id: crypto.randomUUID(), barangId: '', kodeBarang: '', barangNama: '', harga: '', qty: '1', diskon: '0', satuanId: '', satuanNama: '' };
+  // Update #032 — field bebas/itemNama/itemSatuan dipakai form Invoice
+  // (jasa/custom tanpa barang master); form Pengiriman tidak memakainya.
+  return { id: crypto.randomUUID(), barangId: '', kodeBarang: '', barangNama: '', harga: '', qty: '1', diskon: '0', satuanId: '', satuanNama: '', bebas: false, itemNama: '', itemSatuan: '' };
 }
 
 function newBiayaRow(): FormBiayaRow {
@@ -201,11 +209,17 @@ interface ReturPenjualanDraftData {
 
 // ─── Detail Table With Price (for SO / Invoice / Retur forms) ──────────────
 
-function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false, onBarangCreated }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean; onBarangCreated?: (barang: BarangResponse) => void }) {
+function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false, onBarangCreated, allowBebas = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean; onBarangCreated?: (barang: BarangResponse) => void; allowBebas?: boolean }) {
   // Update #004: hideDiskon — invoice tidak lagi menampilkan kolom Diskon %
   // (dokumen invoice tanpa diskon; payload mengirim diskon null).
+  // Update #032: allowBebas — form Invoice mengizinkan baris ITEM BEBAS
+  // (jasa/custom tanpa barang master; toggle ikon Type di kiri nama). Baris
+  // bebas wajib itemNama; satuan teks bebas opsional.
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
+  // Update #032 — toggle mode baris: master ↔ bebas (reset field yang tidak
+  // relevan agar switching bolak-balik tidak menyisakan data nyasar).
+  const toggleBebas = useCallback((id: string) => setRows((p) => p.map((r) => (r.id === id ? { ...r, bebas: !r.bebas, barangId: r.bebas ? '' : r.barangId, kodeBarang: r.bebas ? '' : r.kodeBarang, itemNama: r.bebas ? '' : r.itemNama || '', itemSatuan: r.bebas ? '' : r.itemSatuan || '' } : r))), [setRows]);
   // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add.
   const applyBarang = useCallback(
     (id: string, value: string, found: BarangDropdown | undefined) => {
@@ -267,19 +281,37 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
               const rowSub = q * h * (1 - d / 100);
               return (
                 <TableRow key={row.id}>
-                  <TableCell className="font-mono text-xs">{row.kodeBarang || '-'}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {/* Update #032 — baris bebas: kode tidak ada (bukan barang master). */}
+                    {row.bebas ? <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-600">item bebas</span> : row.kodeBarang || '-'}
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
-                      {/* Update #007: quick add barang langsung di baris */}
-                      <QuickAddBarangButton
-                        compact
-                        onCreated={(b) => {
-                          const drop = toBarangDropdown(b);
-                          onBarangCreated?.(b);
-                          applyBarang(row.id, b.id, drop);
-                        }}
-                      />
+                      {/* Update #032 — toggle master ↔ item bebas (form Invoice). */}
+                      {allowBebas && (
+                        <Button variant="ghost" size="icon" className={row.bebas ? 'h-7 w-7 shrink-0 text-amber-600' : 'h-7 w-7 shrink-0 text-muted-foreground'} onClick={() => toggleBebas(row.id)} title={row.bebas ? 'Item bebas (jasa/custom — tidak di master barang). Klik untuk pilih dari master barang.' : 'Pilih dari master barang. Klik untuk ketik item bebas (jasa/custom).'} aria-label={row.bebas ? 'Ganti ke mode master barang' : 'Ganti ke mode item bebas'}>
+                          {row.bebas ? <Type className="h-3.5 w-3.5" /> : <Package className="h-3.5 w-3.5" />}
+                        </Button>
+                      )}
+                      {allowBebas && row.bebas ? (
+                        <>
+                          <Input aria-label="Nama item bebas" placeholder="Nama item / jasa (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} />
+                          <Input aria-label="Satuan item bebas" placeholder="Satuan" className="h-8 w-24 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} />
+                        </>
+                      ) : (
+                        <>
+                          <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                          {/* Update #007: quick add barang langsung di baris */}
+                          <QuickAddBarangButton
+                            compact
+                            onCreated={(b) => {
+                              const drop = toBarangDropdown(b);
+                              onBarangCreated?.(b);
+                              applyBarang(row.id, b.id, drop);
+                            }}
+                          />
+                        </>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -717,16 +749,18 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
       setFPelangganId(sisa.pelangganId || '');
       // Hanya timpa alamat bila SO punya alamat (jangan kosongkan isian user).
       if (sisa.alamatPengiriman) setFAlamatPengiriman(sisa.alamatPengiriman);
-      const rows = (sisa.details || []).filter((d) => Number(d.sisaKirim) > 0);
+      // Update #032 — baris ITEM BEBAS tidak bisa dikirim (tidak ada di gudang):
+      // hanya baris barang master dengan sisa kirim yang ditarik.
+      const rows = (sisa.details || []).filter((d) => d.barangId && !d.isBebas && Number(d.sisaKirim) > 0);
       if (rows.length === 0) {
-        toast.info('Semua baris SO sudah terkirim sepenuhnya', { description: 'Tidak ada sisa qty yang perlu dikirim untuk SO ini.' });
+        toast.info('Semua baris SO sudah terkirim sepenuhnya', { description: 'Tidak ada sisa qty barang master yang perlu dikirim untuk SO ini. (Baris item bebas/jasa tidak dikirim — difakturkan saja.)' });
         setFDetail([]);
         return;
       }
       setFDetail(
         rows.map((d) => ({
           id: crypto.randomUUID(),
-          barangId: d.barangId,
+          barangId: d.barangId || '',
           kodeBarang: d.kodeBarang || '',
           barangNama: d.namaBarang || '',
           harga: String(d.harga ?? 0),
@@ -1318,6 +1352,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       try {
         const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
         setFPelangganId(sisa.pelangganId || '');
+        // Update #032 — baris ITEM BEBAS ikut difakturkan (jasa/custom —
+        // pendapatan tanpa stok); barang master difakturkan sisa qty-nya.
         const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
         if (rows.length === 0) {
           toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
@@ -1326,7 +1362,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
           setFDetail(
             rows.map((d) => ({
               id: crypto.randomUUID(),
-              barangId: d.barangId,
+              barangId: d.barangId || '',
               kodeBarang: d.kodeBarang || '',
               barangNama: d.namaBarang || '',
               harga: String(d.harga ?? 0),
@@ -1334,8 +1370,12 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               // Update #004: invoice tanpa diskon — kolom Diskon dihapus.
               diskon: '0',
               satuanId: d.satuanId || '',
-              satuanNama: d.satuanNama || '',
-              salesOrderDetailId: d.salesOrderDetailId
+              satuanNama: d.satuanNama || d.itemSatuan || '',
+              salesOrderDetailId: d.salesOrderDetailId,
+              // Update #032 — item bebas (jasa/custom) tanpa barang master.
+              bebas: !d.barangId,
+              itemNama: d.itemNama || '',
+              itemSatuan: d.itemSatuan || ''
             }))
           );
         }
@@ -1423,7 +1463,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     const errs: Record<string, string> = {};
     if (!fPelangganId) errs.pelangganId = 'Pelanggan wajib diisi';
     if (!fTanggal) errs.tanggal = 'Tanggal wajib diisi';
-    if (!fDetail.some((r) => r.barangId)) errs.detail = 'Minimal 1 barang harus dipilih';
+    // Update #032 — baris boleh barang master ATAU item bebas (jasa/custom).
+    if (!fDetail.some((r) => r.barangId || (r.bebas && (r.itemNama || '').trim()))) errs.detail = 'Minimal 1 baris (barang atau item bebas) harus diisi';
+    if (fDetail.some((r) => r.bebas && !(r.itemNama || '').trim())) errs.detail = 'Setiap baris item bebas wajib memiliki nama item';
     if (Object.keys(errs).length) {
       setFormErrors(errs);
       return;
@@ -1431,14 +1473,26 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setSubmitting(true);
     try {
       const details: SalesInvoiceDetailCreate[] = fDetail
-        .filter((r) => r.barangId)
+        .filter((r) => r.barangId || (r.bebas && (r.itemNama || '').trim()))
         .map((r) => {
           const qty = parseFloat(r.qty) || 0;
           const harga = parseFloat(r.harga) || 0;
           // Update #004: invoice tanpa diskon — diskon dikirim null.
           // Task 16-c2 / #004: link per baris ke line SO dan/atau line DO
           // (bila baris ditarik dari SO / No DO).
-          return { barangId: r.barangId, harga, qty, diskon: null, subTotal: qty * harga, salesOrderDetailId: r.salesOrderDetailId || null, deliveryDetailId: r.deliveryDetailId || null };
+          // Update #032 — baris BEBAS: barangId null + itemNama/itemSatuan
+          // (jasa/custom — posting ke akun Pendapatan default).
+          return {
+            barangId: r.bebas ? null : r.barangId,
+            itemNama: r.bebas ? (r.itemNama || '').trim() : null,
+            itemSatuan: r.bebas ? (r.itemSatuan || '').trim() || null : null,
+            harga,
+            qty,
+            diskon: null,
+            subTotal: qty * harga,
+            salesOrderDetailId: r.salesOrderDetailId || null,
+            deliveryDetailId: r.deliveryDetailId || null
+          };
         });
       const biaya: TransaksiBiayaCreate[] = fBiayaTambahan
         .filter((b) => b.nama)
@@ -1558,11 +1612,13 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               Detail Barang <span className="text-destructive">*</span>
             </Label>
             {/* Update #004: kolom Diskon % disembunyikan di invoice. */}
+            {/* Update #032: allowBebas — baris invoice boleh item bebas (jasa/custom). */}
             <DetailTableWithPrice
               rows={fDetail}
               setRows={setFDetail}
               barangOptions={barangOptions}
               hideDiskon
+              allowBebas
               onBarangCreated={(b) => {
                 setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
                 // Satuan barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan host.
@@ -2683,7 +2739,17 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                   ) : (
                     data.map((d) => (
                       <TableRow key={d.id}>
-                        <TableCell className="font-mono text-xs font-medium">{d.noPesanan}</TableCell>
+                        <TableCell className="font-mono text-xs font-medium">
+                          {d.noPesanan}
+                          {/* Update #032 — sumber penawaran (repeat order). */}
+                          {d.penawaranNo && (
+                            <p className="mt-0.5 flex items-center gap-1 text-[10px] font-normal text-amber-700">
+                              <FileText className="h-3 w-3" />
+                              {d.penawaranNo}
+                              {d.penawaranRevisi && d.penawaranRevisi > 1 ? ` Rev. ${d.penawaranRevisi}` : ''}
+                            </p>
+                          )}
+                        </TableCell>
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.customerPoNumber || '-'}</TableCell>

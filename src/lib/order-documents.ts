@@ -31,27 +31,50 @@ export interface OrderLine {
   // === Update #002 — tracking per baris (khusus PO): SO asal + jenis belanja ===
   salesOrderId: string;
   jenisPembelian: string;
+  // === Update #032 — baris ITEM BEBAS (khusus SO): nama + satuan diketik
+  // manual / ditarik dari penawaran; tidak ada di master barang (tidak
+  // menyentuh gudang; bisa difakturkan sebagai jasa/custom). ===
+  bebas: boolean;
+  itemNama: string;
+  itemSatuan: string;
 }
-export const newOrderLine = (): OrderLine => ({ key: crypto.randomUUID(), barangId: '', satuanId: '', harga: '', qty: '1', diskon: '0', salesOrderId: '', jenisPembelian: '' });
+export const newOrderLine = (): OrderLine => ({ key: crypto.randomUUID(), barangId: '', satuanId: '', harga: '', qty: '1', diskon: '0', salesOrderId: '', jenisPembelian: '', bebas: false, itemNama: '', itemSatuan: '' });
 export function orderLinesFromResponse(order: OrderResponse): OrderLine[] {
   return order.details.map((line) => {
     // Update #002: salesOrderId/jenisPembelian hanya ada di detail PO —
     // cast aman; sisi sales selalu string kosong.
     const poLine = line as PurchaseOrderDetailResponse;
-    return { key: line.id, barangId: line.barangId, satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0), salesOrderId: poLine.salesOrderId || '', jenisPembelian: poLine.jenisPembelian || '' };
+    // Update #032: baris item bebas (barangId null) dipetakan ke mode bebas
+    // supaya form edit/detail menampilkan nama + satuan itemnya.
+    const soLine = line as SalesOrderResponse['details'][number];
+    const bebas = !line.barangId && !!(soLine.itemNama || '').trim();
+    return { key: line.id, barangId: line.barangId || '', satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0), salesOrderId: poLine.salesOrderId || '', jenisPembelian: poLine.jenisPembelian || '', bebas, itemNama: soLine.itemNama || '', itemSatuan: soLine.itemSatuan || '' };
   });
 }
 export function serializeOrderLines(lines: OrderLine[]) {
   // Update #002: subTotal WAJIB ikut terkirim — backend PUT /purchase-order
   // membaca d["sub_total"] langsung (KeyError bila absen); salesOrderId &
   // jenisPembelian untuk tracking item ke SO + tujuan posting per baris.
+  // Update #032: baris ITEM BEBAS (khusus SO) ikut terkirim — barangId null
+  // + itemNama/itemSatuan; baris tetap wajib punya salah satu sumber.
   return lines
-    .filter((line) => line.barangId)
+    .filter((line) => line.barangId || line.bebas)
     .map((line) => {
       const qty = Number(line.qty);
       const harga = Number(line.harga);
       const diskon = Number(line.diskon);
-      return { barangId: line.barangId, satuanId: line.satuanId || null, harga, qty, diskon, subTotal: qty * harga * (1 - diskon / 100), salesOrderId: line.salesOrderId || null, jenisPembelian: line.jenisPembelian || null };
+      return {
+        barangId: line.bebas ? null : line.barangId,
+        itemNama: line.bebas ? line.itemNama.trim() : null,
+        itemSatuan: line.bebas ? line.itemSatuan.trim() || null : null,
+        satuanId: line.bebas ? null : line.satuanId || null,
+        harga,
+        qty,
+        diskon,
+        subTotal: qty * harga * (1 - diskon / 100),
+        salesOrderId: line.salesOrderId || null,
+        jenisPembelian: line.jenisPembelian || null
+      };
     });
 }
 
@@ -114,12 +137,14 @@ export function serializeOrderHeader(kind: OrderKind, header: OrderHeader) {
   return result as Record<string, string | number | boolean | null>;
 }
 
-type DetailLike = { barangId: string; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null; salesOrderId?: string | null; jenisPembelian?: string | null };
+type DetailLike = { barangId?: string | null; itemNama?: string | null; itemSatuan?: string | null; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null; salesOrderId?: string | null; jenisPembelian?: string | null };
 function detailSignature(lines: DetailLike[]) {
   // There is no sequence field in the API; response ordering is not a detail edit.
   // Update #002: salesOrderId + jenisPembelian ikut signature — perubahan
   // relasi SO / jenis belanja dihitung sebagai detail change (payload.details dikirim).
-  return JSON.stringify(lines.map((line) => JSON.stringify([line.barangId, line.satuanId || null, Number(line.harga), Number(line.qty), Number(line.diskon ?? 0), line.salesOrderId || null, line.jenisPembelian || null])).sort());
+  // Update #032: itemNama/itemSatuan/barangId-null ikut signature — perubahan
+  // mode baris (master ↔ bebas) dihitung sebagai detail change.
+  return JSON.stringify(lines.map((line) => JSON.stringify([line.barangId || null, line.itemNama || null, line.itemSatuan || null, line.satuanId || null, Number(line.harga), Number(line.qty), Number(line.diskon ?? 0), line.salesOrderId || null, line.jenisPembelian || null])).sort());
 }
 export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: OrderLine[], original: OrderResponse) {
   const previous = serializeOrderHeader(kind, orderHeaderFromResponse(original));

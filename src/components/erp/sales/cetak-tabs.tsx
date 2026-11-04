@@ -52,11 +52,12 @@ function mapPesananData(d: SalesOrderResponse): PesananData {
     noPo: d.customerPoNumber || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
-      barang: r.barang?.nama || '',
+      // Update #032 — fallback nama item BEBAS (baris SO tanpa barang master).
+      barang: r.barang?.nama || r.itemNama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
       diskon: Number(r.diskon) || 0,
-      satuan: r.satuan?.nama || ''
+      satuan: r.satuan?.nama || r.itemSatuan || ''
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,
@@ -254,12 +255,13 @@ function mapInvoiceData(d: SalesInvoiceResponse): InvoiceData {
     mataUang: d.mataUang || 'IDR',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
-      barang: r.barang?.nama || '',
+      // Update #032 — fallback nama item BEBAS (baris invoice jasa/custom).
+      barang: r.barang?.nama || r.itemNama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
       diskon: Number(r.diskon) || 0,
       // Update #5: nama satuan per baris dari backend (SalesInvoiceDetailResponse.satuan).
-      satuan: r.satuan ?? null
+      satuan: r.satuan ?? r.itemSatuan ?? null
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,

@@ -4,13 +4,17 @@ import type { SalesInvoiceResponse, SalesReturCreate, SalesReturDetailCreate, Sa
 export type ReturnQuantities = Record<string, string>;
 export function salesReturnDetails(invoice: SalesInvoiceResponse, quantities: ReturnQuantities): SalesReturDetailCreate[] {
   for (const [id, qty] of Object.entries(quantities)) {
-    if (qty !== '' && Number(qty) !== 0 && !invoice.details.some(line => line.id === id)) throw new Error('Baris retur tidak berasal dari invoice yang dipilih.');
+    if (qty !== '' && Number(qty) !== 0 && !invoice.details.some((line) => line.id === id)) throw new Error('Baris retur tidak berasal dari invoice yang dipilih.');
   }
   const details: SalesReturDetailCreate[] = [];
   for (const line of invoice.details) {
+    // Update #032 — baris ITEM BEBAS (tanpa barang master) tidak bisa diretur
+    // (retur membutuhkan barang; jasa/custom dikoreksi lewat jurnal manual).
+    if (!line.barangId) continue;
     const value = quantities[line.id] ?? '';
     if (value === '' || Number(value) === 0) continue;
-    const qty = Number(value), harga = Number(line.harga);
+    const qty = Number(value),
+      harga = Number(line.harga);
     if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('Qty retur harus bilangan bulat positif. Gunakan 0 untuk barang yang tidak diretur.');
     if (line.harga == null || String(line.harga).trim() === '' || !Number.isFinite(harga) || harga < 0) throw new Error('Harga invoice sumber tidak valid. Muat ulang invoice.');
     details.push({ barangId: line.barangId, salesInvoiceDetailId: line.id, harga, qty, subTotal: qty * harga });
@@ -20,7 +24,7 @@ export function salesReturnDetails(invoice: SalesInvoiceResponse, quantities: Re
 }
 
 export function salesReturnSaveMismatches(requested: SalesReturDetailCreate[], saved: SalesReturResponse): string[] {
-  const signature = (lines: SalesReturDetailCreate[]) => JSON.stringify(lines.map(line => JSON.stringify([line.salesInvoiceDetailId || null, line.barangId, Number(line.harga), Number(line.qty)])).sort());
+  const signature = (lines: SalesReturDetailCreate[]) => JSON.stringify(lines.map((line) => JSON.stringify([line.salesInvoiceDetailId || null, line.barangId, Number(line.harga), Number(line.qty)])).sort());
   return signature(requested) === signature(saved.details) ? [] : ['Referensi detail invoice / harga / qty'];
 }
 

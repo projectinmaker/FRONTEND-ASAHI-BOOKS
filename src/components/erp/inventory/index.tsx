@@ -228,7 +228,10 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
       const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
       const map: Record<string, number> = {};
       const ids = new Set<string>();
+      // Update #032 — baris item BEBAS (tanpa barangId) dilewati: permintaan/
+      // pengeluaran barang hanya untuk barang master di gudang.
       (sisa.details || []).forEach((d) => {
+        if (!d.barangId || d.isBebas) return;
         map[d.barangId] = Number(d.sisaKirim) || 0;
         ids.add(d.barangId);
       });

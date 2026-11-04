@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FileText, Plus, Trash2, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info, Package, Type } from 'lucide-react';
+import { FileText, Plus, Trash2, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info, Package, Type, History } from 'lucide-react';
 import { formatRp, formatDate, todayStr, generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { useDefaultTaxRates } from '@/lib/use-default-rates';
@@ -52,6 +52,10 @@ function PenawaranStatusBadge({ status }: { status: string }) {
       return <Badge className="border-yellow-200 bg-yellow-100 text-yellow-700 hover:bg-yellow-100">Draft</Badge>;
     case 'SELESAI':
       return <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">Selesai</Badge>;
+    // === Update #032 — status DIREVISI: dokumen sudah digantikan revisi
+    // lebih baru (nomor sama, Rev. lebih tinggi); terkunci untuk audit. ===
+    case 'DIREVISI':
+      return <Badge className="border-slate-300 bg-slate-100 text-slate-600 hover:bg-slate-100">Direvisi</Badge>;
     case 'DIBATALKAN':
       return <Badge className="border-red-200 bg-red-100 text-red-700 hover:bg-red-100">Dibatalkan</Badge>;
     default:
@@ -567,6 +571,40 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
     }
   }, [soTarget, fetchData, refreshListTab]);
 
+  // ══════════════════════════════════════════════════════════════════
+  // === Update #032 — REVISI PENAWARAN: dokumen baru nomor sama (Rev. N) ===
+  // Hanya untuk status SELESAI (DRAFT cukup diedit; DIREVISI terkunci).
+  // Setelah dibuat: dokumen baru DRAFT dibuka di form edit + list direfresh
+  // (dokumen asal berubah jadi DIREVISI).
+  // ══════════════════════════════════════════════════════════════════
+  const [revisiTarget, setRevisiTarget] = useState<PenawaranResponse | null>(null);
+  const [revisiSubmitting, setRevisiSubmitting] = useState(false);
+
+  const handleRevisi = useCallback(async () => {
+    if (!revisiTarget) return;
+    setRevisiSubmitting(true);
+    try {
+      const baru = await api.post<PenawaranResponse>(`/penjualan/penawaran/${revisiTarget.id}/revisi`);
+      toast.success(`Revisi penawaran dibuat: ${baru.noPenawaran} Rev. ${baru.revisiKe}`, {
+        description: 'Dokumen baru berstatus DRAFT (bisa diedit). Dokumen lama menjadi DIREVISI — terkunci, jejak harga lama tetap utuh.'
+      });
+      setRevisiTarget(null);
+      fetchData();
+      // Buka form edit dokumen revisi baru (langsung bisa disunting).
+      openFormTab({
+        title: `Edit ${baru.noPenawaran} Rev. ${baru.revisiKe}`,
+        module: 'sales',
+        subPage: 'penawaran',
+        formKey: 'penawaran-edit',
+        formProps: { id: baru.id, noPenawaran: baru.noPenawaran, status: baru.status, grandTotal: Number(baru.grandTotal) }
+      });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.detail : 'Gagal membuat revisi penawaran');
+    } finally {
+      setRevisiSubmitting(false);
+    }
+  }, [revisiTarget, fetchData, openFormTab]);
+
   return (
     <div className="space-y-6">
       {/* Summary Card */}
@@ -629,6 +667,8 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
                   <SelectItem value="ALL">Semua</SelectItem>
                   <SelectItem value="DRAFT">Draft</SelectItem>
                   <SelectItem value="SELESAI">Selesai</SelectItem>
+                  {/* Update #032 — status baru: dokumen tergantikan revisi. */}
+                  <SelectItem value="DIREVISI">Direvisi</SelectItem>
                   <SelectItem value="DIBATALKAN">Dibatalkan</SelectItem>
                 </SelectContent>
               </Select>
@@ -701,7 +741,22 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
                   ) : (
                     data.map((d) => (
                       <TableRow key={d.id}>
-                        <TableCell className="font-mono text-xs font-medium">{d.noPenawaran}</TableCell>
+                        <TableCell className="font-mono text-xs font-medium">
+                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                            {d.noPenawaran}
+                            {/* Update #032 — badge revisi + pemakaian SO (repeat order) */}
+                            {d.revisiKe > 1 && (
+                              <Badge variant="outline" className="border-sky-300 bg-sky-50 px-1.5 py-0 text-[10px] font-semibold text-sky-700">
+                                Rev. {d.revisiKe}
+                              </Badge>
+                            )}
+                            {d.digunakanCount > 0 && (
+                              <Badge variant="outline" className="border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-semibold text-amber-700" title="Jumlah Sales Order yang dibuat dari penawaran ini (repeat order)">
+                                {d.digunakanCount}× SO
+                              </Badge>
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.berlakuHingga ? formatDate(d.berlakuHingga) : '-'}</TableCell>
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
@@ -746,15 +801,24 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
                               title="Cetak">
                               <Printer className="h-3.5 w-3.5" />
                             </Button>
+                            {/* === Update #032 — Buat SO: DRAFT & SELESAI (repeat
+                                order — SELESAI tetap bisa dipakai lagi). === */}
+                            {(d.status === 'DRAFT' || d.status === 'SELESAI') && (
+                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setSoTarget(d)} title={d.digunakanCount > 0 ? `Repeat order — penawaran ini sudah dipakai ${d.digunakanCount}× SO` : 'Konversi ke Sales Order'}>
+                                Buat SO
+                              </Button>
+                            )}
+                            {/* === Update #032 — REVISI: penawaran SELESAI digantikan
+                                dokumen baru (nomor sama + Rev. N, status DRAFT). */}
+                            {d.status === 'SELESAI' && (
+                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs text-sky-700 hover:text-sky-800" onClick={() => setRevisiTarget(d)} title="Buat dokumen revisi (nomor sama + Rev. berikutnya)">
+                                <History className="mr-1 h-3.5 w-3.5" /> Revisi
+                              </Button>
+                            )}
                             {d.status === 'DRAFT' && (
-                              <>
-                                <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setSoTarget(d)} title="Konversi ke Sales Order">
-                                  Buat SO
-                                </Button>
-                                <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
-                                  Hapus
-                                </Button>
-                              </>
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
+                                Hapus
+                              </Button>
                             )}
                           </div>
                         </TableCell>
@@ -783,6 +847,8 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
       />
 
       {/* Konfirmasi Buat SO */}
+      {/* === Update #032 — SELESAI tetap bisa dibuatkan SO (repeat order):
+          tiap pemakaian menghasilkan SO baru dengan nomor SO sendiri. === */}
       <AlertDialog
         open={!!soTarget}
         onOpenChange={(o) => {
@@ -792,7 +858,13 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
           <AlertDialogHeader>
             <AlertDialogTitle>Buat Sales Order?</AlertDialogTitle>
             <AlertDialogDescription>
-              Penawaran <span className="font-mono font-semibold text-foreground">{soTarget?.noPenawaran}</span> akan dikonversi menjadi Sales Order baru (langsung final tanpa approval). Setelah dikonversi, status penawaran berubah menjadi <strong>Selesai</strong> dan tidak dapat dikonversi ulang.
+              Penawaran{' '}
+              <span className="font-mono font-semibold text-foreground">
+                {soTarget?.noPenawaran}
+                {soTarget && soTarget.revisiKe > 1 ? ` (Rev. ${soTarget.revisiKe})` : ''}
+              </span>{' '}
+              akan dibuatkan Sales Order baru (langsung final tanpa approval).
+              {soTarget && soTarget.digunakanCount > 0 ? ` Penawaran ini sudah dipakai ${soTarget.digunakanCount}× SO — repeat order, tiap pemakaian menghasilkan SO baru dengan nomor sendiri.` : ' Setelah dipakai, status penawaran menjadi Selesai (tetap bisa dipakai lagi — repeat order).'} Item BEBAS (jasa/custom) diteruskan ke SO tanpa dibuatkan di master barang.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -805,6 +877,44 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
               disabled={soSubmitting}>
               {soSubmitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
               Ya, Buat Sales Order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          === Update #032 — Konfirmasi REVISI PENAWARAN ===
+          Dokumen baru: nomor SAMA + Rev. berikutnya, status DRAFT (editable);
+          dokumen asal → DIREVISI (terkunci — jejak harga lama utuh untuk
+          audit). SO-SO lama yang dibuat dari asal TIDAK berubah.
+          ══════════════════════════════════════════════════════════════════ */}
+      <AlertDialog
+        open={!!revisiTarget}
+        onOpenChange={(o) => {
+          if (!o) setRevisiTarget(null);
+        }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Buat Revisi Penawaran?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Penawaran{' '}
+              <span className="font-mono font-semibold text-foreground">
+                {revisiTarget?.noPenawaran}
+                {revisiTarget && revisiTarget.revisiKe > 1 ? ` (Rev. ${revisiTarget.revisiKe})` : ''}
+              </span>{' '}
+              akan dibuatkan dokumen revisi: nomor quotation <strong>TETAP SAMA</strong> dengan penanda <strong>Rev. {(revisiTarget?.revisiKe || 1) + 1}</strong>, seluruh item & harga disalin utuh, status <strong>Draft</strong> (langsung bisa diedit). Dokumen asal berubah menjadi <strong>Direvisi</strong> — terkunci dan tidak bisa dipakai membuat SO; jejak harga lama tetap utuh untuk audit. SO-SO yang sudah dibuat dari dokumen asal TIDAK ikut berubah.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={revisiSubmitting}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault(); // jangan tutup otomatis — handler menutup setelah sukses
+                void handleRevisi();
+              }}
+              disabled={revisiSubmitting}>
+              {revisiSubmitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Ya, Buat Revisi
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -872,6 +982,8 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const [ddLoading, setDdLoading] = useState(true);
   const [editLoading, setEditLoading] = useState(!!editId);
   const [editNoPenawaran, setEditNoPenawaran] = useState('');
+  // Update #032 — revisi dokumen (badge "Rev. N" di header form edit).
+  const [editRevisiKe, setEditRevisiKe] = useState(1);
   const [editStatus, setEditStatus] = useState('');
   const [editGrandTotal, setEditGrandTotal] = useState(0);
   // Nama referensi historis (pelanggan/syarat bayar) — dipertahankan sebagai label
@@ -942,6 +1054,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         if (cancelled) return;
         setEditNoPenawaran(p.noPenawaran);
         setEditStatus(p.status);
+        setEditRevisiKe(p.revisiKe || 1);
         setEditGrandTotal(Number(p.grandTotal) || 0);
         setEditPelangganNama(p.pelanggan?.nama || '');
         setEditSyaratNama(p.syaratBayar?.nama || '');
@@ -1132,6 +1245,12 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
                 <Info className="h-3.5 w-3.5" />
                 <span>No Quotation:</span>
                 <span className="font-mono font-semibold text-foreground">{editNoPenawaran}</span>
+                {/* Update #032 — badge revisi dokumen */}
+                {editRevisiKe > 1 && (
+                  <Badge variant="outline" className="border-sky-300 bg-sky-50 px-1.5 py-0 text-[10px] font-semibold text-sky-700">
+                    Rev. {editRevisiKe}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span>Status:</span>
@@ -1144,7 +1263,11 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
             </div>
           )}
 
-          {readOnly && <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Penawaran berstatus {editStatus || '-'}. Hanya penawaran DRAFT yang dapat diubah; form ini menjadi baca saja.</p>}
+          {readOnly && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Penawaran berstatus {editStatus || '-'}. Hanya penawaran DRAFT yang dapat diubah; form ini menjadi baca saja.{editStatus === 'DIREVISI' ? ' Dokumen ini sudah digantikan revisi lebih baru — tersimpan untuk jejak audit.' : ''}
+            </p>
+          )}
           {/* Update #031 — revisi penawaran = edit DRAFT (opsi user); pelanggan &
               No Quotation terkunci setelah dibuat. */}
           {editId && !readOnly && <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">Mode revisi: pelanggan & No Quotation tidak bisa diganti (bagian dari nomor dokumen). Perubahan item/harga/diskon/biaya tetap tersimpan.</p>}
@@ -1342,6 +1465,8 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
 function mapPenawaranData(d: PenawaranResponse): PenawaranData {
   return {
     nomor: d.noPenawaran || '',
+    // === Update #032 — revisi dokumen (tampil "Rev. N" di cetakan) ===
+    revisiKe: d.revisiKe || 1,
     tanggal: d.tanggal || '',
     berlakuHingga: d.berlakuHingga || '',
     kepada: d.pelanggan?.nama || '',
