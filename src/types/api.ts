@@ -1996,6 +1996,9 @@ export interface PurchaseOrderDetailCreate {
   // === Update #002 — tracking per baris: SO asal + jenis belanja ===
   salesOrderId?: string | null;
   jenisPembelian?: string | null;
+  // === Update #037 — jejak baris ROP sumber (alur Detail ROP → PO draft).
+  //  Round-trip dari/ke backend supaya link tidak lepas saat PO di-edit. ===
+  ropItemId?: string | null;
 }
 
 export interface PurchaseOrderDetailResponse extends PurchaseOrderDetailCreate {
@@ -2005,6 +2008,18 @@ export interface PurchaseOrderDetailResponse extends PurchaseOrderDetailCreate {
   barang: BarangSimple | null;
   /** Update #002: SO ter-link per baris (null bila baris bukan untuk SO tertentu). */
   salesOrder?: SalesOrderMini | null;
+  /** Update #037 — baris ROP sumber (null bila baris PO biasa). */
+  ropItem?: RopPoLink | null;
+}
+
+/** Baris ROP sumber nested di baris PO (update #037) — dipakai chip
+ *  "dari ROP …" di form/detail PO. */
+export interface RopPoLink {
+  id: string;
+  no: number;
+  idPart?: string | null;
+  description?: string | null;
+  ropNo?: string | null;
 }
 
 export interface PurchaseOrderCreate {
@@ -4290,10 +4305,13 @@ export interface RequestOrderPartCreator {
 /** Baris item ROP. PERHATIAN: qty diserialisasi backend sebagai STRING
  *  desimal ("4.00") — normalisasi ke number di UI sebelum dipakai/dikirim.
  *  Update #003: qs kini bertipe data seperti ID PART (kode teks alfanumerik)
- *  dan keterangan dipecah dua: keteranganOrder + keteranganStok. */
+ *  dan keterangan dipecah dua: keteranganOrder + keteranganStok.
+ *  Update #037: barangId opsional — link ke master barang (stok gudang
+ *  akurat; null = part belum ada di master → stok dianggap 0). */
 export interface RequestOrderPartItem {
   id: string;
   no: number;
+  barangId?: string | null;
   idPart: string;
   description: string;
   material: string | null;
@@ -4303,6 +4321,17 @@ export interface RequestOrderPartItem {
   keteranganOrder: string | null;
   keteranganStok: string | null;
   supplier: SupplierSimple | null;
+  /** Update #037 — info master barang per baris (null bila belum di-link). */
+  barang?: RopBarangInfo | null;
+}
+
+/** Info master barang nested di baris ROP (update #037). */
+export interface RopBarangInfo {
+  id: string;
+  kode: string;
+  nama: string;
+  stok: number;
+  satuanNama?: string | null;
 }
 
 export interface RequestOrderPart {
@@ -4344,6 +4373,8 @@ export interface RequestOrderPartItemCreate {
   supplierId?: string | null;
   keteranganOrder?: string | null;
   keteranganStok?: string | null;
+  /** Update #037 — link opsional ke master barang (picker di form ROP). */
+  barangId?: string | null;
 }
 
 export interface RequestOrderPartCreate {
@@ -4394,6 +4425,91 @@ export interface RopSalesOrderOption {
 export interface RequestOrderPartOptionsResponse {
   salesOrders: RopSalesOrderOption[];
   suppliers: SupplierDropdown[];
+  /** Update #037 — barang master AKTIF untuk picker per baris (stok ikut
+   *  dikirim supaya Engineering melihat ketersediaan gudang). */
+  barangs: RopBarangOption[];
+}
+
+/** Opsi barang master ringan di endpoint opsi ROP (update #037). */
+export interface RopBarangOption {
+  id: string;
+  kode: string;
+  nama: string;
+  stok: number;
+  satuanId?: string | null;
+  /** Backend mengirim Decimal sebagai string — normalisasi via Number(). */
+  hargaPokok: string | number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Update #037 — DETAIL ROP: kolam belanja PIC Pembelian (menu Pembelian →
+// Detail ROP, di atas Pesanan). Alur: centang item (bisa lintas ROP) → pilih
+// supplier → sistem buat PO DRAFT (qty otomatis = kekurangan; barang master
+// untuk part baru dibuat otomatis saat PO disimpan).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Status belanja per item ROP (derived backend dari PO aktif). */
+export type RopItemBelanjaStatus = 'BELUM' | 'SEBAGIAN' | 'LENGKAP' | 'STOK_CUKUP';
+
+/** Baris daftar Detail ROP — GET /pembelian/rop-item. */
+export interface RopItemBelanjaRow {
+  id: string;
+  no: number;
+  ropId: string;
+  noRop: string;
+  projectName: string;
+  model?: string | null;
+  tanggal?: string | null;
+  salesOrderId?: string | null;
+  salesOrderNo?: string | null;
+  idPart?: string | null;
+  description?: string | null;
+  material?: string | null;
+  /** Backend mengirim Decimal sebagai string — normalisasi via Number(). */
+  qty: string | number;
+  qs?: string | null;
+  supplierId?: string | null;
+  supplierNama?: string | null;
+  barangId?: string | null;
+  barangKode?: string | null;
+  barangNama?: string | null;
+  barangStok: number;
+  satuanNama?: string | null;
+  kekurangan: string | number;
+  sudahDibelanja: string | number;
+  sisa: string | number;
+  status: RopItemBelanjaStatus;
+  inDraftPo: boolean;
+  draftPoNos: string[];
+}
+
+/** Payload POST /pembelian/rop-item/po-draft. */
+export interface RopItemPoDraftCreate {
+  itemIds: string[];
+  supplierId: string;
+  alamatPengirimanId: string;
+  tanggal?: string | null;
+  keterangan?: string | null;
+}
+
+/** Item terpilih yang tidak masuk PO draft (stok cukup / sudah dibelanjakan). */
+export interface RopSkippedItem {
+  noRop?: string | null;
+  idPart?: string | null;
+  alasan: string;
+}
+
+/** Barang master yang dibuat otomatis dari part ROP saat PO disimpan. */
+export interface RopAutoCreatedBarang {
+  kode: string;
+  nama: string;
+}
+
+/** Response POST /pembelian/rop-item/po-draft. */
+export interface RopPoDraftResponse {
+  purchaseOrder: PurchaseOrderResponse;
+  skipped: RopSkippedItem[];
+  autoCreatedBarang: RopAutoCreatedBarang[];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

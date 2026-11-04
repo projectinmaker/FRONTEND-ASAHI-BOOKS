@@ -30,6 +30,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 // Update #007 — quick add master data langsung dari form transaksi
 import { QuickAddSupplierButton, toSupplierDropdown } from '@/components/erp/quick-add';
+// Update #037 — quick add barang master langsung di baris part (kombinasi picker
+// master + quick add; stok gudang kelihatan akurat untuk stok opname).
+import { QuickAddBarangButton } from '@/components/erp/quick-add';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -44,7 +47,7 @@ import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
-import type { RequestOrderPart, RequestOrderPartCreate, RequestOrderPartItemCreate, RequestOrderPartOptionsResponse, RequestOrderPartStatus, RequestOrderPartUpdate, RopSalesOrderOption, SupplierDropdown } from '@/types/api';
+import type { RequestOrderPart, RequestOrderPartCreate, RequestOrderPartItemCreate, RequestOrderPartOptionsResponse, RequestOrderPartStatus, RequestOrderPartUpdate, RopBarangOption, RopSalesOrderOption, SupplierDropdown } from '@/types/api';
 
 // ─── Konstanta ───────────────────────────────────────────────────────────────
 
@@ -75,6 +78,9 @@ const EMPTY_SIGNATURES: SignatureState = { dibuatOleh: '', diperiksaOleh: '', di
 
 interface RopItemDraft {
   key: string;
+  /** Update #037 — link opsional ke master barang ('' = tanpa link; stok
+   *  dianggap 0 → seluruh qty dibelanjakan saat jadi PO). */
+  barangId: string;
   idPart: string;
   description: string;
   material: string;
@@ -94,7 +100,7 @@ function newRowKey() {
 }
 
 function emptyItem(): RopItemDraft {
-  return { key: newRowKey(), idPart: '', description: '', material: '', qty: '', qs: '', supplierId: '', keteranganOrder: '', keteranganStok: '' };
+  return { key: newRowKey(), barangId: '', idPart: '', description: '', material: '', qty: '', qs: '', supplierId: '', keteranganOrder: '', keteranganStok: '' };
 }
 
 /** Data draft localStorage (mode create). */
@@ -142,6 +148,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
   // ── Dropdown referensi ──
   const [salesOrderOptions, setSalesOrderOptions] = useState<RopSalesOrderOption[]>([]);
   const [supplierOptions, setSupplierOptions] = useState<SupplierDropdown[]>([]);
+  // Update #037 — barang master untuk picker per baris (stok ikut terkirim).
+  const [barangOptions, setBarangOptions] = useState<RopBarangOption[]>([]);
   const [dropdownsLoading, setDropdownsLoading] = useState(true);
 
   // ── State form ──
@@ -170,6 +178,16 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
 
   const title = mode === 'create' ? 'ROP Baru' : detail?.noRop || 'Request Order Part';
 
+  // Update #037 — merge (bukan replace) supaya barang dari detail ROP
+  // (termasuk NONAKTIF / di luar limit opsi) tidak hilang saat keduanya
+  // selesai dimuat dengan urutan apa pun.
+  const mergeBarangOptions = useCallback((incoming: RopBarangOption[]) => {
+    setBarangOptions((prev) => {
+      const ids = new Set(prev.map((b) => b.id));
+      return [...prev, ...incoming.filter((b) => !ids.has(b.id))];
+    });
+  }, []);
+
   // ── Muat dropdown SO + supplier ──
   // Update #018: keduanya digabung di satu endpoint khusus produksi
   // (GET /produksi/request-order-part/opsi) yang cukup digati permission
@@ -187,6 +205,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
         // Backend sudah menyeragamkan SO tanpa DIBATALKAN & supplier AKTIF.
         setSalesOrderOptions(res.salesOrders.filter((so) => so.status !== 'DIBATALKAN'));
         setSupplierOptions(res.suppliers);
+        // Update #037 — barang master AKTIF (stok gudang akurat per baris).
+        mergeBarangOptions(res.barangs || []);
       } catch {
         /* non-critical */
       } finally {
@@ -227,6 +247,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
             .sort((a, b) => a.no - b.no)
             .map((it) => ({
               key: newRowKey(),
+              // Update #037 — link master barang di-pulihkan saat memuat detail.
+              barangId: it.barangId || '',
               idPart: it.idPart || '',
               description: it.description || '',
               material: it.material || '',
@@ -239,6 +261,9 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
               keteranganStok: it.keteranganStok || ''
             }))
         );
+        // Update #037 — info barang nested dari detail (termasuk NONAKTIF /
+        // di luar limit opsi) di-merge agar badge stok view-mode akurat.
+        mergeBarangOptions((res.items || []).filter((it) => it.barang).map((it) => ({ id: it.barang!.id, kode: it.barang!.kode, nama: it.barang!.nama, stok: Number(it.barang!.stok) || 0, satuanId: null, hargaPokok: '0' })));
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof ApiError ? err.detail : 'Gagal memuat data ROP');
       } finally {
@@ -344,6 +369,31 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
 
   const supplierDropdownOptions = useMemo(() => supplierOptions.map((s) => ({ id: s.id, label: s.nama, subtitle: s.kode })), [supplierOptions]);
 
+  // Update #037 — opsi picker barang master per baris: label = kode (selaras
+  // ID PART), subtitle = nama + stok gudang (akurat untuk stok opname).
+  const barangDropdownOptions = useMemo(() => barangOptions.map((b) => ({ id: b.id, label: b.kode, subtitle: `Stok ${b.stok} — ${b.nama}` })), [barangOptions]);
+
+  // Update #037 — pilih barang master: auto-fill ID PART (kode) + DESCRIPTION
+  // (nama — hanya bila masih kosong supaya ketikan Engineering tidak tertimpa).
+  const applyBarangToItem = useCallback(
+    (idx: number, barangId: string) => {
+      const found = barangOptions.find((b) => b.id === barangId);
+      setItems((prev) =>
+        prev.map((it, i) =>
+          i === idx
+            ? {
+                ...it,
+                barangId,
+                idPart: found ? found.kode : it.idPart,
+                description: found && !it.description.trim() ? found.nama : it.description
+              }
+            : it
+        )
+      );
+    },
+    [barangOptions]
+  );
+
   // ── Manipulasi baris item ──
   const updateItem = useCallback((idx: number, patch: Partial<RopItemDraft>) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
@@ -368,6 +418,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
     }
     return items.map((it, idx) => ({
       no: idx + 1,
+      // Update #037 — link master barang (null bila part belum di master).
+      barangId: it.barangId || null,
       idPart: it.idPart.trim(),
       description: it.description.trim(),
       material: it.material.trim() || null,
@@ -461,7 +513,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
       origItems.length !== items.length ||
       origItems.some((o, i) => {
         const it = items[i];
-        return o.idPart !== it.idPart.trim() || o.description !== it.description.trim() || (o.material || '') !== it.material.trim() || Number(o.qty) !== (Number(it.qty) || 0) || (o.qs || '') !== it.qs.trim() || (o.supplierId || '') !== (it.supplierId || '') || (o.keteranganOrder || '') !== it.keteranganOrder.trim() || (o.keteranganStok || '') !== it.keteranganStok.trim();
+        return (o.barangId || '') !== it.barangId || o.idPart !== it.idPart.trim() || o.description !== it.description.trim() || (o.material || '') !== it.material.trim() || Number(o.qty) !== (Number(it.qty) || 0) || (o.qs || '') !== it.qs.trim() || (o.supplierId || '') !== (it.supplierId || '') || (o.keteranganOrder || '') !== it.keteranganOrder.trim() || (o.keteranganStok || '') !== it.keteranganStok.trim();
       });
     if (itemsChanged) {
       const itemsPayload = buildItemsPayload();
@@ -555,7 +607,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
     );
   }
 
-  const tableColCount = readOnly ? 9 : 10; // NO + 6 kolom flat + KETERANGAN(2) [+ aksi]
+  const tableColCount = readOnly ? 10 : 11; // NO + MASTER + 6 kolom flat + KETERANGAN(2) [+ aksi]
 
   return (
     <FormTabShell title={title}>
@@ -655,6 +707,11 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                       <TableHead rowSpan={2} className="w-12 text-center align-middle">
                         NO
                       </TableHead>
+                      {/* Update #037 — picker master barang per baris: stok gudang
+                          akurat + quick add bila part belum ada di master. */}
+                      <TableHead rowSpan={2} className="min-w-[190px] whitespace-nowrap">
+                        MASTER BARANG
+                      </TableHead>
                       <TableHead rowSpan={2} className="min-w-[110px] whitespace-nowrap">
                         ID PART
                       </TableHead>
@@ -698,6 +755,34 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                     {items.map((it, idx) => (
                       <TableRow key={it.key}>
                         <TableCell className="text-center align-top font-medium tabular-nums">{idx + 1}</TableCell>
+                        {/* Update #037 — MASTER BARANG: picker + quick add + stok.
+                            Pilih master → ID PART terisi kode & stok gudang akurat
+                            (gampang saat stok opname); tanpa link = stok 0. */}
+                        <TableCell className="align-top">
+                          {readOnly ? (
+                            it.barangId ? (
+                              <div className="space-y-0.5">
+                                <span className="block font-mono text-xs">{barangOptions.find((b) => b.id === it.barangId)?.kode || it.idPart}</span>
+                                <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${(barangOptions.find((b) => b.id === it.barangId)?.stok ?? 0) > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>Stok: {barangOptions.find((b) => b.id === it.barangId)?.stok ?? 0}</span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <SearchableDropdown className="min-w-0 flex-1 text-left" value={it.barangId} onValueChange={(v) => applyBarangToItem(idx, v)} options={barangDropdownOptions} allOption={{ id: '', label: 'Belum di master' }} placeholder="Pilih / cari barang..." searchPlaceholder="Cari kode / nama barang..." loading={dropdownsLoading} compact />
+                              <QuickAddBarangButton
+                                compact
+                                onCreated={(b) => {
+                                  const drop: RopBarangOption = { id: b.id, kode: b.kode, nama: b.nama, stok: Number(b.stok) || 0, satuanId: b.satuanId || null, hargaPokok: String(Number(b.hargaPokok) || 0) };
+                                  setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, drop]));
+                                  applyBarangToItem(idx, b.id);
+                                }}
+                              />
+                            </div>
+                          )}
+                          {!readOnly && it.barangId && <span className={`mt-0.5 inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${(barangOptions.find((b) => b.id === it.barangId)?.stok ?? 0) > 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>Stok: {barangOptions.find((b) => b.id === it.barangId)?.stok ?? 0}</span>}
+                        </TableCell>
                         <TableCell className="align-top">{readOnly ? <span className="font-mono text-xs">{it.idPart || '-'}</span> : <Input value={it.idPart} onChange={(e) => updateItem(idx, { idPart: e.target.value })} placeholder="ID part" className="h-9 font-mono text-xs" aria-label={`ID PART baris ${idx + 1}`} />}</TableCell>
                         <TableCell className="align-top">{readOnly ? it.description || '-' : <Input value={it.description} onChange={(e) => updateItem(idx, { description: e.target.value })} placeholder="Deskripsi part" className="h-9" aria-label={`DESCRIPTION baris ${idx + 1}`} />}</TableCell>
                         <TableCell className="align-top">{readOnly ? it.material || '-' : <Input value={it.material} onChange={(e) => updateItem(idx, { material: e.target.value })} placeholder="Material" className="h-9" aria-label={`MATERIAL baris ${idx + 1}`} />}</TableCell>
@@ -746,7 +831,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                   </Button>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">QTY = jumlah yang di-order · QS = kode stok/part (tipe seperti ID PART) · Keterangan Order/Stok opsional per baris.</p>
+              <p className="text-xs text-muted-foreground">MASTER BARANG opsional — pilih dari master agar stok gudang terbaca akurat (ID PART terisi otomatis dari kode; klik ikon + untuk tambah barang baru ke master). · QTY = jumlah yang di-order · QS = kode stok/part (tipe seperti ID PART) · Keterangan Order/Stok opsional per baris.</p>
             </div>
 
             {/* ── Bawah tabel: Note (kiri) + tanda tangan 4 kolom (kanan) ── */}

@@ -9,6 +9,8 @@ import { PurchaseReturnSourceLines, usePurchaseReturnSource, type PurchaseReturn
 
 import OrderDocumentForm from '@/components/erp/orders/order-document-form';
 import { canEditOrder } from '@/lib/order-documents';
+// Update #037 — Detail ROP: kolam belanja PIC Pembelian (ROP → PO draft)
+import { DetailRopTab } from '@/components/erp/purchasing/detail-rop';
 
 import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -3974,6 +3976,7 @@ export default function Purchasing(props: PurchasingPageProps) {
   // merender halaman pelunasan.
 
   // ── Form mode: render form in tab ──
+  // (Detail ROP tidak punya form mode khusus — hanya daftar + dialog inline.)
   if (props.formMode) {
     const editId = props.formProps?.id as string | undefined;
 
@@ -4059,6 +4062,9 @@ function PurchasingListContent({ subPage, refreshKey }: { subPage: string; refre
       ) : (
         <>
           {subPage === 'pesanan' && <PesananTab supplierOptions={supplierOptions} barangOptions={barangOptions} refreshKey={refreshKey} />}
+          {/* Update #037 — Detail ROP (di atas Pesanan di sidebar): seluruh item
+              ROP DIBUAT → centang → pilih supplier → PO DRAFT otomatis. */}
+          {subPage === 'detail-rop' && <DetailRopTab supplierOptions={supplierOptions} refreshKey={refreshKey} />}
           {subPage === 'penerimaan' && <PenerimaanTab supplierOptions={supplierOptions} barangOptions={barangOptions} satuanOptions={satuanOptions} purchaseOrderOptions={purchaseOrderOptions} refreshKey={refreshKey} />}
           {subPage === 'invoice' && <InvoiceTab supplierOptions={supplierOptions} barangOptions={barangOptions} purchaseOrderOptions={purchaseOrderOptions} refreshKey={refreshKey} />}
           {subPage === 'retur' && <ReturTab supplierOptions={supplierOptions} barangOptions={barangOptions} purchaseOrderOptions={purchaseOrderOptions} refreshKey={refreshKey} />}

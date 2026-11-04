@@ -354,6 +354,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
           diskon: String(d.diskon ?? 0),
           salesOrderId: '',
           jenisPembelian: '',
+          // Update #037 — default kosong (baris dari penawaran tidak punya link ROP).
+          ropItemId: '',
           bebas,
           itemNama: bebas ? d.itemNama || '' : '',
           itemSatuan: bebas ? d.itemSatuan || '' : ''
@@ -911,6 +913,15 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                                 />
                               )}
                             </div>
+                            {/* === Update #037 — chip jejak baris ROP sumber (khusus PO
+                                hasil alur Pembelian → Detail ROP → "Buat PO Draft").
+                                ropItemId round-trip diam-diam saat save (lihat
+                                lib/order-documents.ts); chip ini murni informasi. === */}
+                            {!isSales && (line.ropNo || line.ropItemId) && (
+                              <span className="mt-1 inline-flex max-w-full items-center truncate rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700" title={line.ropNo ? `Baris ini berasal dari ${line.ropNo} (alur Detail ROP)` : 'Baris ini berasal dari ROP (alur Detail ROP)'}>
+                                {line.ropNo ? `dari ${line.ropNo}` : 'dari ROP'}
+                              </span>
+                            )}
                           </TableCell>
                           <TableCell>
                             {/* Update #032 — baris bebas: satuan teks bebas (bukan dropdown master). */}

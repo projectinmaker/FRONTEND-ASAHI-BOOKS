@@ -31,6 +31,11 @@ export interface OrderLine {
   // === Update #002 — tracking per baris (khusus PO): SO asal + jenis belanja ===
   salesOrderId: string;
   jenisPembelian: string;
+  // === Update #037 — jejak baris ROP sumber (khusus PO hasil alur Detail
+  //  ROP). ropItemId round-trip saat edit supaya link tidak lepas; ropNo
+  //  hanya untuk display chip "dari ROP …" (tidak dikirim ke backend). ===
+  ropItemId: string;
+  ropNo?: string;
   // === Update #032 — baris ITEM BEBAS (khusus SO): nama + satuan diketik
   // manual / ditarik dari penawaran; tidak ada di master barang (tidak
   // menyentuh gudang; bisa difakturkan sebagai jasa/custom). ===
@@ -38,7 +43,7 @@ export interface OrderLine {
   itemNama: string;
   itemSatuan: string;
 }
-export const newOrderLine = (): OrderLine => ({ key: crypto.randomUUID(), barangId: '', satuanId: '', harga: '', qty: '1', diskon: '0', salesOrderId: '', jenisPembelian: '', bebas: false, itemNama: '', itemSatuan: '' });
+export const newOrderLine = (): OrderLine => ({ key: crypto.randomUUID(), barangId: '', satuanId: '', harga: '', qty: '1', diskon: '0', salesOrderId: '', jenisPembelian: '', ropItemId: '', bebas: false, itemNama: '', itemSatuan: '' });
 export function orderLinesFromResponse(order: OrderResponse): OrderLine[] {
   return order.details.map((line) => {
     // Update #002: salesOrderId/jenisPembelian hanya ada di detail PO —
@@ -48,7 +53,7 @@ export function orderLinesFromResponse(order: OrderResponse): OrderLine[] {
     // supaya form edit/detail menampilkan nama + satuan itemnya.
     const soLine = line as SalesOrderResponse['details'][number];
     const bebas = !line.barangId && !!(soLine.itemNama || '').trim();
-    return { key: line.id, barangId: line.barangId || '', satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0), salesOrderId: poLine.salesOrderId || '', jenisPembelian: poLine.jenisPembelian || '', bebas, itemNama: soLine.itemNama || '', itemSatuan: soLine.itemSatuan || '' };
+    return { key: line.id, barangId: line.barangId || '', satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0), salesOrderId: poLine.salesOrderId || '', jenisPembelian: poLine.jenisPembelian || '', ropItemId: poLine.ropItemId || '', ropNo: poLine.ropItem?.ropNo || '', bebas, itemNama: soLine.itemNama || '', itemSatuan: soLine.itemSatuan || '' };
   });
 }
 export function serializeOrderLines(lines: OrderLine[]) {
@@ -73,7 +78,10 @@ export function serializeOrderLines(lines: OrderLine[]) {
         diskon,
         subTotal: qty * harga * (1 - diskon / 100),
         salesOrderId: line.salesOrderId || null,
-        jenisPembelian: line.jenisPembelian || null
+        jenisPembelian: line.jenisPembelian || null,
+        // Update #037 — jejak baris ROP ikut terkirim (round-trip) supaya
+        // link tidak lepas saat PO draft di-edit (backend replace-all details).
+        ropItemId: line.ropItemId || null
       };
     });
 }
@@ -137,14 +145,16 @@ export function serializeOrderHeader(kind: OrderKind, header: OrderHeader) {
   return result as Record<string, string | number | boolean | null>;
 }
 
-type DetailLike = { barangId?: string | null; itemNama?: string | null; itemSatuan?: string | null; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null; salesOrderId?: string | null; jenisPembelian?: string | null };
+type DetailLike = { barangId?: string | null; itemNama?: string | null; itemSatuan?: string | null; satuanId?: string | null; harga: number | string; qty: number | string; diskon?: number | string | null; salesOrderId?: string | null; jenisPembelian?: string | null; ropItemId?: string | null };
 function detailSignature(lines: DetailLike[]) {
   // There is no sequence field in the API; response ordering is not a detail edit.
   // Update #002: salesOrderId + jenisPembelian ikut signature — perubahan
   // relasi SO / jenis belanja dihitung sebagai detail change (payload.details dikirim).
   // Update #032: itemNama/itemSatuan/barangId-null ikut signature — perubahan
   // mode baris (master ↔ bebas) dihitung sebagai detail change.
-  return JSON.stringify(lines.map((line) => JSON.stringify([line.barangId || null, line.itemNama || null, line.itemSatuan || null, line.satuanId || null, Number(line.harga), Number(line.qty), Number(line.diskon ?? 0), line.salesOrderId || null, line.jenisPembelian || null])).sort());
+  // Update #037: ropItemId ikut signature — hilangnya link ROP (mis. baris
+  // dihapus & ditambah ulang) terdeteksi sebagai detail change.
+  return JSON.stringify(lines.map((line) => JSON.stringify([line.barangId || null, line.itemNama || null, line.itemSatuan || null, line.satuanId || null, Number(line.harga), Number(line.qty), Number(line.diskon ?? 0), line.salesOrderId || null, line.jenisPembelian || null, line.ropItemId || null])).sort());
 }
 export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: OrderLine[], original: OrderResponse) {
   const previous = serializeOrderHeader(kind, orderHeaderFromResponse(original));

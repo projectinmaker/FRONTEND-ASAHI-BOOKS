@@ -101,6 +101,10 @@ const modules: NavModule[] = [
     label: 'Pembelian',
     icon: TrendingDown,
     subPages: [
+      // Update #037 — Detail ROP: kolam belanja PIC Pembelian — seluruh item
+      // ROP DIBUAT (Engineering) masuk sini; PIC centang item → pilih supplier
+      // → sistem buat PO DRAFT (qty otomatis = kekurangan stok gudang).
+      { id: 'detail-rop', label: 'Detail ROP', icon: ClipboardList },
       { id: 'pesanan', label: 'Pesanan', icon: FileText },
       // Update ASAHI #005 — LPPB: inspeksi QC barang masuk (sebelum diterima ke gudang)
       { id: 'lppb', label: 'LPPB', icon: ClipboardCheck },
@@ -297,6 +301,9 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     retur: 'sales.sales_return.view'
   },
   purchasing: {
+    // Update #037 — Detail ROP digating permission PO (tanpa kode baru):
+    // siapa pun yang bisa membuka Pesanan bisa membuka kolam belanja ROP.
+    'detail-rop': 'purchase.purchase_order.view',
     pesanan: 'purchase.purchase_order.view',
     lppb: 'purchase.lppb.view',
     penerimaan: 'purchase.goods_receipt.view',
