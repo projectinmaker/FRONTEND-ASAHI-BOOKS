@@ -1664,9 +1664,10 @@ export interface SalesOrderCreate {
   /** @deprecated Orders never post journals. */
   autoPostJurnal?: false;
   // === Update #031 — Pembayaran Termin (field di form SO setelah Diskon):
-  // baris-baris nominal saja (mis. 3x pembayaran). Total harus = grand total
-  // (divalidasi backend). Kosong/tidak dikirim = SO tanpa termin. Hanya
-  // efektif saat CREATE (edit = read-only). ===
+  // baris-baris nominal saja (mis. 3x pembayaran). Kosong/tidak dikirim = SO
+  // tanpa termin. Hanya efektif saat CREATE (edit = read-only).
+  // Update #035 — TERMIN BEBAS: nominal ditentukan user; total TIDAK
+  // diwajibkan = grand total (backend hanya menolak nominal <= 0). ===
   pembayaranTermin?: number[];
   details: SalesOrderDetailCreate[];
   biayaTambahan?: TransaksiBiayaCreate[];

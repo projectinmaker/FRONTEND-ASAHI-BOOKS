@@ -432,18 +432,13 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
       return;
     }
     // === Update #031 — validasi Pembayaran Termin (SO, create): tiap baris
-    // nominal > 0 dan total harus = Grand Total. ===
+    // nominal > 0. Update #035 — TERMIN BEBAS: total TIDAK lagi diwajibkan
+    // = Grand Total (nominal ditentukan user; selisih ditampilkan sebagai
+    // catatan non-blocking di form, bukan error). ===
     const terminNominals = isSales && !original ? termins.map((row) => Number(row.nominal) || 0) : [];
     if (isSales && !original && termins.some((row) => (Number(row.nominal) || 0) <= 0)) {
       setError('Nominal setiap baris Pembayaran Termin harus lebih dari 0 — hapus baris yang kosong atau isi nominalnya.');
       return;
-    }
-    if (isSales && !original && terminNominals.length > 0) {
-      const totalTermin = terminNominals.reduce((sum, n) => sum + n, 0);
-      if (Math.abs(totalTermin - liveGrandTotal) > 0.05) {
-        setError(`Total Pembayaran Termin (${formatOrderMoney(totalTermin, header.currency)}) harus sama dengan Grand Total (${formatOrderMoney(liveGrandTotal, header.currency)}). Sesuaikan nominal atau jumlah barisnya.`);
-        return;
-      }
     }
     // === Update #033 — guardrail: SO create TANPA termin → konfirmasi dulu.
     // Termin (pecahan beberapa kali bayar) hanya bisa diatur saat membuat SO;
@@ -608,7 +603,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
     const sebelumnya = termins.length;
     setTermins(Array.from({ length: jumlah }, (_, i) => ({ key: crypto.randomUUID(), nominal: String(i === jumlah - 1 ? terakhir : perBaris) })));
     toast.success(`Pembayaran dipecah ${jumlah} termin sama rata`, {
-      description: sebelumnya > 0 ? `Mengganti ${sebelumnya} baris yang tadi — nominal tiap baris masih bisa diubah (total harus tetap sama dengan Grand Total).` : 'Nominal tiap baris masih bisa diubah — total seluruh termin harus tetap sama dengan Grand Total.'
+      description: sebelumnya > 0 ? `Mengganti ${sebelumnya} baris yang tadi — nominal tiap baris bebas diubah sesuai kebutuhan.` : 'Nominal tiap baris bebas diubah sesuai kebutuhan — total tidak harus sama dengan Grand Total.'
     });
   };
 
@@ -1073,9 +1068,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                 {isSales && input('ppn', 'PPN %', 'number')}
               </div>
               {/* === Update #031 — PEMBAYARAN TERMIN (khusus SO, SETELAH Diskon):
-                  baris-baris nominal saja (mis. 3x pembayaran). Total harus =
-                  Grand Total (divalidasi FE + backend). Create-only; edit = read-only
-                  dengan status bayar per termin. Syarat Pembayaran dihapus dari SO. === */}
+                  baris-baris nominal saja (mis. 3x pembayaran). Update #035 —
+                  TERMIN BEBAS: nominal ditentukan user; total TIDAK diwajibkan =
+                  Grand Total (selisih jadi catatan info, bukan error). Create-only;
+                  edit = read-only dengan status bayar per termin. Syarat Pembayaran
+                  dihapus dari SO. === */}
               {isSales && (
                 <div className="space-y-2 rounded-md border p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1175,12 +1172,15 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         <span className="text-muted-foreground">
                           Total termin: <span className="font-mono font-semibold text-foreground">{formatOrderMoney(terminTotal, header.currency)}</span> · Grand Total (perkiraan): <span className="font-mono">{formatOrderMoney(liveGrandTotal, header.currency)}</span>
                         </span>
-                        {Math.abs(terminTotal - liveGrandTotal) > 0.05 && <span className="font-medium text-destructive">Total termin harus sama dengan Grand Total</span>}
+                        {/* Update #035 — TERMIN BEBAS: total ≠ Grand Total TIDAK lagi
+                            error. < GT → info sisa via Invoice; > GT → warning amber
+                            (diperbolehkan — keputusan user); = GT → konfirmasi hijau. */}
+                        {Math.abs(terminTotal - liveGrandTotal) <= 0.05 ? <span className="font-medium text-emerald-700">✓ Pas dengan Grand Total</span> : terminTotal < liveGrandTotal ? <span className="text-muted-foreground">Bebas — sisa {formatOrderMoney(liveGrandTotal - terminTotal, header.currency)} dibayar lewat alur Invoice</span> : <span className="font-medium text-amber-700">Melebihi Grand Total {formatOrderMoney(terminTotal - liveGrandTotal, header.currency)} — pastikan disengaja</span>}
                       </div>
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Klik <span className="font-medium text-foreground">Bagi 2</span> / <span className="font-medium text-foreground">Bagi 3</span> untuk memecah pembayaran otomatis sama rata, atau <span className="font-medium text-foreground">Tambah Termin</span> untuk mengatur nominal sendiri — mis. Termin 1 = DP 40%, Termin 2 = pelunasan 60% (total seluruh termin harus sama dengan Grand Total). Tiap termin dibayarkan satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice.
+                      Klik <span className="font-medium text-foreground">Bagi 2</span> / <span className="font-medium text-foreground">Bagi 3</span> untuk memecah pembayaran otomatis sama rata, atau <span className="font-medium text-foreground">Tambah Termin</span> untuk mengatur nominal sendiri — nominal bebas ditentukan Anda (mis. Termin 1 = DP 5.000.000 saja; total tidak harus sama dengan Grand Total — sisanya mengikuti alur Invoice). Tiap termin dibayarkan satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice.
                     </p>
                   )}
                 </div>
