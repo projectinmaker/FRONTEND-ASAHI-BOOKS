@@ -593,6 +593,25 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
   const liveBiaya = costs.reduce((sum, cost) => sum + (Number(cost.jumlah) || 0), 0);
   const liveGrandTotal = liveDpp + livePpn + liveBiaya - livePph23;
 
+  // === Update #034 — BAGI CEPAT termin (SO create): pecah Grand Total jadi N
+  // termin sama rata SEKALI KLIK (jawab kebutuhan "SO dibayar 2x / 3x").
+  // Baris terakhir menyerap pembulatan sehingga total PERSIS = Grand Total
+  // (tidak menyandar toleransi ±0,05). Mengganti baris yang sedang ada;
+  // nominal tiap baris tetap bisa diubah manual setelahnya. ===
+  const bagiTermin = (jumlah: number) => {
+    if (liveGrandTotal <= 0) {
+      toast.info('Isi item SO dulu — Grand Total masih 0');
+      return;
+    }
+    const perBaris = Math.floor((liveGrandTotal / jumlah) * 100) / 100;
+    const terakhir = Math.round((liveGrandTotal - perBaris * (jumlah - 1)) * 100) / 100;
+    const sebelumnya = termins.length;
+    setTermins(Array.from({ length: jumlah }, (_, i) => ({ key: crypto.randomUUID(), nominal: String(i === jumlah - 1 ? terakhir : perBaris) })));
+    toast.success(`Pembayaran dipecah ${jumlah} termin sama rata`, {
+      description: sebelumnya > 0 ? `Mengganti ${sebelumnya} baris yang tadi — nominal tiap baris masih bisa diubah (total harus tetap sama dengan Grand Total).` : 'Nominal tiap baris masih bisa diubah — total seluruh termin harus tetap sama dengan Grand Total.'
+    });
+  };
+
   return (
     <FormTabShell title={`${original ? (readOnly ? 'Detail' : 'Edit') : 'Buat'} ${title}`}>
       <Card className="max-w-6xl">
@@ -1062,9 +1081,21 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <Label>Pembayaran Termin</Label>
                     {isCreate && !original && (
-                      <Button variant="outline" size="sm" disabled={disabled} onClick={() => setTermins((prev) => [...prev, { key: crypto.randomUUID(), nominal: '' }])}>
-                        <Plus className="mr-2 h-4 w-4" /> Tambah Termin
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {/* === Update #034 — bagi cepat: 2x / 3x pembayaran
+                            sekali klik (nonaktif selama Grand Total masih 0). === */}
+                        <span className="text-xs text-muted-foreground">Bagi cepat:</span>
+                        <Button variant="outline" size="sm" disabled={disabled || liveGrandTotal <= 0} onClick={() => bagiTermin(2)} title="Pecah Grand Total jadi 2 termin sama rata (mis. DP 50% + pelunasan 50%)">
+                          Bagi 2
+                        </Button>
+                        <Button variant="outline" size="sm" disabled={disabled || liveGrandTotal <= 0} onClick={() => bagiTermin(3)} title="Pecah Grand Total jadi 3 termin sama rata">
+                          Bagi 3
+                        </Button>
+                        <span className="mx-0.5 h-4 w-px bg-border" aria-hidden="true" />
+                        <Button variant="outline" size="sm" disabled={disabled} onClick={() => setTermins((prev) => [...prev, { key: crypto.randomUUID(), nominal: '' }])}>
+                          <Plus className="mr-2 h-4 w-4" /> Tambah Termin
+                        </Button>
+                      </div>
                     )}
                   </div>
                   {original ? (
@@ -1128,6 +1159,13 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         <div className="flex items-center gap-2" key={row.key}>
                           <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">Termin {index + 1}</span>
                           <CurrencyInput aria-label={`Nominal termin ${index + 1}`} placeholder="Nominal" allowDecimal value={row.nominal} disabled={disabled} onValueChange={(value) => setTermins((prev) => prev.map((item) => (item.key === row.key ? { ...item, nominal: value } : item)))} />
+                          {/* Update #034 — porsi baris terhadap Grand Total (membantu
+                              mis. "DP 40%, pelunasan 60%"); hanya saat keduanya > 0. */}
+                          {Number(row.nominal) > 0 && liveGrandTotal > 0 && (
+                            <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground" title="Porsi baris ini terhadap Grand Total">
+                              ≈ {((Number(row.nominal) / liveGrandTotal) * 100).toFixed(1).replace('.', ',')}%
+                            </span>
+                          )}
                           <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setTermins((prev) => prev.filter((item) => item.key !== row.key))} aria-label={`Hapus termin ${index + 1}`}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -1142,7 +1180,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Klik <span className="font-medium text-foreground">Tambah Termin</span> untuk memecah pembayaran menjadi beberapa kali bayar — mis. Termin 1 = DP 40%, Termin 2 = pelunasan 60% (total seluruh termin harus sama dengan Grand Total). Tiap termin dibayarkan satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice.
+                      Klik <span className="font-medium text-foreground">Bagi 2</span> / <span className="font-medium text-foreground">Bagi 3</span> untuk memecah pembayaran otomatis sama rata, atau <span className="font-medium text-foreground">Tambah Termin</span> untuk mengatur nominal sendiri — mis. Termin 1 = DP 40%, Termin 2 = pelunasan 60% (total seluruh termin harus sama dengan Grand Total). Tiap termin dibayarkan satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice.
                     </p>
                   )}
                 </div>
