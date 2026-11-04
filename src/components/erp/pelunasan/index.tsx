@@ -957,7 +957,16 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                             <TableCell className="text-xs">{inv.jatuhTempo ? formatDate(inv.jatuhTempo) : '-'}</TableCell>
                             <TableCell className="text-right font-mono text-xs">{formatRp(parseNum(inv.nilaiTagihan))}</TableCell>
                             <TableCell className="text-right font-mono text-xs">{formatRp(parseNum(inv.totalBayar))}</TableCell>
-                            <TableCell className="text-right font-mono text-xs font-semibold">{formatRp(sisa)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs font-semibold">
+                              {formatRp(sisa)}
+                              {/* Update #036 — DP termin SO yang diterapkan ke invoice ini;
+                                  sisa tagihan sudah NET (tidak menagih DP dua kali). */}
+                              {parseNum(inv.uangMuka) > 0 && (
+                                <p className="mt-0.5 text-[10px] font-normal text-amber-700" title="DP termin Sales Order yang diterapkan ke invoice ini — sisa tagihan sudah dikurangi DP.">
+                                  DP {formatRp(parseNum(inv.uangMuka))}
+                                </p>
+                              )}
+                            </TableCell>
                             <TableCell className="text-center">
                               <StatusPembayaranBadge status={inv.statusPembayaran} />
                             </TableCell>

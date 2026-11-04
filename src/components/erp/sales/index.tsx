@@ -219,10 +219,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
   // Update #032 — toggle mode baris: master ↔ bebas (reset field yang tidak
   // relevan agar switching bolak-balik tidak menyisakan data nyasar).
-  const toggleBebas = useCallback(
-    (id: string) => setRows((p) => p.map((r) => (r.id === id ? { ...r, bebas: !r.bebas, barangId: r.bebas ? '' : r.barangId, kodeBarang: r.bebas ? '' : r.kodeBarang, itemNama: r.bebas ? '' : r.itemNama || '', itemSatuan: r.bebas ? '' : r.itemSatuan || '' } : r))),
-    [setRows]
-  );
+  const toggleBebas = useCallback((id: string) => setRows((p) => p.map((r) => (r.id === id ? { ...r, bebas: !r.bebas, barangId: r.bebas ? '' : r.barangId, kodeBarang: r.bebas ? '' : r.kodeBarang, itemNama: r.bebas ? '' : r.itemNama || '', itemSatuan: r.bebas ? '' : r.itemSatuan || '' } : r))), [setRows]);
   // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add.
   const applyBarang = useCallback(
     (id: string, value: string, found: BarangDropdown | undefined) => {
@@ -298,22 +295,8 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
                       )}
                       {allowBebas && row.bebas ? (
                         <>
-                          <Input
-                            aria-label="Nama item bebas"
-                            placeholder="Nama item / jasa (bebas)"
-                            className="h-8 text-xs"
-                            value={row.itemNama || ''}
-                            onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)}
-                            maxLength={200}
-                          />
-                          <Input
-                            aria-label="Satuan item bebas"
-                            placeholder="Satuan"
-                            className="h-8 w-24 text-xs"
-                            value={row.itemSatuan || ''}
-                            onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)}
-                            maxLength={50}
-                          />
+                          <Input aria-label="Nama item bebas" placeholder="Nama item / jasa (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} />
+                          <Input aria-label="Satuan item bebas" placeholder="Satuan" className="h-8 w-24 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} />
                         </>
                       ) : (
                         <>
@@ -1371,35 +1354,35 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       }
       setSoLoading(true);
       try {
-      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
-      setFPelangganId(sisa.pelangganId || '');
-      // Update #032 — baris ITEM BEBAS ikut difakturkan (jasa/custom —
-      // pendapatan tanpa stok); barang master difakturkan sisa qty-nya.
-      const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
-      if (rows.length === 0) {
-        toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
-        setFDetail([]);
-      } else {
-        setFDetail(
-          rows.map((d) => ({
-            id: crypto.randomUUID(),
-            barangId: d.barangId || '',
-            kodeBarang: d.kodeBarang || '',
-            barangNama: d.namaBarang || '',
-            harga: String(d.harga ?? 0),
-            qty: String(d.sisaFaktur),
-            // Update #004: invoice tanpa diskon — kolom Diskon dihapus.
-            diskon: '0',
-            satuanId: d.satuanId || '',
-            satuanNama: d.satuanNama || (d.itemSatuan || ''),
-            salesOrderDetailId: d.salesOrderDetailId,
-            // Update #032 — item bebas (jasa/custom) tanpa barang master.
-            bebas: !d.barangId,
-            itemNama: d.itemNama || '',
-            itemSatuan: d.itemSatuan || ''
-          }))
-        );
-      }
+        const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+        setFPelangganId(sisa.pelangganId || '');
+        // Update #032 — baris ITEM BEBAS ikut difakturkan (jasa/custom —
+        // pendapatan tanpa stok); barang master difakturkan sisa qty-nya.
+        const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+        if (rows.length === 0) {
+          toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
+          setFDetail([]);
+        } else {
+          setFDetail(
+            rows.map((d) => ({
+              id: crypto.randomUUID(),
+              barangId: d.barangId || '',
+              kodeBarang: d.kodeBarang || '',
+              barangNama: d.namaBarang || '',
+              harga: String(d.harga ?? 0),
+              qty: String(d.sisaFaktur),
+              // Update #004: invoice tanpa diskon — kolom Diskon dihapus.
+              diskon: '0',
+              satuanId: d.satuanId || '',
+              satuanNama: d.satuanNama || d.itemSatuan || '',
+              salesOrderDetailId: d.salesOrderDetailId,
+              // Update #032 — item bebas (jasa/custom) tanpa barang master.
+              bebas: !d.barangId,
+              itemNama: d.itemNama || '',
+              itemSatuan: d.itemSatuan || ''
+            }))
+          );
+        }
       } catch {
         // Gagal memuat sisa SO — biarkan user isi baris manual
       }
@@ -1506,7 +1489,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
           return {
             barangId: r.bebas ? null : r.barangId,
             itemNama: r.bebas ? (r.itemNama || '').trim() : null,
-            itemSatuan: r.bebas ? ((r.itemSatuan || '').trim() || null) : null,
+            itemSatuan: r.bebas ? (r.itemSatuan || '').trim() || null : null,
             harga,
             qty,
             diskon: null,
@@ -2775,17 +2758,26 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.customerPoNumber || '-'}</TableCell>
                         <TableCell>
-                          {/* Update #031 — progress pembayaran termin SO. */}
+                          {/* Update #031 — progress pembayaran termin SO.
+                              Update #036 — baris "via invoice" untuk termin bebas
+                              (total termin < Grand Total): sisanya ditagih lewat
+                              Invoice → DP otomatis diterapkan saat invoice diposting. */}
                           {(() => {
                             const total = Number(d.terminTotal) || 0;
                             if (!total) return <span className="text-xs text-muted-foreground">—</span>;
                             const dibayar = Number(d.terminDibayar) || 0;
+                            const viaInvoice = Math.max((Number(d.grandTotal) || 0) - total, 0);
                             return (
                               <div className="space-y-0.5">
                                 <span className="font-mono text-xs font-medium">
                                   {formatRp(dibayar)} <span className="text-muted-foreground">/ {formatRp(total)}</span>
                                 </span>
                                 <p className="text-[10px] text-muted-foreground">Termin SO · sisa {formatRp(Math.max(total - dibayar, 0))}</p>
+                                {viaInvoice > 0 && (
+                                  <p className="text-[10px] text-amber-700" title="Sisa tagihan di luar termin — ditagih lewat Invoice; DP termin otomatis diterapkan saat invoice diposting.">
+                                    Via invoice: {formatRp(viaInvoice)}
+                                  </p>
+                                )}
                               </div>
                             );
                           })()}

@@ -186,7 +186,7 @@ export function SoTerminForm({ onFinished, onDirtyChange }: Props) {
           <div className="space-y-1">
             <p className="text-sm font-semibold text-amber-900">Pembayaran Termin Sales Order</p>
             <p className="text-xs leading-relaxed text-amber-800">
-              Pilih Sales Order lalu termin yang belum dibayar (DP / cicilan). Jurnal: <span className="font-medium">D Kas/Bank · K {akunLawanId ? 'akun terpilih' : 'Uang Muka Penjualan (default)'}</span> — akun lawan bisa diganti di bawah. Satu SO bisa dibayar berkali-kali (tiap penerimaan = satu termin).
+              Pilih Sales Order lalu termin yang belum dibayar (DP / cicilan). Jurnal: <span className="font-medium">D Kas/Bank · K akun lawan</span> — akun lawan default otomatis: SO belum difakturkan → Uang Muka Penjualan; SO sudah difakturkan → langsung ke Piutang invoice (sisa tagihannya ikut turun). Satu SO bisa dibayar berkali-kali (tiap penerimaan = satu termin).
             </p>
           </div>
         </CardContent>
@@ -231,7 +231,7 @@ export function SoTerminForm({ onFinished, onDirtyChange }: Props) {
           options={soOptions.map((s) => ({
             id: s.salesOrderId,
             label: `${s.noPesanan} — ${s.pelangganNama || '-'}`,
-            subtitle: `Sisa termin: ${formatRp(Number(s.sisaTermin) || 0)}`
+            subtitle: `Sisa termin: ${formatRp(Number(s.sisaTermin) || 0)}${s.sudahDifakturkan ? ' · sudah difakturkan' : ''}`
           }))}
           placeholder={soLoading ? 'Memuat…' : 'Pilih Sales Order…'}
           disabled={soLoading || submitting}
@@ -241,6 +241,16 @@ export function SoTerminForm({ onFinished, onDirtyChange }: Props) {
 
       {selectedSo && (
         <div className="space-y-3">
+          {/* Update #036 — SO sudah difakturkan: pembayaran termin berikutnya
+              otomatis ke akun Piutang invoice (melunasi piutang). */}
+          {selectedSo.sudahDifakturkan && (
+            <div className="flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50/60 p-2.5 text-xs text-emerald-800">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <p>
+                SO ini <span className="font-semibold">sudah difakturkan</span> — dengan akun lawan default, pembayaran termin langsung diterapkan ke <span className="font-semibold">Piutang invoice</span> dan tercatat sebagai pembayaran invoice (sisa tagihannya turun). Pilih akun lain di bawah bila ingin mencatat ke akun lain.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 rounded-md border bg-muted/30 p-3 text-xs">
             <div>
               <p className="text-muted-foreground">Pelanggan</p>
@@ -300,10 +310,10 @@ export function SoTerminForm({ onFinished, onDirtyChange }: Props) {
 
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Akun Lawan (Kredit)</Label>
-            <SearchableDropdown value={akunLawanId} onValueChange={setAkunLawanId} options={coaOptions} allOption={{ id: '', label: 'Default — Uang Muka Penjualan' }} placeholder={coaLoading ? 'Memuat…' : 'Default — Uang Muka Penjualan'} disabled={coaLoading || submitting} />
+            <SearchableDropdown value={akunLawanId} onValueChange={setAkunLawanId} options={coaOptions} allOption={{ id: '', label: selectedSo?.sudahDifakturkan ? 'Default — otomatis (Piutang invoice)' : 'Default — otomatis (Uang Muka Penjualan)' }} placeholder={coaLoading ? 'Memuat…' : selectedSo?.sudahDifakturkan ? 'Default — otomatis (Piutang invoice)' : 'Default — otomatis (Uang Muka Penjualan)'} disabled={coaLoading || submitting} />
             <p className="text-[11px] text-muted-foreground">
               <Info className="mr-1 inline h-3 w-3" />
-              Default: akun Uang Muka Penjualan (bisa diatur di Pengaturan → Setting Akun). Ganti di sini bila pembayaran ini perlu dicatat ke akun lain.
+              Default otomatis: SO belum difakturkan → Uang Muka Penjualan (Setting Akun; diterapkan ke Piutang saat invoice diposting); SO sudah difakturkan → akun Piutang invoice. Ganti di sini bila perlu dicatat ke akun lain.
             </p>
           </div>
 

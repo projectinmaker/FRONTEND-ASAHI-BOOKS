@@ -1360,6 +1360,9 @@ export interface SoTerminOpenItem {
   grandTotal: number | string;
   terminBelumDibayar: SoTerminRingkas[];
   sisaTermin: number | string;
+  /** Update #036 — SO sudah punya invoice aktif (POSTED): pembayaran termin
+   * berikutnya otomatis diterapkan ke akun Piutang invoice. */
+  sudahDifakturkan?: boolean;
 }
 
 /** Body POST /penjualan/sales-order/{id}/terima-pembayaran. */
@@ -3689,6 +3692,9 @@ export interface InvoiceSaldoResponse {
   nilaiTagihan: string;
   totalBayar: string;
   totalRetur: string;
+  /** Update #036 — DP termin SO yang diterapkan ke invoice ini (piutang
+   * saja); sisaTagihan sudah NET setelah DP. */
+  uangMuka?: string;
   sisaTagihan: string;
   kelebihan: string;
   statusPembayaran: StatusPembayaran;
