@@ -2527,11 +2527,11 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
         const res = await api.post<HardDeleteResponse>(`/penjualan/sales-order/${cancelTarget}/cancel`, {
           reason: reason || undefined
         });
-        toast.success(res.message || 'Pesanan dihapus permanen');
+        toast.success(res.message || 'Sales Order dihapus permanen');
         setCancelTarget(null);
         fetchData();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Gagal menghapus pesanan');
+        toast.error(e instanceof Error ? e.message : 'Gagal menghapus Sales Order');
       } finally {
         setCancelSubmitting(false);
       }
@@ -2554,7 +2554,7 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
             <ShoppingCart className="h-6 w-6" />
           </div>
           <div>
-            <p className="text-xs text-emerald-600 font-medium">Total Pesanan</p>
+            <p className="text-xs text-emerald-600 font-medium">Total Sales Order</p>
             {loading ? <Skeleton className="mt-1 h-6 w-16" /> : <p className="text-2xl font-bold text-emerald-700">{total}</p>}
           </div>
         </CardContent>
@@ -2565,20 +2565,20 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-base">Daftar Pesanan Penjualan</CardTitle>
-              <CardDescription>Daftar seluruh pesanan penjualan yang telah dicatat</CardDescription>
+              <CardTitle className="text-base">Daftar Sales Order</CardTitle>
+              <CardDescription>Daftar seluruh Sales Order (SO) yang telah dicatat — langsung final saat disimpan (tanpa approval); pembayaran termin bisa dilakukan berkali-kali lewat Kas &amp; Bank</CardDescription>
             </div>
             <Button
               size="sm"
               onClick={() =>
                 openFormTab({
-                  title: 'Buat Pesanan Penjualan',
+                  title: 'Buat Sales Order',
                   module: 'sales',
                   subPage: 'pesanan',
                   formKey: 'pesanan-penjualan-create'
                 })
               }>
-              <Plus className="mr-1.5 h-4 w-4" /> Buat Pesanan
+              <Plus className="mr-1.5 h-4 w-4" /> Buat Sales Order
             </Button>
           </div>
         </CardHeader>
@@ -2658,10 +2658,13 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead className="w-[130px]">No Pesanan</TableHead>
+                    <TableHead className="w-[130px]">No SO</TableHead>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
                     <TableHead>Pelanggan</TableHead>
                     <TableHead>Customer PO</TableHead>
+                    {/* Update #031 — kolom Pembayaran: progress termin SO
+                        (mis. "2/3 · Rp 30.000.000"). */}
+                    <TableHead className="w-[150px]">Pembayaran</TableHead>
                     <TableHead>Fulfillment Status</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
                     <TableHead className="w-[140px] text-center">Workflow</TableHead>
@@ -2670,11 +2673,11 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={8} />
+                    <SkeletonRows cols={9} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
-                        Tidak ada data pesanan.
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
+                        Tidak ada data Sales Order.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -2684,6 +2687,22 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.customerPoNumber || '-'}</TableCell>
+                        <TableCell>
+                          {/* Update #031 — progress pembayaran termin SO. */}
+                          {(() => {
+                            const total = Number(d.terminTotal) || 0;
+                            if (!total) return <span className="text-xs text-muted-foreground">—</span>;
+                            const dibayar = Number(d.terminDibayar) || 0;
+                            return (
+                              <div className="space-y-0.5">
+                                <span className="font-mono text-xs font-medium">
+                                  {formatRp(dibayar)} <span className="text-muted-foreground">/ {formatRp(total)}</span>
+                                </span>
+                                <p className="text-[10px] text-muted-foreground">Termin SO · sisa {formatRp(Math.max(total - dibayar, 0))}</p>
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
                         <TableCell>
                           {/* M-05: fulfillment_status diisi backend (OPEN/PARTIAL/FULFILLED/CLOSED) — tampilkan label Indonesia */}
                           {(() => {
@@ -2778,8 +2797,8 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
         onOpenChange={(o) => {
           if (!o) setCancelTarget(null);
         }}
-        title="Batalkan Pesanan Penjualan?"
-        formLabel="pesanan penjualan"
+        title="Batalkan Sales Order?"
+        formLabel="sales order"
         submitting={cancelSubmitting}
         onConfirm={(r) => handleCancel(r)}
       />

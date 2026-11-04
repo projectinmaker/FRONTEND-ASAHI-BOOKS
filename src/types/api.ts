@@ -1066,7 +1066,12 @@ export interface TransaksiBiayaResponse extends TransaksiBiayaCreate {
 // ── Penawaran (Quotation) ────────────────────────────────────────────
 
 export interface PenawaranDetailCreate {
-  barangId: string;
+  // === Update #031 — barangId OPSIONAL: baris bisa item BEBAS (diketik
+  // manual, belum ada di master barang). Item bebas wajib itemNama. ===
+  barangId?: string | null;
+  katalogId?: string | null;
+  itemNama?: string | null;
+  itemSatuan?: string | null;
   satuanId?: string | null;
   qty: number;
   harga: number;
@@ -1094,6 +1099,10 @@ export interface PenawaranCreate {
   mataUang?: string;
   diskonGlobal?: number;
   ppn?: number;
+  // === Update #031 — No Quotation: user hanya input bulan & tahun; nomor
+  // urut otomatis per pelanggan (reset tahunan), singkatan dari master. ===
+  bulan?: number;
+  tahun?: number;
   details: PenawaranDetailCreate[];
   biayaTambahan?: TransaksiBiayaCreate[];
 }
@@ -1278,6 +1287,66 @@ export interface NomorPreviewResponse {
   nomor: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Update #031 — No Quotation · katalog item penawaran · termin pembayaran SO
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Preview No Quotation berikutnya (QUOT ASI/001/MJE/X/2026) — indikatif. */
+export interface NomorQuotationPreviewResponse {
+  nomor: string;
+}
+
+/** Item katalog penawaran — item BEBAS yang pernah dipakai (tidak di master). */
+export interface PenawaranKatalogItemResponse {
+  id: string;
+  nama: string;
+  satuanNama?: string | null;
+  harga: number | string;
+  dipakaiCount: number;
+  keterangan?: string | null;
+}
+
+/** Satu baris termin pembayaran SO + status bayarnya. */
+export interface SoTerminResponse {
+  id: string;
+  salesOrderId: string;
+  urutan: number;
+  nominal: number | string;
+  penerimaanKasId?: string | null;
+  dibayarPada?: string | null;
+  noBuktiPenerimaan?: string | null;
+  statusPenerimaan?: string | null;
+}
+
+/** Termin ringkas (belum dibayar) di item SO terbuka. */
+export interface SoTerminRingkas {
+  id: string;
+  urutan: number;
+  nominal: number | string;
+}
+
+/** SO dengan termin belum dibayar — pilihan dropdown di form Penerimaan. */
+export interface SoTerminOpenItem {
+  salesOrderId: string;
+  noPesanan: string;
+  pelangganId?: string | null;
+  pelangganNama?: string | null;
+  grandTotal: number | string;
+  terminBelumDibayar: SoTerminRingkas[];
+  sisaTermin: number | string;
+}
+
+/** Body POST /penjualan/sales-order/{id}/terima-pembayaran. */
+export interface TerimaPembayaranTerminRequest {
+  terminId: string;
+  kasBankId: string;
+  tanggal: string;
+  /** Akun lawan jurnal (K). null = default Setting Akun UANG_MUKA_PENJUALAN. */
+  akunPerkiraanId?: string | null;
+  noNukti?: string | null;
+  catatan?: string | null;
+}
+
 export interface PembayaranRincianCreate {
   akunPerkiraanId: string;
   nilai: number;
@@ -1449,11 +1518,13 @@ export interface PenerimaanKasResponse {
 // 2. TRANSAKSI_LAINNYA — akun lawan bebas dari COA (non-invoice).
 // (Update #14 — BELUM_TERIDENTIFIKASI dihapus bersama fitur Identifikasi
 //  & Alokasi.)
-export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA';
+export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA' | 'TERMIN_SO';
 
 export const JENIS_TRANSAKSI_KAS_LABELS: Record<JenisTransaksiKas, string> = {
   PELUNASAN_INVOICE: 'Pelunasan Invoice',
-  TRANSAKSI_LAINNYA: 'Transaksi Lainnya'
+  TRANSAKSI_LAINNYA: 'Transaksi Lainnya',
+  // Update #031 — penerimaan pembayaran termin Sales Order (DP / cicilan)
+  TERMIN_SO: 'Pembayaran Termin SO'
 };
 
 export interface TransferBankCreate {
@@ -1558,6 +1629,11 @@ export interface SalesOrderCreate {
   keterangan?: string | null;
   /** @deprecated Orders never post journals. */
   autoPostJurnal?: false;
+  // === Update #031 — Pembayaran Termin (field di form SO setelah Diskon):
+  // baris-baris nominal saja (mis. 3x pembayaran). Total harus = grand total
+  // (divalidasi backend). Kosong/tidak dikirim = SO tanpa termin. Hanya
+  // efektif saat CREATE (edit = read-only). ===
+  pembayaranTermin?: number[];
   details: SalesOrderDetailCreate[];
   biayaTambahan?: TransaksiBiayaCreate[];
 }
@@ -1603,6 +1679,10 @@ export interface SalesOrderResponse {
   totalPpn: number;
   totalBiayaTambahan: number;
   grandTotal: number;
+  // === Update #031 — ringkasan termin pembayaran (kolom "Pembayaran" di
+  // daftar SO). null/0 = SO tanpa termin. ===
+  terminTotal?: number | null;
+  terminDibayar?: number | null;
   status: StatusPenjualan;
   jurnalUmumId: string | null;
   createdBy: string;

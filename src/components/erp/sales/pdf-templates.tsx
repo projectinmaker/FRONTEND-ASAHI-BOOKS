@@ -697,9 +697,10 @@ export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
-          <InfoCell label="No. Penawaran" value={data.nomor} />
-          {/* Update #003: No. PO customer (mirror template SO/Pengiriman/Invoice) */}
-          <InfoCell label="No PO" value={data.noPo || ''} />
+          {/* Update #031: label nomor = "No. Quotation" (field Nomor PO dihapus
+              dari form penawaran; baris No PO hanya tampil bila ada nilainya). */}
+          <InfoCell label="No. Quotation" value={data.nomor} />
+          {data.noPo ? <InfoCell label="No PO" value={data.noPo} /> : null}
           <InfoCell label="Berlaku Hingga" value={formatDate(data.berlakuHingga)} />
           <InfoCell label="Syarat Pembayaran" value={data.syaratPembayaran} />
         </div>

@@ -41,7 +41,9 @@ interface OrderDraftData {
 export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }: { kind: OrderKind; editId?: string; subPage?: string }) {
   const isSales = kind === 'sales';
   const tabModule = isSales ? 'sales' : 'purchasing';
-  const title = isSales ? 'Pesanan Penjualan' : 'Pesanan Pembelian';
+  // Update #031 — label dokumen penjualan: "Pesanan Penjualan" → "Sales Order"
+  // (tab/list/form/cetak; modul Pembelian tetap "Pesanan Pembelian").
+  const title = isSales ? 'Sales Order' : 'Pesanan Pembelian';
   const [header, setHeader] = useState(newOrderHeader);
   const [lines, setLines] = useState<OrderLine[]>(() => [newOrderLine()]);
   // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN/RATE_PPH23);
@@ -69,6 +71,10 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   // Update #002: daftar SO untuk kolom "Keterangan SO" per baris PO (tracking
   // item ke SO — satu PO bisa memuat baris dari beberapa SO berbeda).
   const [soRows, setSoRows] = useState<SalesOrderResponse[]>([]);
+  // === Update #031 — Pembayaran Termin (khusus SO): baris-baris nominal.
+  // Create-only (edit menampilkan ringkasan read-only dari server). ===
+  const [termins, setTermins] = useState<{ key: string; nominal: string }[]>([]);
+  const terminTotal = useMemo(() => termins.reduce((sum, row) => sum + (Number(row.nominal) || 0), 0), [termins]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -227,7 +233,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
           next.currency = supplierCurrency;
         }
       }
-      if (master?.syaratBayarId) next.syaratBayarId = master.syaratBayarId;
+      if (master?.syaratBayarId && !isSales) next.syaratBayarId = master.syaratBayarId;
       return next;
     });
   };
@@ -272,10 +278,32 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
       setError('Alamat pengiriman wajib dipilih — centang satu gudang tujuan.');
       return;
     }
+    // === Update #031 — validasi Pembayaran Termin (SO, create): tiap baris
+    // nominal > 0 dan total harus = Grand Total. ===
+    const terminNominals = isSales && !original ? termins.map((row) => Number(row.nominal) || 0) : [];
+    if (isSales && !original && termins.some((row) => (Number(row.nominal) || 0) <= 0)) {
+      setError('Nominal setiap baris Pembayaran Termin harus lebih dari 0 — hapus baris yang kosong atau isi nominalnya.');
+      return;
+    }
+    if (isSales && !original && terminNominals.length > 0) {
+      const totalTermin = terminNominals.reduce((sum, n) => sum + n, 0);
+      if (Math.abs(totalTermin - liveGrandTotal) > 0.05) {
+        setError(`Total Pembayaran Termin (${formatOrderMoney(totalTermin, header.currency)}) harus sama dengan Grand Total (${formatOrderMoney(liveGrandTotal, header.currency)}). Sesuaikan nominal atau jumlah barisnya.`);
+        return;
+      }
+    }
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      const payload = original ? buildOrderUpdate(kind, header, lines, original) : { ...serializeOrderHeader(kind, header), details: serializeOrderLines(lines), biayaTambahan: costs.filter((cost) => cost.nama.trim()).map((cost) => ({ nama: cost.nama.trim(), jumlah: Number(cost.jumlah) })) };
+      const payload = original
+        ? buildOrderUpdate(kind, header, lines, original)
+        : {
+            ...serializeOrderHeader(kind, header),
+            details: serializeOrderLines(lines),
+            biayaTambahan: costs.filter((cost) => cost.nama.trim()).map((cost) => ({ nama: cost.nama.trim(), jumlah: Number(cost.jumlah) })),
+            // Update #031 — Pembayaran Termin (SO create; edit tidak mengubah termin).
+            ...(isSales && terminNominals.length > 0 ? { pembayaranTermin: terminNominals } : {})
+          };
       if (!Object.keys(payload).length) {
         toast.info('Tidak ada perubahan untuk disimpan');
         return;
@@ -450,31 +478,36 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                 </div>
                 {/* Update #002 (PO): label "Tanggal" → "Tanggal PO" — sales tetap "Tanggal". */}
                 {input('tanggal', isSales ? 'Tanggal *' : 'Tanggal PO *', 'date')}
-                <div className="space-y-1.5">
-                  <Label>Syarat Bayar</Label>
-                  <div className="flex items-start gap-1.5">
-                    <SearchableDropdown
-                      className="min-w-0 flex-1"
-                      value={header.syaratBayarId}
-                      onValueChange={(value) => setField('syaratBayarId', value)}
-                      options={includeCurrent(
-                        terms.map((term) => ({ id: term.id, label: term.nama })),
-                        original?.syaratBayarId,
-                        original?.syaratBayar?.nama
-                      )}
-                      allOption={{ id: '', label: 'Tidak dipilih' }}
-                      disabled={disabled}
-                    />
-                    {/* Update #007: quick add syarat bayar */}
-                    <QuickAddSyaratBayarButton
-                      disabled={disabled}
-                      onCreated={(term) => {
-                        setTerms((prev) => (prev.some((row) => row.id === term.id) ? prev : [...prev, term]));
-                        setField('syaratBayarId', term.id);
-                      }}
-                    />
+                {/* === Update #031 — Syarat Pembayaran DIHAPUS dari form SO
+                    (user: "syarat pembayaran tidak perlu di SO"; pembayaran
+                    kini lewat Pembayaran Termin). PO tetap memakai Syarat Bayar. === */}
+                {!isSales && (
+                  <div className="space-y-1.5">
+                    <Label>Syarat Bayar</Label>
+                    <div className="flex items-start gap-1.5">
+                      <SearchableDropdown
+                        className="min-w-0 flex-1"
+                        value={header.syaratBayarId}
+                        onValueChange={(value) => setField('syaratBayarId', value)}
+                        options={includeCurrent(
+                          terms.map((term) => ({ id: term.id, label: term.nama })),
+                          original?.syaratBayarId,
+                          original?.syaratBayar?.nama
+                        )}
+                        allOption={{ id: '', label: 'Tidak dipilih' }}
+                        disabled={disabled}
+                      />
+                      {/* Update #007: quick add syarat bayar */}
+                      <QuickAddSyaratBayarButton
+                        disabled={disabled}
+                        onCreated={(term) => {
+                          setTerms((prev) => (prev.some((row) => row.id === term.id) ? prev : [...prev, term]));
+                          setField('syaratBayarId', term.id);
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="space-y-1.5">
                   <Label>Currency</Label>
                   {/* Update ASAHI #3: opsi mata uang dinamis dari Pengaturan → Profil Perusahaan */}
@@ -764,6 +797,57 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                 {input('diskonGlobal', 'Diskon Global %', 'number')}
                 {isSales && input('ppn', 'PPN %', 'number')}
               </div>
+              {/* === Update #031 — PEMBAYARAN TERMIN (khusus SO, SETELAH Diskon):
+                  baris-baris nominal saja (mis. 3x pembayaran). Total harus =
+                  Grand Total (divalidasi FE + backend). Create-only; edit = read-only
+                  dengan status bayar per termin. Syarat Pembayaran dihapus dari SO. === */}
+              {isSales && (
+                <div className="space-y-2 rounded-md border p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Label>Pembayaran Termin</Label>
+                    {isCreate && !original && (
+                      <Button variant="outline" size="sm" disabled={disabled} onClick={() => setTermins((prev) => [...prev, { key: crypto.randomUUID(), nominal: '' }])}>
+                        <Plus className="mr-2 h-4 w-4" /> Tambah Termin
+                      </Button>
+                    )}
+                  </div>
+                  {original ? (
+                    /* Edit: tampilkan termin tersimpan + status bayarnya. */
+                    <div className="space-y-1 text-sm">
+                      {/* Blok ini hanya dirender saat isSales (kind="sales") —
+                          cast ke SalesOrderResponse agar terminTotal/terminDibayar
+                          (field khusus SO, Update #031) terbaca TypeScript. */}
+                      {(original as SalesOrderResponse).terminTotal && Number((original as SalesOrderResponse).terminTotal) > 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Termin tersimpan: <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminDibayar ?? 0, original.currency)}</span> dari <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminTotal ?? 0, original.currency)}</span> sudah dibayar (detail pembayaran terlihat di modul Kas &amp; Bank; termin tidak dapat diubah setelah SO dibuat).
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">SO ini dibuat tanpa termin pembayaran.</p>
+                      )}
+                    </div>
+                  ) : termins.length > 0 ? (
+                    <div className="space-y-2">
+                      {termins.map((row, index) => (
+                        <div className="flex items-center gap-2" key={row.key}>
+                          <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">Termin {index + 1}</span>
+                          <CurrencyInput aria-label={`Nominal termin ${index + 1}`} placeholder="Nominal" allowDecimal value={row.nominal} disabled={disabled} onValueChange={(value) => setTermins((prev) => prev.map((item) => (item.key === row.key ? { ...item, nominal: value } : item)))} />
+                          <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setTermins((prev) => prev.filter((item) => item.key !== row.key))} aria-label={`Hapus termin ${index + 1}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      <div className="flex flex-wrap justify-between gap-2 border-t pt-2 text-xs">
+                        <span className="text-muted-foreground">
+                          Total termin: <span className="font-mono font-semibold text-foreground">{formatOrderMoney(terminTotal, header.currency)}</span> · Grand Total (perkiraan): <span className="font-mono">{formatOrderMoney(liveGrandTotal, header.currency)}</span>
+                        </span>
+                        {Math.abs(terminTotal - liveGrandTotal) > 0.05 && <span className="font-medium text-destructive">Total termin harus sama dengan Grand Total</span>}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Opsional — pecahan pembayaran SO (mis. DP 40%, sisanya saat kirim). Satu SO bisa dipanggil berkali-kali untuk pembayaran di form Penerimaan (Kas &amp; Bank → jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice.</p>
+                  )}
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="order-keterangan">Keterangan</Label>
                 <Textarea id="order-keterangan" value={header.keterangan} onChange={(event) => setField('keterangan', event.target.value)} disabled={disabled} />
@@ -779,7 +863,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                 </Button>
                 {!readOnly && (
                   <Button onClick={save} disabled={disabled}>
-                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Simpan Pesanan
+                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isSales ? 'Simpan Sales Order' : 'Simpan Pesanan'}
                   </Button>
                 )}
               </div>

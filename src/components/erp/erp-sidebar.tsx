@@ -84,7 +84,9 @@ const modules: NavModule[] = [
     icon: TrendingUp,
     subPages: [
       { id: 'penawaran', label: 'Penawaran', icon: FileText },
-      { id: 'pesanan', label: 'Pesanan', icon: ClipboardList },
+      // Update #031 — label tab penjualan: "Pesanan" → "Sales Order"
+      // (nyambung dari Penawaran; modul Pembelian tetap "Pesanan").
+      { id: 'pesanan', label: 'Sales Order', icon: ClipboardList },
       { id: 'pengiriman', label: 'Pengiriman', icon: Truck },
       { id: 'invoice', label: 'Invoice', icon: Receipt },
       // Tukar Faktur / Tanda Terima (proof of receipt) — update #4, di bawah Invoice

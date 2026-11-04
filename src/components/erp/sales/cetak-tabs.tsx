@@ -113,7 +113,7 @@ export function PesananCetakTab({ id }: { id: string }) {
   }, []);
 
   return (
-    <FormTabShell title={`Cetak Pesanan Penjualan${data ? ` — ${data.nomor}` : ''}`}>
+    <FormTabShell title={`Cetak Sales Order${data ? ` — ${data.nomor}` : ''}`}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={handlePrint} disabled={loading || !!error}>

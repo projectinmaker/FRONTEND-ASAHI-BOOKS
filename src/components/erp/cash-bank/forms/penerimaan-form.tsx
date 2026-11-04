@@ -27,6 +27,10 @@ import { TrendingUp, Loader2, Trash2, Check, ChevronDown, Search, Info, ListRest
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { JenisTransaksiSelector, JenisTransaksiBadge } from '@/components/erp/cash-bank/forms/jenis-transaksi-selector';
 import { EmbeddedSettlementForm } from '@/components/erp/pelunasan';
+// === Update #031 — form embedded pembayaran termin Sales Order (jenis
+// TERMIN_SO: pilih SO → termin belum dibayar → akun lawan default Uang Muka
+// Penjualan; satu SO bisa dipanggil berkali-kali). ===
+import { SoTerminForm } from '@/components/erp/cash-bank/forms/so-termin-form';
 import type { KasBankAkunResponse, COADropdownResponse, PenerimaanKasResponse, PenerimaanKasCreate, PenerimaanKasUpdate, JenisTransaksiKas, NomorPreviewResponse } from '@/types/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -331,6 +335,9 @@ export default function PenerimaanForm({ mode, id }: Props) {
   const [editJenisTransaksi, setEditJenisTransaksi] = useState<string>('');
 
   const isPelunasanInvoice = jenisTransaksi === 'PELUNASAN_INVOICE';
+  // === Update #031 — jenis Pembayaran Termin SO (alur embedded, self-contained
+  // seperti Pelunasan Invoice). ===
+  const isTerminSo = jenisTransaksi === 'TERMIN_SO';
 
   // ── Update #13 (Kas & Bank) — kembali ke kartu pilihan Jenis Transaksi dari
   // alur Pelunasan Invoice. dirty dilaporkan EmbeddedSettlementForm; isian
@@ -407,9 +414,11 @@ export default function PenerimaanForm({ mode, id }: Props) {
 
   // === Update #16 — preview nomor dokumen berikutnya (form ala Accurate).
   // PB ASI/YYYY/NNN untuk Penerimaan Lain; di-refetch saat tahun tanggal
-  // berubah. Indikatif — nomor final di-generate backend saat create. ===
+  // berubah. Indikatif — nomor final di-generate backend saat create.
+  // (Update #031 — skip untuk jenis embedded: Pelunasan Invoice / Termin SO
+  // punya preview nomor masing-masing di komponen embedded-nya.) ===
   useEffect(() => {
-    if (isEdit) return;
+    if (isEdit || isPelunasanInvoice || isTerminSo) return;
     let cancelled = false;
     setNomorPreviewLoading(true);
     api
@@ -426,7 +435,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [isEdit, tanggal]);
+  }, [isEdit, isPelunasanInvoice, isTerminSo, tanggal]);
 
   // ── Fetch edit data ──
   useEffect(() => {
@@ -603,6 +612,44 @@ export default function PenerimaanForm({ mode, id }: Props) {
             <AlertDialogHeader>
               <AlertDialogTitle>Kembali ke pilihan Jenis Transaksi?</AlertDialogTitle>
               <AlertDialogDescription>Isian pelunasan Anda sudah tersimpan otomatis sebagai draft — bila nanti memilih &quot;Pelunasan Invoice&quot; kembali, isian akan dipulihkan. Lanjutkan ganti jenis transaksi?</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Batal</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmBackToJenisSelector}>Ya, Ganti Jenis</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </FormTabShell>
+    );
+  }
+
+  // ── Update #031 — jenis Pembayaran Termin SO: alur embedded self-contained
+  // (pilih SO → termin belum dibayar → akun lawan default Uang Muka Penjualan).
+  // Struktur mirror cabang Pelunasan Invoice di atas. ──
+  if (isCreate && isTerminSo) {
+    return (
+      <FormTabShell title="Tambah Penerimaan — Pembayaran Termin SO">
+        <div className="max-w-5xl space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+            <div className="flex items-center gap-1.5 text-sm">
+              <Info className="h-4 w-4 text-amber-600" aria-hidden="true" />
+              <span className="text-muted-foreground">Jenis Transaksi:</span>
+              <JenisTransaksiBadge jenis="TERMIN_SO" />
+            </div>
+            <Button variant="outline" size="sm" className="gap-2" onClick={handleBackToJenisSelector}>
+              <ListRestart className="h-4 w-4" aria-hidden="true" />
+              Ganti Jenis Transaksi
+            </Button>
+          </div>
+          <SoTerminForm onFinished={handleClose} onDirtyChange={setSettlementDirty} />
+        </div>
+
+        {/* Konfirmasi bila isian termin SO sudah terisi (SO/termin dipilih ulang bila kembali) */}
+        <AlertDialog open={backConfirmOpen} onOpenChange={setBackConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Kembali ke pilihan Jenis Transaksi?</AlertDialogTitle>
+              <AlertDialogDescription>Pilihan SO dan termin Anda akan direset — lanjutkan ganti jenis transaksi?</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Batal</AlertDialogCancel>

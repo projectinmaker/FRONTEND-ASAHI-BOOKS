@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FileText, Plus, Trash2, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info } from 'lucide-react';
+import { FileText, Plus, Trash2, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info, Package, Type } from 'lucide-react';
 import { formatRp, formatDate, todayStr, generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { useDefaultTaxRates } from '@/lib/use-default-rates';
@@ -30,7 +30,7 @@ import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 import { PenawaranPDFTemplate, type PenawaranData, type DetailRow, type BiayaTambahan } from '@/components/erp/sales/pdf-templates';
-import type { PenawaranResponse, PenawaranCreate, PenawaranDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, BarangResponse, SatuanResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+import type { PenawaranResponse, PenawaranCreate, PenawaranDetailCreate, PelangganDropdown, SyaratBayarResponse, BarangDropdown, BarangResponse, SatuanResponse, TransaksiBiayaCreate, HardDeleteResponse, PenawaranKatalogItemResponse, NomorQuotationPreviewResponse } from '@/types/api';
 // Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 // Update #007 — quick add master data langsung dari form transaksi
@@ -39,6 +39,10 @@ import { QuickAddPelangganButton, QuickAddSyaratBayarButton, QuickAddBarangButto
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 100;
+
+// === Update #031 — pilihan bulan & angka romawi utk No Quotation ===
+const ROMAN_BULAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+const BULAN_OPTIONS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'].map((label, i) => ({ value: String(i + 1), label: `${label} (${ROMAN_BULAN[i]})` }));
 
 // ─── Status Badge (mirror StatusBadge sales/index.tsx, status penawaran) ─────
 
@@ -112,9 +116,16 @@ function Pagination({ skip, total, onNext, onPrev }: { skip: number; total: numb
 
 interface PenawaranFormRow {
   id: string;
+  // === Update #031 — mode baris: MASTER (pilih dari master barang) atau
+  // BEBAS (ketik manual — item penawaran yang belum ada di master/gudang;
+  // tersimpan di katalog penawaran, tidak masuk master data). ===
+  bebas: boolean;
   barangId: string;
   kodeBarang: string;
   barangNama: string;
+  itemNama: string;
+  itemSatuan: string;
+  katalogId: string;
   satuanId: string;
   satuanNama: string;
   harga: string;
@@ -129,7 +140,7 @@ interface PenawaranBiayaRow {
 }
 
 function newFormRow(): PenawaranFormRow {
-  return { id: crypto.randomUUID(), barangId: '', kodeBarang: '', barangNama: '', satuanId: '', satuanNama: '', harga: '', qty: '1', diskon: '0' };
+  return { id: crypto.randomUUID(), bebas: false, barangId: '', kodeBarang: '', barangNama: '', itemNama: '', itemSatuan: '', katalogId: '', satuanId: '', satuanNama: '', harga: '', qty: '1', diskon: '0' };
 }
 
 function newBiayaRow(): PenawaranBiayaRow {
@@ -143,7 +154,7 @@ function includeCurrent(options: SearchableDropdownOption[], id?: string | null,
 
 // ─── Detail Table (barang + satuan + harga + diskon + subtotal) ─────────────
 
-function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions, onBarangCreated, onSatuanCreated }: { rows: PenawaranFormRow[]; setRows: Dispatch<SetStateAction<PenawaranFormRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; onBarangCreated?: (barang: BarangResponse) => void; onSatuanCreated?: (satuan: SatuanResponse) => void }) {
+function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions, katalogItems, onBarangCreated, onSatuanCreated }: { rows: PenawaranFormRow[]; setRows: Dispatch<SetStateAction<PenawaranFormRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; katalogItems: PenawaranKatalogItemResponse[]; onBarangCreated?: (barang: BarangResponse) => void; onSatuanCreated?: (satuan: SatuanResponse) => void }) {
   const addRow = useCallback(() => setRows((p) => [...p, newFormRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
   // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add.
@@ -169,12 +180,33 @@ function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions, onB
     },
     [setRows, satuanOptions]
   );
+  // === Update #031 — terapkan item KATALOG ke baris bebas (klik saran): isi
+  // nama + satuan + harga terakhir (item berulang → buat penawaran lebih cepat).
+  const applyKatalog = useCallback(
+    (id: string, item: PenawaranKatalogItemResponse) => {
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.id !== id) return r;
+          const harga = Number(item.harga);
+          return {
+            ...r,
+            bebas: true,
+            itemNama: item.nama,
+            itemSatuan: item.satuanNama || r.itemSatuan,
+            katalogId: item.id,
+            ...(harga > 0 ? { harga: String(harga) } : {})
+          };
+        })
+      );
+    },
+    [setRows]
+  );
   const updateRow = useCallback(
-    (id: string, field: keyof PenawaranFormRow, value: string) => {
+    (id: string, field: keyof PenawaranFormRow, value: string | boolean) => {
       if (field === 'barangId') {
         applyBarang(
           id,
-          value,
+          String(value),
           barangOptions.find((b) => b.id === value)
         );
         return;
@@ -184,24 +216,39 @@ function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions, onB
           if (r.id !== id) return r;
           if (field === 'satuanId') {
             const found = satuanOptions.find((s) => s.id === value);
-            return { ...r, satuanId: value, satuanNama: found?.nama || '' };
+            return { ...r, satuanId: String(value), satuanNama: found?.nama || '' };
           }
-          return { ...r, [field]: value };
+          // Update #031 — nama item bebas diketik manual → lepas link katalog.
+          if (field === 'itemNama') {
+            return { ...r, itemNama: String(value), katalogId: r.itemNama === String(value) ? r.katalogId : '' };
+          }
+          return { ...r, [field]: value } as PenawaranFormRow;
         })
       );
     },
     [setRows, barangOptions, satuanOptions, applyBarang]
   );
+  // === Update #031 — toggle mode baris: MASTER ↔ BEBAS (nilai kolom lain
+  // dipertahankan supaya bisa bolak-balik tanpa kehilangan isian). ===
+  const toggleMode = useCallback(
+    (id: string) => {
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, bebas: !r.bebas } : r)));
+    },
+    [setRows]
+  );
 
   return (
     <div className="space-y-3">
-      <div className="max-h-64 overflow-y-auto rounded-md border">
+      <div className="max-h-72 overflow-y-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/50">
-              <TableHead className="w-[100px]">Kode Barang</TableHead>
-              <TableHead className="min-w-[200px]">Nama Barang</TableHead>
-              <TableHead className="w-[120px]">Satuan</TableHead>
+              <TableHead className="w-[54px]" title="Mode baris: master barang / item bebas">
+                Mode
+              </TableHead>
+              <TableHead className="w-[90px]">Kode Barang</TableHead>
+              <TableHead className="min-w-[220px]">Nama Barang / Item</TableHead>
+              <TableHead className="w-[110px]">Satuan</TableHead>
               <TableHead className="w-[120px] text-right">Harga Satuan</TableHead>
               <TableHead className="w-[80px] text-right">Qty</TableHead>
               <TableHead className="w-[90px] text-right">Diskon %</TableHead>
@@ -215,35 +262,69 @@ function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions, onB
               const h = parseFloat(row.harga) || 0;
               const d = parseFloat(row.diskon) || 0;
               const rowSub = q * h * (1 - d / 100);
+              // Update #031 — saran katalog utk baris bebas (maks 5, filter nama).
+              const saran = row.bebas && row.itemNama.trim() ? katalogItems.filter((k) => k.nama.toLowerCase().includes(row.itemNama.trim().toLowerCase()) && k.nama !== row.itemNama).slice(0, 5) : [];
               return (
                 <TableRow key={row.id}>
-                  <TableCell className="font-mono text-xs">{row.kodeBarang || '-'}</TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
-                      <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
-                      {/* Update #007: quick add barang langsung di baris */}
-                      <QuickAddBarangButton
-                        compact
-                        onCreated={(b) => {
-                          const drop = toBarangDropdown(b);
-                          onBarangCreated?.(b);
-                          applyBarang(row.id, b.id, drop, b.satuan?.nama);
-                        }}
-                      />
-                    </div>
+                    <Button variant="ghost" size="icon" className={row.bebas ? 'h-7 w-7 text-amber-600' : 'h-7 w-7 text-muted-foreground'} onClick={() => toggleMode(row.id)} title={row.bebas ? 'Item bebas (ketik manual — tidak di master). Klik untuk pilih dari master barang.' : 'Pilih dari master barang. Klik untuk ketik item bebas.'} aria-label={row.bebas ? 'Ganti ke mode master barang' : 'Ganti ke mode item bebas'}>
+                      {row.bebas ? <Type className="h-3.5 w-3.5" /> : <Package className="h-3.5 w-3.5" />}
+                    </Button>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {row.bebas ? (
+                      <span className="text-muted-foreground" title="Item bebas — tanpa kode master">
+                        bebas
+                      </span>
+                    ) : (
+                      row.kodeBarang || '-'
+                    )}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
-                      <SearchableDropdown className="min-w-0 flex-1" value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} allOption={{ id: '', label: 'Tidak dipilih' }} placeholder="Pilih..." compact />
-                      {/* Update #007: quick add satuan langsung di baris */}
-                      <QuickAddSatuanButton
-                        compact
-                        onCreated={(s) => {
-                          onSatuanCreated?.(s);
-                          updateRow(row.id, 'satuanId', s.id);
-                        }}
-                      />
-                    </div>
+                    {row.bebas ? (
+                      <div className="space-y-1">
+                        <Input className="h-8 text-xs" value={row.itemNama} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} placeholder="Nama item (bebas — mis. Fabrication Work)" aria-label="Nama item bebas" />
+                        {saran.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {saran.map((k) => (
+                              <button key={k.id} type="button" onClick={() => applyKatalog(row.id, k)} className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800 hover:bg-amber-100" title={`Pakai item katalog: ${k.nama}${k.satuanNama ? ` · ${k.satuanNama}` : ''} · ${formatRp(Number(k.harga) || 0)}`}>
+                                {k.nama}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                        {/* Update #007: quick add barang langsung di baris */}
+                        <QuickAddBarangButton
+                          compact
+                          onCreated={(b) => {
+                            const drop = toBarangDropdown(b);
+                            onBarangCreated?.(b);
+                            applyBarang(row.id, b.id, drop, b.satuan?.nama);
+                          }}
+                        />
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {row.bebas ? (
+                      <Input className="h-8 text-xs" value={row.itemSatuan} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} placeholder="mis. lot" aria-label="Satuan item bebas" />
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <SearchableDropdown className="min-w-0 flex-1" value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} allOption={{ id: '', label: 'Tidak dipilih' }} placeholder="Pilih..." compact />
+                        {/* Update #007: quick add satuan langsung di baris */}
+                        <QuickAddSatuanButton
+                          compact
+                          onCreated={(s) => {
+                            onSatuanCreated?.(s);
+                            updateRow(row.id, 'satuanId', s.id);
+                          }}
+                        />
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <CurrencyInput className="h-8 text-right text-xs" value={row.harga} onValueChange={(v) => updateRow(row.id, 'harga', v)} />
@@ -265,7 +346,7 @@ function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions, onB
             })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="h-16 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="h-16 text-center text-muted-foreground">
                   Belum ada item. Klik &quot;+ Tambah Baris&quot; untuk menambahkan.
                 </TableCell>
               </TableRow>
@@ -273,10 +354,13 @@ function PenawaranDetailTable({ rows, setRows, barangOptions, satuanOptions, onB
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center">
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="outline" size="sm" className="h-8 text-xs" onClick={addRow}>
           <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Baris
         </Button>
+        <p className="text-[11px] text-muted-foreground">
+          Klik ikon <Package className="inline h-3 w-3" /> untuk berganti mode: <span className="font-medium">master barang</span> ↔ <span className="font-medium">item bebas</span> (diketik manual — belum ada di gudang; tersimpan otomatis di katalog penawaran supaya item berulang tinggal dipilih lagi).
+        </p>
       </div>
     </div>
   );
@@ -462,7 +546,7 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
     [cancelTarget, fetchData]
   );
 
-  // ── Buat SO: konversi penawaran DRAFT → Pesanan Penjualan ──
+  // ── Buat SO: konversi penawaran DRAFT → Sales Order ──
   const [soTarget, setSoTarget] = useState<PenawaranResponse | null>(null);
   const [soSubmitting, setSoSubmitting] = useState(false);
 
@@ -471,13 +555,13 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
     setSoSubmitting(true);
     try {
       const res = await api.post<{ salesOrderId: string; noPesanan: string }>(`/penjualan/penawaran/${soTarget.id}/to-sales-order`);
-      toast.success(`Pesanan Penjualan ${res.noPesanan} berhasil dibuat`);
+      toast.success(`Sales Order ${res.noPesanan} berhasil dibuat`);
       setSoTarget(null);
       fetchData();
       // SO baru muncul di tab list Pesanan — refresh juga list tersebut.
       refreshListTab('sales', 'pesanan');
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.detail : 'Gagal membuat pesanan penjualan');
+      toast.error(e instanceof ApiError ? e.detail : 'Gagal membuat Sales Order');
     } finally {
       setSoSubmitting(false);
     }
@@ -595,7 +679,7 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
-                    <TableHead className="w-[150px]">No Penawaran</TableHead>
+                    <TableHead className="w-[150px]">No Quotation</TableHead>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
                     <TableHead className="w-[110px]">Berlaku Hingga</TableHead>
                     <TableHead>Pelanggan</TableHead>
@@ -664,7 +748,7 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
                             </Button>
                             {d.status === 'DRAFT' && (
                               <>
-                                <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setSoTarget(d)} title="Konversi ke Pesanan Penjualan">
+                                <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setSoTarget(d)} title="Konversi ke Sales Order">
                                   Buat SO
                                 </Button>
                                 <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
@@ -706,9 +790,9 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
         }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Buat Pesanan Penjualan?</AlertDialogTitle>
+            <AlertDialogTitle>Buat Sales Order?</AlertDialogTitle>
             <AlertDialogDescription>
-              Penawaran <span className="font-mono font-semibold text-foreground">{soTarget?.noPenawaran}</span> akan dikonversi menjadi Pesanan Penjualan baru. Setelah dikonversi, status penawaran berubah menjadi <strong>Selesai</strong> dan tidak dapat dikonversi ulang.
+              Penawaran <span className="font-mono font-semibold text-foreground">{soTarget?.noPenawaran}</span> akan dikonversi menjadi Sales Order baru (langsung final tanpa approval). Setelah dikonversi, status penawaran berubah menjadi <strong>Selesai</strong> dan tidak dapat dikonversi ulang.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -720,7 +804,7 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
               }}
               disabled={soSubmitting}>
               {soSubmitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Ya, Buat Pesanan
+              Ya, Buat Sales Order
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -754,11 +838,20 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   useEffect(() => {
     if (defaultRates) setFPpn(defaultRates.ppn);
   }, [defaultRates]);
-  // ── Update #003: No. PO customer + singkatan — dibawa ke SO saat konversi ──
-  const [fCustomerPoNumber, setFCustomerPoNumber] = useState('');
+  // ── Update #003: singkatan customer — ditarik dari master pelanggan. ──
+  // (Update #031: field LOCKED read-only — ambil data dari master data.)
   const [fCustomerCode, setFCustomerCode] = useState('');
+  // ── Update #031 — No Quotation: user hanya input BULAN & TAHUN; nomor urut
+  // otomatis per pelanggan (reset tahunan), bulan romawi, singkatan master. ──
+  const now = new Date();
+  const [fBulan, setFBulan] = useState(String(now.getMonth() + 1));
+  const [fTahun, setFTahun] = useState(String(now.getFullYear()));
+  const [nomorPreview, setNomorPreview] = useState('');
+  const [nomorPreviewLoading, setNomorPreviewLoading] = useState(false);
   const [fDetail, setFDetail] = useState<PenawaranFormRow[]>([newFormRow()]);
   const [fBiayaTambahan, setFBiayaTambahan] = useState<PenawaranBiayaRow[]>([]);
+  // ── Update #031 — katalog item bebas (saran item berulang) ──
+  const [katalogItems, setKatalogItems] = useState<PenawaranKatalogItemResponse[]>([]);
 
   // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis
   // dari master (tidak perlu input manual lagi; tetap bisa disunting).
@@ -791,12 +884,14 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     async function load() {
       setDdLoading(true);
       try {
-        const [pelanggan, syaratBayar, barang, satuan] = await Promise.all([api.get<PelangganDropdown[]>('/master/pelanggan-dropdown'), api.get<SyaratBayarResponse[]>('/master/syarat-bayar'), api.get<BarangDropdown[]>('/master/barang-dropdown'), api.get<SatuanResponse[]>('/master/satuan')]);
+        const [pelanggan, syaratBayar, barang, satuan, katalog] = await Promise.all([api.get<PelangganDropdown[]>('/master/pelanggan-dropdown'), api.get<SyaratBayarResponse[]>('/master/syarat-bayar'), api.get<BarangDropdown[]>('/master/barang-dropdown'), api.get<SatuanResponse[]>('/master/satuan'), api.get<PenawaranKatalogItemResponse[]>('/penjualan/penawaran/katalog?limit=100')]);
         if (cancelled) return;
         setPelangganOptions(pelanggan);
         setSyaratBayarOptions(syaratBayar);
         setBarangOptions(barang);
         setSatuanOptions(satuan);
+        // Update #031 — katalog item bebas (saran item berulang)
+        setKatalogItems(Array.isArray(katalog) ? katalog : []);
       } catch {
         // Silently fail — dropdowns will be empty
       } finally {
@@ -808,6 +903,33 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
       cancelled = true;
     };
   }, []);
+
+  // === Update #031 — preview No Quotation (pola "No. Dokumen" form
+  // Penerimaan #16): refetch saat pelanggan / bulan / tahun berubah. Hanya
+  // mode create — nomor final ditetapkan backend saat simpan. ===
+  useEffect(() => {
+    if (editId) return;
+    if (!fPelangganId || !fBulan || !fTahun) {
+      setNomorPreview('');
+      return;
+    }
+    let cancelled = false;
+    setNomorPreviewLoading(true);
+    api
+      .get<NomorQuotationPreviewResponse>(`/penjualan/penawaran/next-nomor?pelanggan_id=${fPelangganId}&bulan=${fBulan}&tahun=${fTahun}`)
+      .then((res) => {
+        if (!cancelled) setNomorPreview(res.nomor);
+      })
+      .catch(() => {
+        if (!cancelled) setNomorPreview('');
+      })
+      .finally(() => {
+        if (!cancelled) setNomorPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, fPelangganId, fBulan, fTahun]);
 
   // ── Edit mode: muat & prefill dokumen ──
   useEffect(() => {
@@ -829,16 +951,22 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         setFSyaratBayarId(p.syaratBayarId || '');
         setFAlamatPengiriman(p.alamatPengiriman || '');
         setFKeterangan(p.keterangan || '');
-        setFCustomerPoNumber(p.customerPoNumber || '');
+        // Update #031 — singkatan snapshot dokumen (field locked; No. PO
+        // customer dihapus dari form — nomor PO diisi di SO bila perlu).
         setFCustomerCode(p.customerCode || '');
         setFDiskonGlobal(String(Number(p.diskonGlobal) || 0));
         setFPpn(String(Number(p.ppn) || 0));
         setFDetail(
           (p.details || []).map((r) => ({
             id: crypto.randomUUID(),
-            barangId: r.barangId,
+            // Update #031 — baris item bebas (barangId null + itemNama)
+            bebas: !r.barangId && !!r.itemNama,
+            barangId: r.barangId || '',
             kodeBarang: r.barang?.kode || '',
             barangNama: r.barang?.nama || '',
+            itemNama: r.itemNama || '',
+            itemSatuan: r.itemSatuan || '',
+            katalogId: r.katalogId || '',
             satuanId: r.satuanId || '',
             satuanNama: r.satuan?.nama || '',
             harga: String(Number(r.harga) || 0),
@@ -906,20 +1034,42 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     const errs: Record<string, string> = {};
     if (!fPelangganId) errs.pelangganId = 'Pelanggan wajib diisi';
     if (!fTanggal) errs.tanggal = 'Tanggal wajib diisi';
-    if (!fDetail.some((r) => r.barangId && (parseFloat(r.qty) || 0) > 0)) errs.detail = 'Minimal 1 baris dengan barang dan qty > 0';
+    // Update #031 — baris valid: master (barangId) ATAU bebas (itemNama), qty > 0.
+    if (!fDetail.some((r) => (r.bebas ? r.itemNama.trim() : r.barangId) && (parseFloat(r.qty) || 0) > 0)) {
+      errs.detail = 'Minimal 1 baris dengan item (master atau bebas) dan qty > 0';
+    }
+    if (fDetail.some((r) => r.bebas && !r.itemNama.trim() && (parseFloat(r.qty) || 0) > 0)) {
+      errs.detail = 'Baris item bebas wajib memiliki nama item';
+    }
+    if (!editId && (!fBulan || !fTahun)) errs.bulan = 'Bulan & tahun nomor Quotation wajib diisi';
     if (Object.keys(errs).length) {
       setFormErrors(errs);
       return;
     }
     setSubmitting(true);
     try {
+      // Update #031 — baris master ATAU bebas (item bebas → katalog penawaran,
+      // tidak masuk master data).
       const details: PenawaranDetailCreate[] = fDetail
-        .filter((r) => r.barangId)
+        .filter((r) => (r.bebas ? r.itemNama.trim() : r.barangId) && (parseFloat(r.qty) || 0) > 0)
         .map((r) => {
           const qty = parseFloat(r.qty) || 0;
           const harga = parseFloat(r.harga) || 0;
           const diskon = parseFloat(r.diskon) || 0;
-          return { barangId: r.barangId, satuanId: r.satuanId || null, qty, harga, diskon, subTotal: qty * harga * (1 - diskon / 100) };
+          if (r.bebas) {
+            return {
+              barangId: null,
+              katalogId: r.katalogId || null,
+              itemNama: r.itemNama.trim(),
+              itemSatuan: r.itemSatuan.trim() || null,
+              satuanId: null,
+              qty,
+              harga,
+              diskon,
+              subTotal: qty * harga * (1 - diskon / 100)
+            };
+          }
+          return { barangId: r.barangId, katalogId: null, itemNama: null, itemSatuan: null, satuanId: r.satuanId || null, qty, harga, diskon, subTotal: qty * harga * (1 - diskon / 100) };
         });
       const biaya: TransaksiBiayaCreate[] = fBiayaTambahan.filter((b) => b.nama).map((b) => ({ nama: b.nama, jumlah: parseFloat(b.jumlah) || 0 }));
       const body: PenawaranCreate = {
@@ -929,15 +1079,19 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         syaratBayarId: fSyaratBayarId || null,
         alamatPengiriman: fAlamatPengiriman || null,
         keterangan: fKeterangan || null,
-        // Update #003 — dibawa ke SO saat konversi
-        customerPoNumber: fCustomerPoNumber.trim() || null,
-        customerCode: fCustomerCode.trim() || null,
+        // Update #031 — singkatan & nomor urut OTOMATIS dari backend (master
+        // pelanggan); No. PO customer field dihapus dari form penawaran.
         mataUang: 'IDR',
         diskonGlobal: parseFloat(fDiskonGlobal) || 0,
         ppn: parseFloat(fPpn) || 0,
         details,
         biayaTambahan: biaya.length > 0 ? biaya : undefined
       };
+      if (!editId) {
+        // Update #031 — No Quotation: user hanya input bulan & tahun.
+        body.bulan = parseInt(fBulan, 10);
+        body.tahun = parseInt(fTahun, 10);
+      }
       if (editId) {
         await api.put<PenawaranResponse>(`/penjualan/penawaran/${editId}`, body);
         toast.success('Penawaran berhasil diperbarui');
@@ -952,7 +1106,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     } finally {
       setSubmitting(false);
     }
-  }, [editId, fPelangganId, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fCustomerPoNumber, fCustomerCode, fDiskonGlobal, fPpn, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [editId, fPelangganId, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fBulan, fTahun, fDiskonGlobal, fPpn, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
 
   const loading = ddLoading || editLoading;
 
@@ -976,7 +1130,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
             <div className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-4 py-3">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Info className="h-3.5 w-3.5" />
-                <span>No Penawaran:</span>
+                <span>No Quotation:</span>
                 <span className="font-mono font-semibold text-foreground">{editNoPenawaran}</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -991,6 +1145,9 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
           )}
 
           {readOnly && <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Penawaran berstatus {editStatus || '-'}. Hanya penawaran DRAFT yang dapat diubah; form ini menjadi baca saja.</p>}
+          {/* Update #031 — revisi penawaran = edit DRAFT (opsi user); pelanggan &
+              No Quotation terkunci setelah dibuat. */}
+          {editId && !readOnly && <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">Mode revisi: pelanggan & No Quotation tidak bisa diganti (bagian dari nomor dokumen). Perubahan item/harga/diskon/biaya tetap tersimpan.</p>}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
@@ -1008,11 +1165,11 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
                     editPelangganNama
                   )}
                   placeholder="Pilih pelanggan..."
-                  disabled={readOnly}
+                  disabled={readOnly || !!editId}
                 />
                 {/* Update #007: quick add pelanggan — field & simpan sama seperti master data */}
                 <QuickAddPelangganButton
-                  disabled={readOnly}
+                  disabled={readOnly || !!editId}
                   onCreated={(p) => {
                     const drop = toPelangganDropdown(p);
                     setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
@@ -1068,19 +1225,50 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               </div>
             </div>
           </div>
-          {/* ── Update #003: Nomor PO + Singkatan Customer — supaya SO hasil
-              konversi langsung lengkap (No PO terisi, nomor SO pakai
-              segmen singkatan). ── */}
+          {/* ── Update #031: No Quotation (preview otomatis ala form Penerimaan)
+              + Bulan & Tahun (satu-satunya input nomor) + Singkatan Customer
+              TERKUNCI dari master pelanggan. Field Nomor PO dihapus. ── */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Nomor PO (Customer)</Label>
-              <Input className="h-9 text-xs" value={fCustomerPoNumber} onChange={(e) => setFCustomerPoNumber(e.target.value)} placeholder="mis. PO-CUST-001 (opsional)" maxLength={50} disabled={readOnly} />
-              <p className="text-[11px] text-muted-foreground">No. PO dari customer — dibawa ke Sales Order saat penawaran dikonversi.</p>
+              <Label className="text-xs font-medium">Bulan (No Quotation)</Label>
+              <Select value={fBulan} onValueChange={(v) => setFBulan(v)} disabled={!!editId || readOnly}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Pilih bulan…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {BULAN_OPTIONS.map((b) => (
+                    <SelectItem key={b.value} value={b.value}>
+                      {b.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">Segmen bulan nomor Quotation (angka romawi, mis. Oktober → X).</p>
+              {formErrors.bulan && <p className="text-xs text-destructive mt-1">{formErrors.bulan}</p>}
             </div>
             <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Tahun (No Quotation)</Label>
+              <Input type="number" className="h-9 text-xs" value={fTahun} min={2000} max={2100} onChange={(e) => setFTahun(e.target.value)} disabled={!!editId || readOnly} />
+              <p className="text-[11px] text-muted-foreground">Nomor urut reset per tahun, per pelanggan.</p>
+            </div>
+          </div>
+          {!editId && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">No Quotation</Label>
+              <div className="relative">
+                <Input readOnly value={nomorPreviewLoading ? 'Memuat nomor…' : nomorPreview || (fPelangganId ? 'Otomatis saat disimpan' : 'Pilih pelanggan dulu…')} className="font-mono bg-muted/50 pr-9 text-xs" />
+                <FileText className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Format QUOT ASI/003/{fCustomerCode || 'singkatan'}/{ROMAN_BULAN[parseInt(fBulan, 10) - 1] || 'I'}/{fTahun} — nomor urut otomatis per pelanggan (reset tahunan); nomor final terbit saat disimpan.
+              </p>
+            </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
               <Label className="text-xs font-medium">Singkatan Customer</Label>
-              <Input className="h-9 text-xs uppercase" value={fCustomerCode} onChange={(e) => setFCustomerCode(e.target.value)} placeholder="mis. TBI" maxLength={20} disabled={readOnly} />
-              <p className="text-[11px] text-muted-foreground">Otomatis dari master pelanggan — dipakai segmen nomor SO hasil konversi (SO ASI/TBI/2026/001). Tanpa karakter "/".</p>
+              <Input className="h-9 text-xs uppercase bg-muted/50" value={fCustomerCode} readOnly placeholder="otomatis dari master pelanggan" aria-readonly />
+              <p className="text-[11px] text-muted-foreground">TERKUNCI — otomatis dari master data pelanggan (segmen nomor Quotation & SO hasil konversi). Ubah lewat master Pelanggan bila perlu.</p>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -1100,6 +1288,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               setRows={setFDetail}
               barangOptions={effectiveBarangOptions}
               satuanOptions={effectiveSatuanOptions}
+              katalogItems={katalogItems}
               onBarangCreated={(b) => {
                 setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
                 // Satuan barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan host.
@@ -1159,15 +1348,16 @@ function mapPenawaranData(d: PenawaranResponse): PenawaranData {
     alamatPenerima: d.alamatPengiriman || '',
     syaratPembayaran: d.syaratBayar?.nama || '',
     keterangan: d.keterangan || '',
-    // Update #003: No. PO customer ikut dicetak di kepala dokumen
+    // Update #031: No. PO customer field dihapus dari penawaran; item bebas
+    // tampil namanya (fallback saat barang null).
     noPo: d.customerPoNumber || '',
     detail: (d.details || []).map<DetailRow>((r) => ({
       id: r.id,
-      barang: r.barang?.nama || '',
+      barang: r.barang?.nama || r.itemNama || '',
       harga: Number(r.harga) || 0,
       qty: Number(r.qty) || 0,
       diskon: Number(r.diskon) || 0,
-      satuan: r.satuan?.nama || ''
+      satuan: r.satuan?.nama || r.itemSatuan || ''
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,

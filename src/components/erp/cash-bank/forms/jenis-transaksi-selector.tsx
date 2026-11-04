@@ -32,6 +32,18 @@ export function jenisTransaksiOptions(jenisDokumen: 'penerimaan' | 'pembayaran')
       description: isPenerimaan ? 'Pilih pelanggan → invoice penjualan outstanding → nominal → posting ke akun piutang & Kas/Bank' : 'Pilih supplier → invoice pembelian outstanding → nominal → posting ke akun hutang & Kas/Bank',
       icon: HandCoins
     },
+    // === Update #031 — Pembayaran Termin SO (penerimaan saja): satu SO bisa
+    // dipanggil berkali-kali; tiap penerimaan membayar SATU termin. ===
+    ...(isPenerimaan
+      ? [
+          {
+            value: 'TERMIN_SO' as JenisTransaksiKas,
+            title: 'Pembayaran Termin SO',
+            description: 'Pilih Sales Order → termin belum dibayar (DP / cicilan) → nominal → posting ke Uang Muka Penjualan & Kas/Bank',
+            icon: ReceiptText
+          }
+        ]
+      : []),
     {
       value: 'TRANSAKSI_LAINNYA',
       title: 'Transaksi Lainnya',
@@ -79,6 +91,9 @@ export function JenisTransaksiBadge({ jenis }: { jenis: string }) {
   switch (jenis) {
     case 'PELUNASAN_INVOICE':
       return <Badge className="border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-100">Pelunasan Invoice</Badge>;
+    // Update #031 — penerimaan pembayaran termin Sales Order (DP / cicilan).
+    case 'TERMIN_SO':
+      return <Badge className="border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100">Pembayaran Termin SO</Badge>;
     default:
       return <Badge variant="secondary">Transaksi Lainnya</Badge>;
   }
