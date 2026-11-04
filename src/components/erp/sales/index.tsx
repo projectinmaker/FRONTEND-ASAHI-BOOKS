@@ -45,7 +45,7 @@ import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workfl
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { useInvoiceSaldos } from '@/lib/use-invoice-saldos';
-import type { SalesOrderResponse, SalesOrderSisaResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PengirimanSisaResponse, PelangganDropdown, SyaratBayarResponse, BarangDropdown, BarangResponse, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
+import type { SalesOrderResponse, SalesOrderSisaResponse, SalesOrderCreate, SalesOrderUpdate, SalesOrderDetailCreate, SalesInvoiceResponse, SalesInvoiceCreate, SalesInvoiceUpdate, SalesInvoiceDetailCreate, SalesReturResponse, SalesReturCreate, SalesReturUpdate, SalesReturDetailCreate, PengirimanBarangResponse, PengirimanBarangCreate, PengirimanBarangUpdate, PengirimanBarangDetailCreate, PengirimanSisaResponse, PelangganDropdown, SyaratBayarResponse, BarangDropdown, BarangResponse, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse, PenawaranResponse } from '@/types/api';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -1195,6 +1195,66 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// === Update #040 — KOTAK SISA PEMBAYARAN PENAWARAN di form/detail Invoice ===
+// Alur DP bertahap: invoice ini menagih tahap pembayaran dari SO turunan
+// penawaran (mis. DP 70 jt); SISA penawaran (30 jt) adalah cikal bakal SO
+// baru berikutnya dari penawaran yang sama. Info diambil dari endpoint
+// penawaran (#039: grandTotal · dipakaiSoTotal · sisaPenawaran).
+// ═════════════════════════════════════════════════════════════════════════════
+
+interface SoPenawaranInfo {
+  noPenawaran: string;
+  revisiKe: number;
+  nilai: number;
+  sudahJadiSo: number;
+  sisa: number;
+  mataUang: string;
+}
+
+async function fetchSoPenawaranInfo(penawaranId: string): Promise<SoPenawaranInfo | null> {
+  try {
+    const p = await api.get<PenawaranResponse>(`/penjualan/penawaran/${penawaranId}`);
+    return {
+      noPenawaran: p.noPenawaran || '',
+      revisiKe: Number(p.revisiKe) || 1,
+      nilai: Number(p.grandTotal) || 0,
+      sudahJadiSo: Number(p.dipakaiSoTotal) || 0,
+      sisa: Number(p.sisaPenawaran) || 0,
+      mataUang: p.mataUang || 'IDR'
+    };
+  } catch {
+    return null;
+  }
+}
+
+function SoPenawaranCard({ info }: { info: SoPenawaranInfo }) {
+  const negatif = info.sisa < 0;
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs" role="status">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <Info className="h-3.5 w-3.5 text-amber-600" aria-hidden="true" />
+        <span className="font-medium text-foreground">Sisa Pembayaran dari Penawaran</span>
+        <span className="text-muted-foreground">·</span>
+        <span className="font-mono font-medium">
+          {info.noPenawaran}
+          {info.revisiKe > 1 ? ` Rev. ${info.revisiKe}` : ''}
+        </span>
+      </div>
+      <p className="mt-1 text-muted-foreground">
+        Nilai penawaran <span className="font-mono font-medium text-foreground">{formatRp(info.nilai)}</span>
+        <span> · sudah jadi SO </span>
+        <span className="font-mono font-medium text-foreground">{formatRp(info.sudahJadiSo)}</span>
+        <span> · sisa pembayaran </span>
+        <span className={`font-mono font-semibold ${negatif ? 'text-amber-700' : 'text-emerald-700'}`} title={negatif ? 'SO-SO turunan melebihi nilai penawaran' : undefined}>
+          {formatRp(info.sisa)}
+        </span>{' '}
+        — invoice ini menagih tahap berjalan; sisa dibayar lewat SO baru dari penawaran yang sama.
+      </p>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // FORM: Invoice Penjualan Create
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1239,15 +1299,20 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
 
   // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
   const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
+  // === Update #040 — info penawaran sumber SO (kotak Sisa Pembayaran). ===
+  const [soPenawaranInfo, setSoPenawaranInfo] = useState<SoPenawaranInfo | null>(null);
 
   // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}).
   // Dipakai saat SO dipilih manual maupun saat draft dipulihkan (salesOrderId tersimpan).
+  // Update #040 — sekaligus muat kartu Sisa Pembayaran bila SO berasal dari penawaran. ===
   const loadSoRefInfo = useCallback(async (soId: string) => {
     try {
       const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
       setSoRefInfo({ noPesanan: so.noPesanan || '', customerPoNumber: so.customerPoNumber || '' });
+      setSoPenawaranInfo(so.penawaranId ? await fetchSoPenawaranInfo(so.penawaranId) : null);
     } catch {
       setSoRefInfo(null);
+      setSoPenawaranInfo(null);
     }
   }, []);
 
@@ -1324,6 +1389,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFSalesOrderId('');
     setFPengirimanId('');
     setSoRefInfo(null);
+    setSoPenawaranInfo(null);
     setFTanggal(todayStr());
     setFAlamatPengiriman('');
     setFPpn('11');
@@ -1350,6 +1416,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       setFPengirimanId('');
       if (!soId) {
         setSoRefInfo(null);
+        setSoPenawaranInfo(null);
         return;
       }
       setSoLoading(true);
@@ -1415,6 +1482,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         } else {
           setFSalesOrderId('');
           setSoRefInfo(null);
+          setSoPenawaranInfo(null);
         }
         const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
         if (rows.length === 0) {
@@ -1588,6 +1656,10 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
                   No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
                 </div>
               )}
+              {/* === Update #040 — kotak SISA PEMBAYARAN penawaran sumber SO:
+                  tracking alur DP bertahap (invoice ini = tahap berjalan;
+                  sisa = cikal bakal SO baru dari penawaran yang sama). === */}
+              {soPenawaranInfo && <SoPenawaranCard info={soPenawaranInfo} />}
             </div>
             {/* === Update #004: No DO — tarik data DO seperti No SO; baris DO
                 masuk ke table invoice (link deliveryDetailId). === */}
@@ -1731,14 +1803,19 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   const [soLoading, setSoLoading] = useState(false);
   // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
   const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
+  // === Update #040 — info penawaran sumber SO (kotak Sisa Pembayaran). ===
+  const [soPenawaranInfo, setSoPenawaranInfo] = useState<SoPenawaranInfo | null>(null);
 
-  // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}). ===
+  // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}).
+  // Update #040 — sekaligus muat kartu Sisa Pembayaran bila SO berasal dari penawaran. ===
   const loadSoRefInfo = useCallback(async (soId: string) => {
     try {
       const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
       setSoRefInfo({ noPesanan: so.noPesanan || '', customerPoNumber: so.customerPoNumber || '' });
+      setSoPenawaranInfo(so.penawaranId ? await fetchSoPenawaranInfo(so.penawaranId) : null);
     } catch {
       setSoRefInfo(null);
+      setSoPenawaranInfo(null);
     }
   }, []);
 
@@ -1764,12 +1841,16 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         setEditKeterangan(inv.keterangan || '');
         // Update #4: info box No SO · No PO dari response invoice (salesOrder nested);
         // fallback fetch bila header ter-link tapi nested tidak ikut terkirim.
+        // Update #040 — nested kini membawa penawaranId (backend #040): kotak
+        // Sisa Pembayaran dimuat dari situ tanpa fetch SO tambahan.
         if (inv.salesOrder?.noPesanan) {
           setSoRefInfo({ noPesanan: inv.salesOrder.noPesanan, customerPoNumber: inv.salesOrder.customerPoNumber || '' });
+          setSoPenawaranInfo(inv.salesOrder.penawaranId ? await fetchSoPenawaranInfo(inv.salesOrder.penawaranId) : null);
         } else if (inv.salesOrderId) {
           await loadSoRefInfo(inv.salesOrderId);
         } else {
           setSoRefInfo(null);
+          setSoPenawaranInfo(null);
         }
       } catch (e) {
         toast.error(e instanceof ApiError ? e.detail : 'Gagal memuat data invoice');
@@ -1793,6 +1874,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
       setEditSalesOrderId(soId);
       if (!soId) {
         setSoRefInfo(null);
+        setSoPenawaranInfo(null);
         return;
       }
       setSoLoading(true);
@@ -1923,6 +2005,9 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                       No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
                     </div>
                   )}
+                  {/* === Update #040 — kotak SISA PEMBAYARAN penawaran sumber SO
+                      (tracking alur DP bertahap; sisa = cikal bakal SO baru). === */}
+                  {soPenawaranInfo && <SoPenawaranCard info={soPenawaranInfo} />}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Mata Uang</Label>

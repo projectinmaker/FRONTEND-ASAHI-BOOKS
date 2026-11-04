@@ -569,11 +569,12 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
   // ── Buat SO dari penawaran ──
   // === Update #033 — tombol "Buat SO" kini MEMBUKA FORM SO yang sudah
   // terisi penuh dari penawaran (pelanggan terkunci + seluruh item & biaya),
-  // BUKAN lagi membuat SO langsung lewat API. Alasan: Pembayaran Termin
-  // (pecahan beberapa kali bayar) hanya bisa diatur saat MENYIMPAN SO di
-  // form — jalur lama melewati form sehingga SO tercatat "sekali bayar grand
-  // total" tanpa termin dan tidak bisa dibayar per-cicilan di Kas & Bank.
-  // Repeat order tetap jalan: penawaran DRAFT/SELESAI boleh dipakai lagi. ===
+  // BUKAN lagi membuat SO langsung lewat API. Repeat order tetap jalan:
+  // penawaran DRAFT/SELESAI boleh dipakai lagi.
+  // === Update #040 — panduan termin dihapus (fitur Pembayaran Termin SO
+  // dihapus): nilai SO disesuaikan sesuai tahap pembayaran (mis. sebesar DP),
+  // pembayaran murni lewat Invoice; sisa pembayaran → SO BARU lagi dari
+  // penawaran yang sama (lihat kartu Sisa Penawaran / #039). ===
   const handleBuatSo = useCallback(
     (d: PenawaranResponse) => {
       const rev = d.revisiKe && d.revisiKe > 1 ? ` Rev. ${d.revisiKe}` : '';
@@ -585,7 +586,7 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
         formProps: { penawaranId: d.id }
       });
       toast.info(`Form Sales Order terbuka dengan isian ${d.noPenawaran}${rev}`, {
-        description: 'Atur Pembayaran Termin (mis. DP 40% + pelunasan 60% — klik "Tambah Termin") lalu Simpan Sales Order.'
+        description: 'Sesuaikan nilai SO sesuai tahap pembayaran (mis. sebesar DP) lalu Simpan — terbitkan Invoice dari SO ini dan lunasi lewat Pelunasan Invoice. Sisa pembayaran: buat SO baru lagi dari penawaran yang sama.'
       });
     },
     [openFormTab]

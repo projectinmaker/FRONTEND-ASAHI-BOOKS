@@ -71,16 +71,13 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
   // Update #002: daftar SO untuk kolom "Keterangan SO" per baris PO (tracking
   // item ke SO — satu PO bisa memuat baris dari beberapa SO berbeda).
   const [soRows, setSoRows] = useState<SalesOrderResponse[]>([]);
-  // === Update #031 — Pembayaran Termin (khusus SO): baris-baris nominal.
-  // Create-only (edit menampilkan ringkasan read-only dari server). ===
-  const [termins, setTermins] = useState<{ key: string; nominal: string }[]>([]);
-  const terminTotal = useMemo(() => termins.reduce((sum, row) => sum + (Number(row.nominal) || 0), 0), [termins]);
   // === Update #033 — termin tersimpan (mode edit/detail SO): baris per
-  // termin + status bayarnya, diambil dari endpoint termin SO. ===
+  // termin + status bayarnya, diambil dari endpoint termin SO.
+  // === Update #040 — INPUT termin di form create DIHAPUS: pembayaran murni
+  // lewat Invoice (alur DP bertahap: SO sebesar DP → invoice → lunas; sisa →
+  // SO baru dari penawaran sama → invoice baru). State ini hanya untuk
+  // HISTORI SO lama yang punya termin (read-only). ===
   const [savedTermins, setSavedTermins] = useState<SoTerminResponse[]>([]);
-  // === Update #033 — konfirmasi "simpan tanpa termin" (SO create): mencegah
-  // SO tercatat "sekali bayar grand total" tanpa sengaja. ===
-  const [confirmNoTermin, setConfirmNoTermin] = useState(false);
   // === Update #032 — "Pilih Penawaran" di form SO (create-only): daftar
   // penawaran DRAFT/SELESAI (SELESAI = repeat order). Saat dipilih → pelanggan
   // terisi & terkunci + seluruh item (barang master & item bebas) + harga
@@ -363,12 +360,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
       });
       setLines(mapped.length ? mapped : [newOrderLine()]);
       setCosts((p.biayaTambahan || []).map((b) => ({ key: crypto.randomUUID(), nama: b.nama || '', jumlah: String(Number(b.jumlah) || 0) })));
-      setTermins([]);
       // Update #033 — silent: dipakai auto-tarik dari tombol "Buat SO"
       // (penawaran.tsx sudah menampilkan toast sendiri).
       if (!opts?.silent) {
         toast.info(`Item penawaran ${p.noPenawaran}${rev} ditarik ke form`, {
-          description: `${(p.details || []).length} baris — barang master & item bebas apa adanya.${p.digunakanCount ? ` Penawaran sudah dipakai ${p.digunakanCount}× SO (repeat order).` : ''} Atur Pembayaran Termin di bawah sebelum simpan.`
+          description: `${(p.details || []).length} baris — barang master & item bebas apa adanya.${p.digunakanCount ? ` Penawaran sudah dipakai ${p.digunakanCount}× SO (repeat order).` : ''} Sesuaikan nilai SO sesuai tahap pembayaran — lihat Sisa Penawaran di bawah (Update #040: pembayaran lewat Invoice, tanpa termin).`
         });
       }
     } catch (e) {
@@ -433,31 +429,18 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
       setError('Alamat pengiriman wajib dipilih — centang satu gudang tujuan.');
       return;
     }
-    // === Update #031 — validasi Pembayaran Termin (SO, create): tiap baris
-    // nominal > 0. Update #035 — TERMIN BEBAS: total TIDAK lagi diwajibkan
-    // = Grand Total (nominal ditentukan user; selisih ditampilkan sebagai
-    // catatan non-blocking di form, bukan error). ===
-    const terminNominals = isSales && !original ? termins.map((row) => Number(row.nominal) || 0) : [];
-    if (isSales && !original && termins.some((row) => (Number(row.nominal) || 0) <= 0)) {
-      setError('Nominal setiap baris Pembayaran Termin harus lebih dari 0 — hapus baris yang kosong atau isi nominalnya.');
-      return;
-    }
-    // === Update #033 — guardrail: SO create TANPA termin → konfirmasi dulu.
-    // Termin (pecahan beberapa kali bayar) hanya bisa diatur saat membuat SO;
-    // tanpa konfirmasi, SO mudah tercatat "sekali bayar grand total" dan
-    // tidak bisa dibayar per-cicilan di Kas & Bank. ===
-    if (isSales && !original && termins.length === 0) {
-      setConfirmNoTermin(true);
-      return;
-    }
+    // === Update #040 — validasi & guardrail Pembayaran Termin (SO create,
+    // #031/#033/#035) DIHAPUS bersama inputnya: pembayaran murni lewat
+    // Invoice (Pelunasan), tanpa konfirmasi "tanpa termin" lagi. ===
     await submitOrder();
   }
 
   // === Update #033 — submitOrder: badan penyimpanan (dipisah dari save()
-  // supaya konfirmasi "tanpa termin" bisa melanjutkan kemari). ===
+  // supaya konfirmasi "tanpa termin" bisa melanjutkan kemari).
+  // Update #040 — konfirmasi itu sudah tidak ada; submitOrder tetap dipisah
+  // supaya bentuk pemanggilan tidak berubah. ===
   async function submitOrder() {
     if (disabled || submittingRef.current) return;
-    const terminNominals = isSales && !original ? termins.map((row) => Number(row.nominal) || 0) : [];
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -467,8 +450,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
             ...serializeOrderHeader(kind, header),
             details: serializeOrderLines(lines),
             biayaTambahan: costs.filter((cost) => cost.nama.trim()).map((cost) => ({ nama: cost.nama.trim(), jumlah: Number(cost.jumlah) })),
-            // Update #031 — Pembayaran Termin (SO create; edit tidak mengubah termin).
-            ...(isSales && terminNominals.length > 0 ? { pembayaranTermin: terminNominals } : {}),
+            // Update #040 — payload pembayaranTermin (#031) DIHAPUS: SO baru
+            // tidak lagi membawa termin; pembayaran lewat alur Invoice.
             // Update #032 — link penawaran sumber (repeat order; SO manual tanpa link).
             ...(isSales && penawaranId ? { penawaranId } : {})
           };
@@ -1091,115 +1074,71 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                 {input('diskonGlobal', 'Diskon Global %', 'number')}
                 {isSales && input('ppn', 'PPN %', 'number')}
               </div>
-              {/* === Update #031 — PEMBAYARAN TERMIN (khusus SO, SETELAH Diskon):
-                  baris-baris nominal saja (mis. 3x pembayaran). Update #035 —
-                  TERMIN BEBAS: nominal ditentukan user; total TIDAK diwajibkan =
-                  Grand Total (selisih jadi catatan info, bukan error). Create-only;
-                  edit = read-only dengan status bayar per termin. Syarat Pembayaran
-                  dihapus dari SO. === */}
-              {isSales && (
+              {/* === Update #040 — BLOK PEMBAYARAN TERMIN (SO) kini HANYA
+                  HISTORI (edit/detail SO lama yang dibuat sebelum #040).
+                  Input termin di form create DIHAPUS penuh (#031→#035):
+                  pembayaran murni lewat Invoice — SO sebesar DP → invoice →
+                  dilunasi (Pelunasan Invoice); sisa pembayaran → SO baru
+                  dari penawaran yang sama → invoice baru (lihat blok Sisa
+                  Penawaran di atas, #039). SO baru tidak lagi punya termin. === */}
+              {isSales && original && (
                 <div className="space-y-2 rounded-md border p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <Label>Pembayaran Termin</Label>
-                    {isCreate && !original && (
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {/* === Update #039 — tombol Bagi 2 / Bagi 3 (bagi cepat
-                            #034) DIHAPUS atas permintaan user: termin murni
-                            input bebas (Tambah Termin + nominal manual). === */}
-                        <Button variant="outline" size="sm" disabled={disabled} onClick={() => setTermins((prev) => [...prev, { key: crypto.randomUUID(), nominal: '' }])}>
-                          <Plus className="mr-2 h-4 w-4" /> Tambah Termin
-                        </Button>
-                      </div>
+                    <Badge variant="outline" className="border-muted-foreground/30 text-[10px] text-muted-foreground">
+                      Histori — fitur dihapus (Update #040)
+                    </Badge>
+                  </div>
+                  <div className="space-y-1.5">
+                    {savedTermins.length > 0 ? (
+                      <>
+                        <p className="text-xs text-muted-foreground">
+                          Pembayaran dipecah <span className="font-medium text-foreground">{savedTermins.length} termin</span> — SO ini dibuat sebelum Update #040 (fitur termin dihapus). Penerimaan termin lama tetap tercatat di Kas &amp; Bank dan tetap bisa dibatalkan; pembayaran lanjutan untuk SO ini dilakukan lewat Invoice.
+                        </p>
+                        <div className="max-h-44 overflow-y-auto rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-muted/50">
+                                <TableHead className="w-[80px]">Termin</TableHead>
+                                <TableHead className="text-right">Nominal</TableHead>
+                                <TableHead>Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {savedTermins.map((t) => (
+                                <TableRow key={t.id}>
+                                  <TableCell className="text-xs font-medium">{t.urutan}</TableCell>
+                                  <TableCell className="text-right font-mono text-xs font-medium">{formatOrderMoney(Number(t.nominal) || 0, original.currency)}</TableCell>
+                                  <TableCell>
+                                    {t.penerimaanKasId ? (
+                                      <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100" title={t.noBuktiPenerimaan || undefined}>
+                                        Dibayar{t.noBuktiPenerimaan ? ` · ${t.noBuktiPenerimaan}` : ''}
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="outline">Belum dibayar</Badge>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </>
+                    ) : (
+                      /* Fallback ringkasan (cast ke SalesOrderResponse agar
+                         terminTotal/terminDibayar — field khusus SO, Update
+                         #031 — terbaca TypeScript). */
+                      <>
+                        {(original as SalesOrderResponse).terminTotal && Number((original as SalesOrderResponse).terminTotal) > 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            Termin tersimpan: <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminDibayar ?? 0, original.currency)}</span> dari <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminTotal ?? 0, original.currency)}</span> sudah dibayar (detail pembayaran terlihat di modul Kas &amp; Bank).
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">SO ini tanpa termin pembayaran — pembayaran lewat alur Invoice: terbitkan Invoice dari SO ini lalu lunasi lewat Pelunasan Invoice (Kas &amp; Bank).</p>
+                        )}
+                      </>
                     )}
                   </div>
-                  {original ? (
-                    /* Edit/detail — Update #033: daftar BARIS termin tersimpan
-                       (urutan/nominal/status bayar) — struktur "beberapa kali
-                       pembayaran" terlihat jelas; fallback ringkasan bila
-                       daftar belum termuat. */
-                    <div className="space-y-1.5">
-                      {savedTermins.length > 0 ? (
-                        <>
-                          <p className="text-xs text-muted-foreground">
-                            Pembayaran dipecah <span className="font-medium text-foreground">{savedTermins.length} termin</span> — dibayar satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Termin tidak dapat diubah setelah SO dibuat.
-                          </p>
-                          <div className="max-h-44 overflow-y-auto rounded-md border">
-                            <Table>
-                              <TableHeader>
-                                <TableRow className="bg-muted/50">
-                                  <TableHead className="w-[80px]">Termin</TableHead>
-                                  <TableHead className="text-right">Nominal</TableHead>
-                                  <TableHead>Status</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {savedTermins.map((t) => (
-                                  <TableRow key={t.id}>
-                                    <TableCell className="text-xs font-medium">{t.urutan}</TableCell>
-                                    <TableCell className="text-right font-mono text-xs font-medium">{formatOrderMoney(Number(t.nominal) || 0, original.currency)}</TableCell>
-                                    <TableCell>
-                                      {t.penerimaanKasId ? (
-                                        <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100" title={t.noBuktiPenerimaan || undefined}>
-                                          Dibayar{t.noBuktiPenerimaan ? ` · ${t.noBuktiPenerimaan}` : ''}
-                                        </Badge>
-                                      ) : (
-                                        <Badge variant="outline">Belum dibayar</Badge>
-                                      )}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </>
-                      ) : (
-                        /* Fallback ringkasan (cast ke SalesOrderResponse agar
-                           terminTotal/terminDibayar — field khusus SO, Update
-                           #031 — terbaca TypeScript). */
-                        <>
-                          {(original as SalesOrderResponse).terminTotal && Number((original as SalesOrderResponse).terminTotal) > 0 ? (
-                            <p className="text-xs text-muted-foreground">
-                              Termin tersimpan: <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminDibayar ?? 0, original.currency)}</span> dari <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminTotal ?? 0, original.currency)}</span> sudah dibayar (detail pembayaran terlihat di modul Kas &amp; Bank; termin tidak dapat diubah setelah SO dibuat).
-                            </p>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">SO ini dibuat tanpa termin pembayaran — pembayaran hanya lewat alur Invoice (tidak bisa per-cicilan lewat Kas &amp; Bank).</p>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  ) : termins.length > 0 ? (
-                    <div className="space-y-2">
-                      {termins.map((row, index) => (
-                        <div className="flex items-center gap-2" key={row.key}>
-                          <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">Termin {index + 1}</span>
-                          <CurrencyInput aria-label={`Nominal termin ${index + 1}`} placeholder="Nominal" allowDecimal value={row.nominal} disabled={disabled} onValueChange={(value) => setTermins((prev) => prev.map((item) => (item.key === row.key ? { ...item, nominal: value } : item)))} />
-                          {/* Update #034 — porsi baris terhadap Grand Total (membantu
-                              mis. "DP 40%, pelunasan 60%"); hanya saat keduanya > 0. */}
-                          {Number(row.nominal) > 0 && liveGrandTotal > 0 && (
-                            <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground" title="Porsi baris ini terhadap Grand Total">
-                              ≈ {((Number(row.nominal) / liveGrandTotal) * 100).toFixed(1).replace('.', ',')}%
-                            </span>
-                          )}
-                          <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setTermins((prev) => prev.filter((item) => item.key !== row.key))} aria-label={`Hapus termin ${index + 1}`}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                      <div className="flex flex-wrap justify-between gap-2 border-t pt-2 text-xs">
-                        <span className="text-muted-foreground">
-                          Total termin: <span className="font-mono font-semibold text-foreground">{formatOrderMoney(terminTotal, header.currency)}</span> · Grand Total (perkiraan): <span className="font-mono">{formatOrderMoney(liveGrandTotal, header.currency)}</span>
-                        </span>
-                        {/* Update #035 — TERMIN BEBAS: total ≠ Grand Total TIDAK lagi
-                            error. < GT → info sisa via Invoice; > GT → warning amber
-                            (diperbolehkan — keputusan user); = GT → konfirmasi hijau. */}
-                        {Math.abs(terminTotal - liveGrandTotal) <= 0.05 ? <span className="font-medium text-emerald-700">✓ Pas dengan Grand Total</span> : terminTotal < liveGrandTotal ? <span className="text-muted-foreground">Bebas — sisa {formatOrderMoney(liveGrandTotal - terminTotal, header.currency)} dibayar lewat alur Invoice</span> : <span className="font-medium text-amber-700">Melebihi Grand Total {formatOrderMoney(terminTotal - liveGrandTotal, header.currency)} — pastikan disengaja</span>}
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Klik <span className="font-medium text-foreground">Tambah Termin</span> lalu isi nominalnya sendiri — bebas ditentukan Anda (mis. Termin 1 = DP 5.000.000 saja; total tidak harus sama dengan Grand Total — sisanya mengikuti alur Invoice). Tiap termin dibayarkan satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice. Alur DP bertahap dari satu penawaran: SO ini sebesar DP → turunkan invoice-nya; sisa pembayaran bikin SO baru lagi dari penawaran yang sama → invoice baru.
-                    </p>
-                  )}
                 </div>
               )}
               <div className="space-y-1.5">
@@ -1226,32 +1165,10 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
           )}
         </CardContent>
       </Card>
-      {/* === Update #033 — konfirmasi simpan SO TANPA termin (guardrail):
-          termin beberapa kali bayar hanya bisa diatur saat membuat SO. === */}
-      <AlertDialog
-        open={confirmNoTermin}
-        onOpenChange={(o) => {
-          if (!o) setConfirmNoTermin(false);
-        }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Simpan Sales Order tanpa Pembayaran Termin?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Termin adalah pecahan pembayaran SO menjadi beberapa kali bayar (mis. Termin 1 = DP 40% saat order, Termin 2 = pelunasan 60% saat kirim). Termin hanya bisa diatur <strong>sekarang, saat SO dibuat</strong> — tidak bisa ditambahkan setelahnya. SO tanpa termin tetap sah, tetapi tidak bisa dibayar per-cicilan lewat Kas &amp; Bank (jenis Pembayaran Termin SO); pembayarannya hanya lewat alur Invoice.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmNoTermin(false)}>Atur Termin Dulu</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setConfirmNoTermin(false);
-                void submitOrder();
-              }}>
-              Ya, Simpan Tanpa Termin
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* === Update #040 — dialog konfirmasi "Simpan SO tanpa Pembayaran
+          Termin" (#033) DIHAPUS bersama input termin: SO baru memang tanpa
+          termin (pembayaran lewat Invoice) — tidak ada lagi yang perlu
+          dikonfirmasi. === */}
       <AlertDialog
         open={!!error}
         onOpenChange={(open) => {

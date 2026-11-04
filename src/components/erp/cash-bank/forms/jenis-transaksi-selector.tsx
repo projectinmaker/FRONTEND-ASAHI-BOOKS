@@ -10,6 +10,11 @@
  *    di Pembayaran (pilih supplier → invoice pembelian outstanding).
  * 2. TRANSAKSI_LAINNYA — penerimaan modal, pendapatan lain, biaya operasional,
  *    transaksi non-invoice; akun lawan dipilih dari COA (rincian).
+ *
+ * === Update #040 — opsi "Pembayaran Termin SO" (TERMIN_SO, #031) DIHAPUS
+ * dari pilihan penerimaan baru: penerimaan dari pelanggan kini murni lewat
+ * Invoice (Pelunasan Invoice). Badge histori TERMIN_SO tetap dipertahankan
+ * (JenisTransaksiBadge) supaya dokumen LAMA tetap terbaca jenisnya. ===
  */
 
 import { cn } from '@/lib/utils';
@@ -32,18 +37,9 @@ export function jenisTransaksiOptions(jenisDokumen: 'penerimaan' | 'pembayaran')
       description: isPenerimaan ? 'Pilih pelanggan → invoice penjualan outstanding → nominal → posting ke akun piutang & Kas/Bank' : 'Pilih supplier → invoice pembelian outstanding → nominal → posting ke akun hutang & Kas/Bank',
       icon: HandCoins
     },
-    // === Update #031 — Pembayaran Termin SO (penerimaan saja): satu SO bisa
-    // dipanggil berkali-kali; tiap penerimaan membayar SATU termin. ===
-    ...(isPenerimaan
-      ? [
-          {
-            value: 'TERMIN_SO' as JenisTransaksiKas,
-            title: 'Pembayaran Termin SO',
-            description: 'Pilih Sales Order → termin belum dibayar (DP / cicilan) → nominal → posting ke Uang Muka Penjualan & Kas/Bank',
-            icon: ReceiptText
-          }
-        ]
-      : []),
+    // === Update #040 — opsi TERMIN_SO "Pembayaran Termin SO" (#031) DIHAPUS:
+    // penerimaan dari pelanggan murni lewat Invoice. Draft lama yang kebetulan
+    // menyimpan jenis ini dibersihkan oleh penerimaan-form saat dipulihkan. ===
     {
       value: 'TRANSAKSI_LAINNYA',
       title: 'Transaksi Lainnya',

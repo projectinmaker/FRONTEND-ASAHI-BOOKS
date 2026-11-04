@@ -66,6 +66,17 @@ export interface InvoiceData {
   /** Update #004: dulu "No Surat Jalan" — nomor DO ter-link via delivery detail. */
   noDo: string;
   mataUang: string;
+  // === Update #040 — SISA PEMBAYARAN dari penawaran sumber SO (alur DP
+  // bertahap): invoice ini menagih tahap berjalan (mis. DP); sisa akan
+  // ditagih lewat invoice berikutnya dari SO baru penawaran yang sama.
+  // Undefined = SO manual tanpa penawaran → kotak tidak dicetak. ===
+  penawaran?: {
+    no: string;
+    revisi?: number;
+    nilai: number;
+    sudahJadiSo: number;
+    sisa: number;
+  };
   detail: DetailRow[];
   biayaTambahan: BiayaTambahan[];
   keterangan: string;
@@ -524,6 +535,25 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
           <InfoCell label="Mata Uang" value={data.mataUang} />
         </div>
       </div>
+
+      {/* ── Update #040 — Kotak SISA PEMBAYARAN dari penawaran sumber SO ──
+          (alur DP bertahap: invoice ini menagih tahap berjalan — mis. DP;
+          sisa ditagih lewat invoice berikutnya dari SO baru penawaran sama).
+          Hanya tercetak bila SO ter-link berasal dari penawaran. */}
+      {data.penawaran && (
+        <div style={{ marginBottom: '12px', border: '1px solid #854d0e', padding: '6px 10px', backgroundColor: '#fef3c7' }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>
+            Sisa Pembayaran dari Penawaran {data.penawaran.no}
+            {data.penawaran.revisi && data.penawaran.revisi > 1 ? ` (Rev. ${data.penawaran.revisi})` : ''}
+          </div>
+          <div>
+            Nilai penawaran: {formatNumber(data.penawaran.nilai)} · Sudah jadi SO: {formatNumber(data.penawaran.sudahJadiSo)}
+          </div>
+          <div style={{ marginTop: '2px' }}>
+            Sisa pembayaran: <span style={{ fontWeight: 'bold' }}>{formatNumber(data.penawaran.sisa)}</span> — ditagihkan melalui invoice berikutnya (SO baru dari penawaran yang sama).
+          </div>
+        </div>
+      )}
 
       {/* ── Detail Table ── */}
       <div className="mb-4">

@@ -1045,6 +1045,10 @@ export interface SalesOrderSimple {
   noPesanan: string;
   // === Update #4 — No PO customer (tampil di print invoice/SJ/SO & info form) ===
   customerPoNumber?: string | null;
+  // === Update #040 — sumber penawaran SO (dari SalesOrderSimpleResponse
+  // backend): dipakai form/detail/cetakan Invoice untuk mengambil kartu
+  // SISA PEMBAYARAN penawaran (alur DP bertahap). null = SO manual. ===
+  penawaranId?: string | null;
 }
 
 export interface PurchaseOrderSimple {
