@@ -19,8 +19,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderResponse, PurchaseOrderResponse, MataUangResponse, AlamatPengirimanResponse, PelangganDropdown, SupplierDropdown, PenawaranResponse, PenawaranUntukSoItem } from '@/types/api';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import type { BarangDropdown, SatuanResponse, SyaratBayarResponse, SalesOrderResponse, PurchaseOrderResponse, MataUangResponse, AlamatPengirimanResponse, PelangganDropdown, SupplierDropdown, PenawaranResponse, PenawaranUntukSoItem, SoTerminResponse } from '@/types/api';
 // Update #4 — auto-fill field berkaitan master data saat pelanggan/supplier dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { ORDER_CURRENCY_OPTIONS, buildOrderUpdate, canEditOrder, formatOrderMoney, JENIS_PEMBELIAN_OPTIONS, newOrderHeader, newOrderLine, orderEndpoint, orderHeaderFromResponse, orderLinesFromResponse, persistOrder, serializeOrderHeader, serializeOrderLines, type OrderHeader, type OrderHeaderKey, type OrderKind, type OrderLine, type OrderResponse } from '@/lib/order-documents';
@@ -38,7 +38,7 @@ interface OrderDraftData {
   costs: { key: string; nama: string; jumlah: string }[];
 }
 
-export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }: { kind: OrderKind; editId?: string; subPage?: string }) {
+export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', initialPenawaranId }: { kind: OrderKind; editId?: string; subPage?: string; initialPenawaranId?: string }) {
   const isSales = kind === 'sales';
   const tabModule = isSales ? 'sales' : 'purchasing';
   // Update #031 — label dokumen penjualan: "Pesanan Penjualan" → "Sales Order"
@@ -75,6 +75,12 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   // Create-only (edit menampilkan ringkasan read-only dari server). ===
   const [termins, setTermins] = useState<{ key: string; nominal: string }[]>([]);
   const terminTotal = useMemo(() => termins.reduce((sum, row) => sum + (Number(row.nominal) || 0), 0), [termins]);
+  // === Update #033 — termin tersimpan (mode edit/detail SO): baris per
+  // termin + status bayarnya, diambil dari endpoint termin SO. ===
+  const [savedTermins, setSavedTermins] = useState<SoTerminResponse[]>([]);
+  // === Update #033 — konfirmasi "simpan tanpa termin" (SO create): mencegah
+  // SO tercatat "sekali bayar grand total" tanpa sengaja. ===
+  const [confirmNoTermin, setConfirmNoTermin] = useState(false);
   // === Update #032 — "Pilih Penawaran" di form SO (create-only): daftar
   // penawaran DRAFT/SELESAI (SELESAI = repeat order). Saat dipilih → pelanggan
   // terisi & terkunci + seluruh item (barang master & item bebas) + harga
@@ -182,11 +188,37 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     };
   }, [isSales, isCreate]);
 
+  // === Update #033 — muat daftar termin tersimpan (mode edit/detail SO):
+  // baris per termin (urutan/nominal/status bayar) — memperjelas struktur
+  // "beberapa kali pembayaran" pada SO yang sudah dibuat. ===
+  const originalTerminSoId = original?.id;
+  useEffect(() => {
+    if (!isSales || !originalTerminSoId) {
+      setSavedTermins([]);
+      return;
+    }
+    let active = true;
+    api
+      .get<SoTerminResponse[]>(`/penjualan/sales-order/${originalTerminSoId}/termin`)
+      .then((rows) => {
+        if (active) setSavedTermins(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (active) setSavedTermins([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isSales, originalTerminSoId]);
+
   // ── Draft otomatis: pulihkan sekali saat mount (hanya create + ada draft) ──
   const restoredRef = useRef(false);
   useEffect(() => {
     if (!isCreate || restoredRef.current) return;
     restoredRef.current = true;
+    // Update #033 — form dibuka lewat tombol "Buat SO" (dari daftar
+    // penawaran): isian ditarik dari penawaran — draft lama diabaikan.
+    if (initialPenawaranId) return;
     const d = draft.draft;
     if (!d) return;
     // Merge dengan default: draft lama (sebelum fitur PPh23/PPN) tidak
@@ -288,7 +320,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
   // diskon, biaya tambahan, header terisi. Repeat order: penawaran SELESAI
   // tetap bisa dipilih lagi (tiap SO dapat nomor SO sendiri).
   // ══════════════════════════════════════════════════════════════════
-  const handlePilihPenawaran = async (id: string) => {
+  const handlePilihPenawaran = async (id: string, opts?: { silent?: boolean }) => {
     setPenawaranId(id);
     setPenawaranDetail(null);
     if (!id) return;
@@ -330,9 +362,13 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
       setLines(mapped.length ? mapped : [newOrderLine()]);
       setCosts((p.biayaTambahan || []).map((b) => ({ key: crypto.randomUUID(), nama: b.nama || '', jumlah: String(Number(b.jumlah) || 0) })));
       setTermins([]);
-      toast.info(`Item penawaran ${p.noPenawaran}${rev} ditarik ke form`, {
-        description: `${(p.details || []).length} baris — barang master & item bebas apa adanya.${p.digunakanCount ? ` Penawaran sudah dipakai ${p.digunakanCount}× SO (repeat order).` : ''}`
-      });
+      // Update #033 — silent: dipakai auto-tarik dari tombol "Buat SO"
+      // (penawaran.tsx sudah menampilkan toast sendiri).
+      if (!opts?.silent) {
+        toast.info(`Item penawaran ${p.noPenawaran}${rev} ditarik ke form`, {
+          description: `${(p.details || []).length} baris — barang master & item bebas apa adanya.${p.digunakanCount ? ` Penawaran sudah dipakai ${p.digunakanCount}× SO (repeat order).` : ''} Atur Pembayaran Termin di bawah sebelum simpan.`
+        });
+      }
     } catch (e) {
       setPenawaranId('');
       toast.error(e instanceof ApiError ? e.detail : 'Gagal memuat penawaran');
@@ -348,6 +384,19 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     setPenawaranDetail(null);
     toast.info('Pilihan penawaran dilepas', { description: 'Data yang sudah ditarik tetap ada di form — bebas diedit.' });
   };
+
+  // === Update #033 — AUTO-TARIK penawaran saat form dibuka lewat tombol
+  // "Buat SO" di daftar penawaran (formProps.penawaranId → prop ini).
+  // Pelanggan terkunci + seluruh item/biaya terisi otomatis → user langsung
+  // mengatur Pembayaran Termin (beberapa kali bayar) sebelum menyimpan.
+  // Sekali saja saat mount (sebelum #033 tombol itu membuat SO langsung —
+  // termin tidak pernah sempat diatur, SO jadi "sekali bayar grand total"). ===
+  const initialPenawaranPulled = useRef(false);
+  useEffect(() => {
+    if (!isSales || !isCreate || !initialPenawaranId || initialPenawaranPulled.current) return;
+    initialPenawaranPulled.current = true;
+    void handlePilihPenawaran(initialPenawaranId, { silent: true });
+  }, []);
 
   // Update #032 — toggle mode baris (sales create/edit-DRAFT): master ↔ bebas.
   const toggleLineMode = (key: string) => {
@@ -396,6 +445,22 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
         return;
       }
     }
+    // === Update #033 — guardrail: SO create TANPA termin → konfirmasi dulu.
+    // Termin (pecahan beberapa kali bayar) hanya bisa diatur saat membuat SO;
+    // tanpa konfirmasi, SO mudah tercatat "sekali bayar grand total" dan
+    // tidak bisa dibayar per-cicilan di Kas & Bank. ===
+    if (isSales && !original && termins.length === 0) {
+      setConfirmNoTermin(true);
+      return;
+    }
+    await submitOrder();
+  }
+
+  // === Update #033 — submitOrder: badan penyimpanan (dipisah dari save()
+  // supaya konfirmasi "tanpa termin" bisa melanjutkan kemari). ===
+  async function submitOrder() {
+    if (disabled || submittingRef.current) return;
+    const terminNominals = isSales && !original ? termins.map((row) => Number(row.nominal) || 0) : [];
     submittingRef.current = true;
     setSubmitting(true);
     try {
@@ -418,6 +483,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
         savedId.current = order.id;
         setOriginal(order);
         refreshListTab(tabModule, subPage);
+        // Update #033 — SO dari penawaran → refresh daftar penawaran juga
+        // (status → SELESAI + badge "dipakai N× SO" langsung terlihat).
+        if (isSales && penawaranId) refreshListTab('sales', 'penawaran');
       });
       if (mismatches.length) {
         setError(`Dokumen ${saved.noPesanan} sudah tersimpan, tetapi server belum menyimpan perubahan pada: ${mismatches.join(', ')}. Isian tetap tersedia untuk diperiksa. Hubungi administrator sebelum melanjutkan.`);
@@ -490,6 +558,25 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
     }
     return options;
   }, [isSales, soRows, original]);
+
+  // === Update #033 — opsi dropdown penawaran: pastikan penawaran terpilih
+  // (ditarik otomatis dari tombol "Buat SO") tetap tampil labelnya walau
+  // belum ada di daftar (daftar masih dimuat / gagal dimuat). ===
+  const penawaranDropdownOptions = useMemo(() => {
+    const options: SearchableDropdownOption[] = penawaranOptions.map((p) => ({
+      id: p.id,
+      label: `${p.noPenawaran}${p.revisiKe > 1 ? ` (Rev. ${p.revisiKe})` : ''}`,
+      subtitle: `${p.pelangganNama || '-'} · ${p.jumlahItem} item · dipakai ${p.digunakanCount}× SO${p.status === 'SELESAI' ? ' · repeat order' : ' · draft'}`
+    }));
+    if (penawaranDetail && !options.some((option) => option.id === penawaranDetail.id)) {
+      options.unshift({
+        id: penawaranDetail.id,
+        label: `${penawaranDetail.noPenawaran}${penawaranDetail.revisiKe > 1 ? ` (Rev. ${penawaranDetail.revisiKe})` : ''}`,
+        subtitle: penawaranDetail.pelanggan?.nama || '-'
+      });
+    }
+    return options;
+  }, [penawaranOptions, penawaranDetail]);
 
   // ── Update ASAHI (PPh23/PPN opsional) — preview total PO mengikuti
   // pilihan pajak (rumus sama dengan backend: DPP + PPN + biaya − PPh23). ──
@@ -576,19 +663,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                         Pilih Penawaran <span className="text-[11px] font-normal text-muted-foreground">(opsional)</span>
                       </Label>
                       <div className="flex items-center gap-1.5">
-                        <SearchableDropdown
-                          className="min-w-0 flex-1"
-                          value={penawaranId}
-                          onValueChange={handlePilihPenawaran}
-                          options={penawaranOptions.map((p) => ({
-                            id: p.id,
-                            label: `${p.noPenawaran}${p.revisiKe > 1 ? ` (Rev. ${p.revisiKe})` : ''}`,
-                            subtitle: `${p.pelangganNama || '-'} · ${p.jumlahItem} item · dipakai ${p.digunakanCount}× SO${p.status === 'SELESAI' ? ' · repeat order' : ' · draft'}`
-                          }))}
-                          allOption={{ id: '', label: 'Tanpa penawaran (SO manual)' }}
-                          placeholder={penawaranLoading ? 'Memuat daftar penawaran…' : penawaranOptions.length ? 'Pilih penawaran untuk menarik item…' : 'Belum ada penawaran yang bisa dipilih'}
-                          disabled={disabled || penawaranLoading || penawaranOptions.length === 0}
-                        />
+                        <SearchableDropdown className="min-w-0 flex-1" value={penawaranId} onValueChange={handlePilihPenawaran} options={penawaranDropdownOptions} allOption={{ id: '', label: 'Tanpa penawaran (SO manual)' }} placeholder={penawaranLoading ? 'Memuat daftar penawaran…' : penawaranDropdownOptions.length ? 'Pilih penawaran untuk menarik item…' : 'Belum ada penawaran yang bisa dipilih'} disabled={disabled || penawaranLoading || penawaranDropdownOptions.length === 0} />
                         {penawaranLocked && (
                           <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={lepasPenawaran} title="Lepas pilihan penawaran (data yang sudah ditarik tetap ada)">
                             <Unlink className="mr-1.5 h-3.5 w-3.5" /> Lepas
@@ -993,17 +1068,58 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                     )}
                   </div>
                   {original ? (
-                    /* Edit: tampilkan termin tersimpan + status bayarnya. */
-                    <div className="space-y-1 text-sm">
-                      {/* Blok ini hanya dirender saat isSales (kind="sales") —
-                          cast ke SalesOrderResponse agar terminTotal/terminDibayar
-                          (field khusus SO, Update #031) terbaca TypeScript. */}
-                      {(original as SalesOrderResponse).terminTotal && Number((original as SalesOrderResponse).terminTotal) > 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          Termin tersimpan: <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminDibayar ?? 0, original.currency)}</span> dari <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminTotal ?? 0, original.currency)}</span> sudah dibayar (detail pembayaran terlihat di modul Kas &amp; Bank; termin tidak dapat diubah setelah SO dibuat).
-                        </p>
+                    /* Edit/detail — Update #033: daftar BARIS termin tersimpan
+                       (urutan/nominal/status bayar) — struktur "beberapa kali
+                       pembayaran" terlihat jelas; fallback ringkasan bila
+                       daftar belum termuat. */
+                    <div className="space-y-1.5">
+                      {savedTermins.length > 0 ? (
+                        <>
+                          <p className="text-xs text-muted-foreground">
+                            Pembayaran dipecah <span className="font-medium text-foreground">{savedTermins.length} termin</span> — dibayar satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Termin tidak dapat diubah setelah SO dibuat.
+                          </p>
+                          <div className="max-h-44 overflow-y-auto rounded-md border">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-muted/50">
+                                  <TableHead className="w-[80px]">Termin</TableHead>
+                                  <TableHead className="text-right">Nominal</TableHead>
+                                  <TableHead>Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {savedTermins.map((t) => (
+                                  <TableRow key={t.id}>
+                                    <TableCell className="text-xs font-medium">{t.urutan}</TableCell>
+                                    <TableCell className="text-right font-mono text-xs font-medium">{formatOrderMoney(Number(t.nominal) || 0, original.currency)}</TableCell>
+                                    <TableCell>
+                                      {t.penerimaanKasId ? (
+                                        <Badge className="border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100" title={t.noBuktiPenerimaan || undefined}>
+                                          Dibayar{t.noBuktiPenerimaan ? ` · ${t.noBuktiPenerimaan}` : ''}
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline">Belum dibayar</Badge>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </>
                       ) : (
-                        <p className="text-xs text-muted-foreground">SO ini dibuat tanpa termin pembayaran.</p>
+                        /* Fallback ringkasan (cast ke SalesOrderResponse agar
+                           terminTotal/terminDibayar — field khusus SO, Update
+                           #031 — terbaca TypeScript). */
+                        <>
+                          {(original as SalesOrderResponse).terminTotal && Number((original as SalesOrderResponse).terminTotal) > 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              Termin tersimpan: <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminDibayar ?? 0, original.currency)}</span> dari <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminTotal ?? 0, original.currency)}</span> sudah dibayar (detail pembayaran terlihat di modul Kas &amp; Bank; termin tidak dapat diubah setelah SO dibuat).
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">SO ini dibuat tanpa termin pembayaran — pembayaran hanya lewat alur Invoice (tidak bisa per-cicilan lewat Kas &amp; Bank).</p>
+                          )}
+                        </>
                       )}
                     </div>
                   ) : termins.length > 0 ? (
@@ -1025,7 +1141,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
                       </div>
                     </div>
                   ) : (
-                    <p className="text-xs text-muted-foreground">Opsional — pecahan pembayaran SO (mis. DP 40%, sisanya saat kirim). Satu SO bisa dipanggil berkali-kali untuk pembayaran di form Penerimaan (Kas &amp; Bank → jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Klik <span className="font-medium text-foreground">Tambah Termin</span> untuk memecah pembayaran menjadi beberapa kali bayar — mis. Termin 1 = DP 40%, Termin 2 = pelunasan 60% (total seluruh termin harus sama dengan Grand Total). Tiap termin dibayarkan satu-per-satu lewat Kas &amp; Bank → Penerimaan (jenis Pembayaran Termin SO). Kosongkan bila pembayaran lewat invoice.
+                    </p>
                   )}
                 </div>
               )}
@@ -1053,6 +1171,32 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan' }:
           )}
         </CardContent>
       </Card>
+      {/* === Update #033 — konfirmasi simpan SO TANPA termin (guardrail):
+          termin beberapa kali bayar hanya bisa diatur saat membuat SO. === */}
+      <AlertDialog
+        open={confirmNoTermin}
+        onOpenChange={(o) => {
+          if (!o) setConfirmNoTermin(false);
+        }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Simpan Sales Order tanpa Pembayaran Termin?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Termin adalah pecahan pembayaran SO menjadi beberapa kali bayar (mis. Termin 1 = DP 40% saat order, Termin 2 = pelunasan 60% saat kirim). Termin hanya bisa diatur <strong>sekarang, saat SO dibuat</strong> — tidak bisa ditambahkan setelahnya. SO tanpa termin tetap sah, tetapi tidak bisa dibayar per-cicilan lewat Kas &amp; Bank (jenis Pembayaran Termin SO); pembayarannya hanya lewat alur Invoice.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmNoTermin(false)}>Atur Termin Dulu</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmNoTermin(false);
+                void submitOrder();
+              }}>
+              Ya, Simpan Tanpa Termin
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={!!error}
         onOpenChange={(open) => {

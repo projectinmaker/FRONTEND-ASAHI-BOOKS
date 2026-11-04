@@ -479,7 +479,8 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
 
 export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOptions: PelangganDropdown[]; refreshKey?: number }) {
   const openFormTab = useTabStore((s) => s.openFormTab);
-  const refreshListTab = useTabStore((s) => s.refreshListTab);
+  // Update #033 — refreshListTab tidak lagi dipakai di tab list ini (tombol
+  // "Buat SO" kini membuka form; refresh list SO dilakukan form saat simpan).
 
   const [data, setData] = useState<PenawaranResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -550,26 +551,30 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
     [cancelTarget, fetchData]
   );
 
-  // ── Buat SO: konversi penawaran DRAFT → Sales Order ──
-  const [soTarget, setSoTarget] = useState<PenawaranResponse | null>(null);
-  const [soSubmitting, setSoSubmitting] = useState(false);
-
-  const handleToSalesOrder = useCallback(async () => {
-    if (!soTarget) return;
-    setSoSubmitting(true);
-    try {
-      const res = await api.post<{ salesOrderId: string; noPesanan: string }>(`/penjualan/penawaran/${soTarget.id}/to-sales-order`);
-      toast.success(`Sales Order ${res.noPesanan} berhasil dibuat`);
-      setSoTarget(null);
-      fetchData();
-      // SO baru muncul di tab list Pesanan — refresh juga list tersebut.
-      refreshListTab('sales', 'pesanan');
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.detail : 'Gagal membuat Sales Order');
-    } finally {
-      setSoSubmitting(false);
-    }
-  }, [soTarget, fetchData, refreshListTab]);
+  // ── Buat SO dari penawaran ──
+  // === Update #033 — tombol "Buat SO" kini MEMBUKA FORM SO yang sudah
+  // terisi penuh dari penawaran (pelanggan terkunci + seluruh item & biaya),
+  // BUKAN lagi membuat SO langsung lewat API. Alasan: Pembayaran Termin
+  // (pecahan beberapa kali bayar) hanya bisa diatur saat MENYIMPAN SO di
+  // form — jalur lama melewati form sehingga SO tercatat "sekali bayar grand
+  // total" tanpa termin dan tidak bisa dibayar per-cicilan di Kas & Bank.
+  // Repeat order tetap jalan: penawaran DRAFT/SELESAI boleh dipakai lagi. ===
+  const handleBuatSo = useCallback(
+    (d: PenawaranResponse) => {
+      const rev = d.revisiKe && d.revisiKe > 1 ? ` Rev. ${d.revisiKe}` : '';
+      openFormTab({
+        title: `Buat SO — ${d.noPenawaran}${rev}`,
+        module: 'sales',
+        subPage: 'pesanan',
+        formKey: 'pesanan-penjualan-create',
+        formProps: { penawaranId: d.id }
+      });
+      toast.info(`Form Sales Order terbuka dengan isian ${d.noPenawaran}${rev}`, {
+        description: 'Atur Pembayaran Termin (mis. DP 40% + pelunasan 60% — klik "Tambah Termin") lalu Simpan Sales Order.'
+      });
+    },
+    [openFormTab]
+  );
 
   // ══════════════════════════════════════════════════════════════════
   // === Update #032 — REVISI PENAWARAN: dokumen baru nomor sama (Rev. N) ===
@@ -802,9 +807,11 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
                               <Printer className="h-3.5 w-3.5" />
                             </Button>
                             {/* === Update #032 — Buat SO: DRAFT & SELESAI (repeat
-                                order — SELESAI tetap bisa dipakai lagi). === */}
+                                order — SELESAI tetap bisa dipakai lagi). ===
+                                === Update #033 — kini MEMBUKA FORM SO terisi
+                                (termin diatur di form sebelum simpan). === */}
                             {(d.status === 'DRAFT' || d.status === 'SELESAI') && (
-                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => setSoTarget(d)} title={d.digunakanCount > 0 ? `Repeat order — penawaran ini sudah dipakai ${d.digunakanCount}× SO` : 'Konversi ke Sales Order'}>
+                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => handleBuatSo(d)} title={d.digunakanCount > 0 ? `Repeat order — penawaran ini sudah dipakai ${d.digunakanCount}× SO` : 'Buka form Sales Order terisi dari penawaran ini'}>
                                 Buat SO
                               </Button>
                             )}
@@ -846,41 +853,9 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
         onConfirm={(r) => handleCancel(r)}
       />
 
-      {/* Konfirmasi Buat SO */}
-      {/* === Update #032 — SELESAI tetap bisa dibuatkan SO (repeat order):
-          tiap pemakaian menghasilkan SO baru dengan nomor SO sendiri. === */}
-      <AlertDialog
-        open={!!soTarget}
-        onOpenChange={(o) => {
-          if (!o) setSoTarget(null);
-        }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Buat Sales Order?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Penawaran{' '}
-              <span className="font-mono font-semibold text-foreground">
-                {soTarget?.noPenawaran}
-                {soTarget && soTarget.revisiKe > 1 ? ` (Rev. ${soTarget.revisiKe})` : ''}
-              </span>{' '}
-              akan dibuatkan Sales Order baru (langsung final tanpa approval).
-              {soTarget && soTarget.digunakanCount > 0 ? ` Penawaran ini sudah dipakai ${soTarget.digunakanCount}× SO — repeat order, tiap pemakaian menghasilkan SO baru dengan nomor sendiri.` : ' Setelah dipakai, status penawaran menjadi Selesai (tetap bisa dipakai lagi — repeat order).'} Item BEBAS (jasa/custom) diteruskan ke SO tanpa dibuatkan di master barang.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={soSubmitting}>Batal</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault(); // jangan tutup otomatis — handler menutup setelah sukses
-                void handleToSalesOrder();
-              }}
-              disabled={soSubmitting}>
-              {soSubmitting && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
-              Ya, Buat Sales Order
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* Konfirmasi Buat SO dihapus pada Update #033 — tombol "Buat SO" kini
+          membuka form SO terisi (termin diatur di form sebelum simpan),
+          bukan lagi membuat SO langsung lewat API. */}
 
       {/* ══════════════════════════════════════════════════════════════════
           === Update #032 — Konfirmasi REVISI PENAWARAN ===

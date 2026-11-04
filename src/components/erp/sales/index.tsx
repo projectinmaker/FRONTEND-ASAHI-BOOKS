@@ -219,7 +219,10 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
   // Update #032 — toggle mode baris: master ↔ bebas (reset field yang tidak
   // relevan agar switching bolak-balik tidak menyisakan data nyasar).
-  const toggleBebas = useCallback((id: string) => setRows((p) => p.map((r) => (r.id === id ? { ...r, bebas: !r.bebas, barangId: r.bebas ? '' : r.barangId, kodeBarang: r.bebas ? '' : r.kodeBarang, itemNama: r.bebas ? '' : r.itemNama || '', itemSatuan: r.bebas ? '' : r.itemSatuan || '' } : r))), [setRows]);
+  const toggleBebas = useCallback(
+    (id: string) => setRows((p) => p.map((r) => (r.id === id ? { ...r, bebas: !r.bebas, barangId: r.bebas ? '' : r.barangId, kodeBarang: r.bebas ? '' : r.kodeBarang, itemNama: r.bebas ? '' : r.itemNama || '', itemSatuan: r.bebas ? '' : r.itemSatuan || '' } : r))),
+    [setRows]
+  );
   // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add.
   const applyBarang = useCallback(
     (id: string, value: string, found: BarangDropdown | undefined) => {
@@ -295,8 +298,22 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
                       )}
                       {allowBebas && row.bebas ? (
                         <>
-                          <Input aria-label="Nama item bebas" placeholder="Nama item / jasa (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} />
-                          <Input aria-label="Satuan item bebas" placeholder="Satuan" className="h-8 w-24 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} />
+                          <Input
+                            aria-label="Nama item bebas"
+                            placeholder="Nama item / jasa (bebas)"
+                            className="h-8 text-xs"
+                            value={row.itemNama || ''}
+                            onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)}
+                            maxLength={200}
+                          />
+                          <Input
+                            aria-label="Satuan item bebas"
+                            placeholder="Satuan"
+                            className="h-8 w-24 text-xs"
+                            value={row.itemSatuan || ''}
+                            onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)}
+                            maxLength={50}
+                          />
                         </>
                       ) : (
                         <>
@@ -644,8 +661,12 @@ function useDropdowns() {
 // FORM: Pesanan Penjualan Create
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PesananPenjualanCreateForm({ subPage }: { subPage: string }) {
-  return <OrderDocumentForm kind="sales" subPage={subPage} />;
+function PesananPenjualanCreateForm({ subPage, initialPenawaranId }: { subPage: string; initialPenawaranId?: string }) {
+  // Update #033 — initialPenawaranId: form dibuka lewat tombol "Buat SO" di
+  // daftar penawaran → penawaran ditarik otomatis saat form dimuat (pelanggan
+  // terkunci + seluruh item) supaya user bisa langsung mengatur Pembayaran
+  // Termin sebelum menyimpan.
+  return <OrderDocumentForm kind="sales" subPage={subPage} initialPenawaranId={initialPenawaranId} />;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1350,35 +1371,35 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       }
       setSoLoading(true);
       try {
-        const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
-        setFPelangganId(sisa.pelangganId || '');
-        // Update #032 — baris ITEM BEBAS ikut difakturkan (jasa/custom —
-        // pendapatan tanpa stok); barang master difakturkan sisa qty-nya.
-        const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
-        if (rows.length === 0) {
-          toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
-          setFDetail([]);
-        } else {
-          setFDetail(
-            rows.map((d) => ({
-              id: crypto.randomUUID(),
-              barangId: d.barangId || '',
-              kodeBarang: d.kodeBarang || '',
-              barangNama: d.namaBarang || '',
-              harga: String(d.harga ?? 0),
-              qty: String(d.sisaFaktur),
-              // Update #004: invoice tanpa diskon — kolom Diskon dihapus.
-              diskon: '0',
-              satuanId: d.satuanId || '',
-              satuanNama: d.satuanNama || d.itemSatuan || '',
-              salesOrderDetailId: d.salesOrderDetailId,
-              // Update #032 — item bebas (jasa/custom) tanpa barang master.
-              bebas: !d.barangId,
-              itemNama: d.itemNama || '',
-              itemSatuan: d.itemSatuan || ''
-            }))
-          );
-        }
+      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+      setFPelangganId(sisa.pelangganId || '');
+      // Update #032 — baris ITEM BEBAS ikut difakturkan (jasa/custom —
+      // pendapatan tanpa stok); barang master difakturkan sisa qty-nya.
+      const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+      if (rows.length === 0) {
+        toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
+        setFDetail([]);
+      } else {
+        setFDetail(
+          rows.map((d) => ({
+            id: crypto.randomUUID(),
+            barangId: d.barangId || '',
+            kodeBarang: d.kodeBarang || '',
+            barangNama: d.namaBarang || '',
+            harga: String(d.harga ?? 0),
+            qty: String(d.sisaFaktur),
+            // Update #004: invoice tanpa diskon — kolom Diskon dihapus.
+            diskon: '0',
+            satuanId: d.satuanId || '',
+            satuanNama: d.satuanNama || (d.itemSatuan || ''),
+            salesOrderDetailId: d.salesOrderDetailId,
+            // Update #032 — item bebas (jasa/custom) tanpa barang master.
+            bebas: !d.barangId,
+            itemNama: d.itemNama || '',
+            itemSatuan: d.itemSatuan || ''
+          }))
+        );
+      }
       } catch {
         // Gagal memuat sisa SO — biarkan user isi baris manual
       }
@@ -1485,7 +1506,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
           return {
             barangId: r.bebas ? null : r.barangId,
             itemNama: r.bebas ? (r.itemNama || '').trim() : null,
-            itemSatuan: r.bebas ? (r.itemSatuan || '').trim() || null : null,
+            itemSatuan: r.bebas ? ((r.itemSatuan || '').trim() || null) : null,
             harga,
             qty,
             diskon: null,
@@ -3908,7 +3929,9 @@ export default function Sales({ subPage: subPageProp, refreshKey, formMode, form
     }
 
     if (formMode === 'pesanan-penjualan-create') {
-      return <PesananPenjualanCreateForm subPage={subPage} />;
+      // Update #033 — formProps.penawaranId dari tombol "Buat SO" (daftar
+      // penawaran): form terisi otomatis dari penawaran tersebut.
+      return <PesananPenjualanCreateForm subPage={subPage} initialPenawaranId={formProps?.penawaranId as string | undefined} />;
     }
     if (formMode === 'pesanan-penjualan-edit' && editId) {
       return <PesananPenjualanEditForm editId={editId} subPage={subPage} initialNoPesanan={formProps?.noPesanan as string | undefined} initialStatus={formProps?.status as string | undefined} initialGrandTotal={formProps?.grandTotal as number | undefined} />;
