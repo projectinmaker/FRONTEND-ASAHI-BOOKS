@@ -444,6 +444,8 @@ export interface SupplierResponse extends SupplierFoundationFields {
   taxStatus?: TaxStatus;
   syaratBayarId?: string | null;
   syaratBayar?: SyaratBayarSimple | null;
+  // === Update #043 — singkatan nama perusahaan supplier (mirror Pelanggan) ===
+  singkatan?: string | null;
   // === Legacy (tetap ada di response, jangan di-update dari form) ===
   syaratBayarDefault: string | null;
   status: string;
@@ -466,6 +468,8 @@ export interface SupplierCreate extends SupplierFoundationFields {
   creditLimit?: number | null;
   taxStatus?: TaxStatus;
   syaratBayarId?: string | null;
+  // === Update #043 — singkatan nama perusahaan supplier ===
+  singkatan?: string | null;
   // === Legacy ===
   syaratBayarDefault?: string | null;
   akunHutangId?: string | null;
@@ -484,6 +488,8 @@ export interface SupplierUpdate extends SupplierFoundationFields {
   creditLimit?: number | null;
   taxStatus?: TaxStatus;
   syaratBayarId?: string | null;
+  // === Update #043 — singkatan (null = hapus) ===
+  singkatan?: string | null;
   // === Legacy ===
   syaratBayarDefault?: string | null;
   status?: string;
@@ -4580,6 +4586,59 @@ export interface RopPoDraftResponse {
   purchaseOrder: PurchaseOrderResponse;
   skipped: RopSkippedItem[];
   autoCreatedBarang: RopAutoCreatedBarang[];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Update #043 — PART STOK MENIPIS (view ke-2 tab "Detail ROP" modul Pembelian):
+// barang master dengan stok < stok minimum → centang → pilih supplier → buat
+// PO DRAFT (qty otomatis = sisa kekurangan yang belum dibeli).
+// Serialisasi MENGIKUTI GAYA rop-item: camelCase + Decimal sebagai string.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Baris daftar part stok menipis — GET /pembelian/part-stok-menipis. */
+export interface PartStokMenipisItem {
+  barangId: string;
+  kode: string | null;
+  nama: string;
+  satuan?: string | null;
+  /** Backend mengirim Decimal sebagai string — normalisasi via Number(). */
+  stok: string | number;
+  stokMinimum: string | number;
+  kekurangan: string | number;
+  sudahDibeli: string | number;
+  sisa: string | number;
+  status: RopItemBelanjaStatus;
+  /** Nomor PO draft aktif yang sudah memuat part ini (join untuk display). */
+  draftPoNos: string[];
+  /** Derived display (draftPoNos.length > 0) — opsional dari backend. */
+  inDraftPo?: boolean;
+}
+
+/** Item payload POST /pembelian/part-stok-menipis/po-draft. */
+export interface PartStokMenipisPoDraftItem {
+  barangId: string;
+  qty: number;
+}
+
+/** Payload POST /pembelian/part-stok-menipis/po-draft. */
+export interface PartStokMenipisPoDraftCreate {
+  supplierId: string;
+  gudangId?: string | null;
+  tanggal?: string | null;
+  catatan?: string | null;
+  items: PartStokMenipisPoDraftItem[];
+}
+
+/**
+ * Response POST /pembelian/part-stok-menipis/po-draft — PO DRAFT seperti flow
+ * ROP. Bentuk utama: { po, info }; alias `purchaseOrder` (bentuk flow ROP)
+ * diterima defensif supaya FE tetap jalan bila backend menyeragamkan ke
+ * bentuk rop-item/po-draft.
+ */
+export interface PartStokMenipisPoDraftResponse {
+  po?: PurchaseOrderResponse;
+  purchaseOrder?: PurchaseOrderResponse;
+  info?: string | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

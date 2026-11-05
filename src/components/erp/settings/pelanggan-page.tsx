@@ -22,6 +22,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 
 import { api, ApiError } from '@/lib/api';
 import { getSyaratBayarOptions, clearMasterDataCache, type SyaratBayarOption } from '@/lib/master-data';
+// === Update #043 — auto-singkatan dari nama (mirror aturan backend #043) ===
+import { deriveSingkatan } from '@/lib/singkatan';
 // Update #007 — quick add syarat bayar langsung dari form pelanggan
 import { QuickAddSyaratBayarButton } from '@/components/erp/quick-add';
 // Update #028 — dialog set saldo awal piutang per pelanggan
@@ -107,6 +109,10 @@ interface PelangganPageProps {
 
 function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselectedCoaKode, preselectedCoaNama }: { mode: FormMode; editId?: string; initialData?: FormState; preselectedCoaId?: string; preselectedCoaKode?: string; preselectedCoaNama?: string }) {
   const [form, setForm] = useState<FormState>(initialData || emptyForm);
+  // === Update #043 — auto-isi singkatan saat mengetik nama, hanya selama
+  // user belum menyentuh field singkatan manual (ref flag; prefill edit
+  // non-empty juga dianggap tersentuh supaya nilai lama tidak tertimpa). ===
+  const singkatanTouched = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [syaratBayarOptions, setSyaratBayarOptions] = useState<SyaratBayarOption[]>([]);
@@ -137,6 +143,9 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
         .get<PelangganResponse>(`/master/pelanggan/${editId}`)
         .then((res) => {
           setAkunPiutangInfo(res.akunPiutang || null);
+          // === Update #043 — singkatan tersimpan dianggap sudah "disentuh"
+          // manual (auto-fill tidak menimpa nilai pelanggan lama). ===
+          singkatanTouched.current = !!res.singkatan;
           // Pre-fill field baru Phase 2 dari response
           setForm((prev) => ({
             ...prev,
@@ -420,15 +429,43 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
           {/* Nama */}
           <div className="space-y-2">
             <Label htmlFor="pel-nama">Nama Pelanggan</Label>
-            <Input id="pel-nama" placeholder="Nama pelanggan" value={form.nama} onChange={(e) => updateForm('nama', e.target.value)} onBlur={() => handleBlur('nama')} aria-invalid={!!formErrors.nama} className={formErrors.nama ? 'border-destructive focus-visible:ring-destructive' : ''} autoFocus />
+            <Input
+              id="pel-nama"
+              placeholder="Nama pelanggan"
+              value={form.nama}
+              onChange={(e) => {
+                updateForm('nama', e.target.value);
+                // === Update #043 — auto-isi singkatan dari nama (aturan
+                // backend: inisial token non-generik) selama user belum
+                // menyentuh field singkatan manual. ===
+                if (!singkatanTouched.current) updateForm('singkatan', deriveSingkatan(e.target.value));
+              }}
+              onBlur={() => handleBlur('nama')}
+              aria-invalid={!!formErrors.nama}
+              className={formErrors.nama ? 'border-destructive focus-visible:ring-destructive' : ''}
+              autoFocus
+            />
             {formErrors.nama && <p className="text-xs text-destructive mt-1">{formErrors.nama}</p>}
           </div>
 
-          {/* Singkatan (Update #003) — auto-fill di form Penawaran/SO */}
+          {/* Singkatan (Update #003) — auto-fill di form Penawaran/SO.
+              Update #043 — auto-isi dari Nama (selama field ini belum disentuh manual). */}
           <div className="space-y-2">
             <Label htmlFor="pel-singkatan">Singkatan</Label>
-            <Input id="pel-singkatan" placeholder="mis. TBI" maxLength={20} value={form.singkatan} onChange={(e) => updateForm('singkatan', e.target.value)} />
-            <p className="text-[11px] text-muted-foreground">Singkatan nama perusahaan tanpa karakter "/" — dipakai segmen nomor SO (SO ASI/TBI/2026/001) dan auto-fill di form Penawaran/SO.</p>
+            <Input
+              id="pel-singkatan"
+              placeholder="mis. TBI"
+              maxLength={20}
+              value={form.singkatan}
+              onChange={(e) => {
+                singkatanTouched.current = true;
+                updateForm('singkatan', e.target.value);
+              }}
+              onBlur={() => {
+                singkatanTouched.current = true;
+              }}
+            />
+            <p className="text-[11px] text-muted-foreground">Singkatan nama perusahaan tanpa karakter "/" — dipakai segmen nomor SO (SO ASI/TBI/2026/001) dan auto-fill di form Penawaran/SO. Otomatis dari nama — tetap bisa diedit.</p>
           </div>
 
           {/* Alamat */}

@@ -135,11 +135,15 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
 
   if (!res.ok) {
     if (res.status === 401) {
-      // Token expired/invalid — clear token + user, trigger logout redirect
+      // === Update #043 — token invalid/kadaluarsa: TIDAK lagi logout senyap.
+      // Token + user dibersihkan lalu dispatch 'auth:expired' (listener
+      // auth-store → markSessionExpired + bersihkan token/user; state tab
+      // dibiarkan) — popup "Sesi Berakhir" ditangani page.tsx. ApiError 401
+      // tetap dilempar ke pemanggil (pesan sesi tetap dipakai). ===
       setToken(null);
       if (typeof window !== 'undefined') {
         localStorage.removeItem('asahi_erp_user');
-        window.dispatchEvent(new CustomEvent('auth:logout'));
+        window.dispatchEvent(new CustomEvent('auth:expired'));
       }
     }
     const errorBody = await res.json().catch(() => ({ detail: res.statusText }));
@@ -191,10 +195,12 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 
 async function throwApiError(res: Response): Promise<never> {
   if (res.status === 401) {
+    // === Update #043 — mirror apiRequest 401: 'auth:expired' (popup sesi
+    // berakhir; bukan logout senyap). ===
     setToken(null);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('asahi_erp_user');
-      window.dispatchEvent(new CustomEvent('auth:logout'));
+      window.dispatchEvent(new CustomEvent('auth:expired'));
     }
   }
   const errorBody = await res.json().catch(() => ({ detail: res.statusText }));

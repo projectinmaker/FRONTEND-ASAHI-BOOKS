@@ -7,10 +7,14 @@ import { ERPSidebar } from '@/components/erp/erp-sidebar';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb';
 import { TabBar } from '@/components/erp/tab-bar';
+// === Update #043 — popup "Sesi Berakhir" (sesi login 2 jam) ===
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import dynamic from 'next/dynamic';
 import LoginPage from '@/components/erp/login-page';
 // === Update ASAHI #019 — preferensi app-wide (font, format tanggal) ===
 import { usePreferensiStore } from '@/store/preferensi-store';
+// === Update #043 — timer sesi 2 jam (interval 30 detik) ===
+import { useSessionWatch } from '@/hooks/use-session-watch';
 
 // Dynamic imports for all modules
 const Dashboard = dynamic(() => import('@/components/erp/dashboard'), { ssr: false });
@@ -198,11 +202,15 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
 }
 
 export default function HomePage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, sessionExpired, logout } = useAuthStore();
   const tabs = useTabStore((s) => s.tabs);
   const activeTabId = useTabStore((s) => s.activeTabId);
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const [mounted, setMounted] = useState(false);
+
+  // === Update #043 — pengawas sesi login 2 jam (interval 30 detik; hanya
+  //     jalan saat sesi aktif — hook ini dipasang di bawah gerbang login). ===
+  useSessionWatch();
 
   // === Update ASAHI #019 — pastikan preferensi termuat sejak awal sesi
   // (font aplikasi + format tanggal dipakai app-wide; sidebar juga memanggil
@@ -236,7 +244,12 @@ export default function HomePage() {
   return (
     <SidebarProvider>
       <ERPSidebar />
-      <SidebarInset className="flex flex-col">
+      {/* === Update #043 — kolom shell TINGGI TETAP (h-svh + overflow-hidden):
+          header & TabBar shrink-0 selalu terlihat; main yang jadi satu-satunya
+          scroll container (overflow-y-auto) — sebelumnya SidebarProvider
+          (min-h-svh) membiarkan halaman memanjang sehingga TabBar ikut
+          tergulung ke atas di dokumen/body. === */}
+      <SidebarInset className="flex flex-col h-svh overflow-hidden">
         {/* Header */}
         <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-white px-4">
           <SidebarTrigger className="-ml-1" />
@@ -276,8 +289,28 @@ export default function HomePage() {
         <TabBar />
 
         {/* Main Content */}
-        <main className="flex-1 overflow-hidden">{activeTab && <ModuleContent moduleId={activeTab.module} subPage={activeTab.subPage} refreshKey={refreshKey} formMode={activeTab.tabType === 'form' ? activeTab.formKey : undefined} formProps={activeTab.formProps} />}</main>
+        <main className="flex-1 overflow-y-auto">
+          {/* === Update #043 — key mengikuti id tab + seq (dedupe openFormTab
+              menaikkan seq → konten form REMOUNT dengan props/data segar). === */}
+          {activeTab && <ModuleContent key={`${activeTab.id}-${activeTab.seq ?? 0}`} moduleId={activeTab.module} subPage={activeTab.subPage} refreshKey={refreshKey} formMode={activeTab.tabType === 'form' ? activeTab.formKey : undefined} formProps={activeTab.formProps} />}
+        </main>
       </SidebarInset>
+
+      {/* === Update #043 — popup "Sesi Berakhir" (sesi 2 jam / 401): modal
+          AlertDialog di atas segalanya (portal z-index default shadcn). OK →
+          logout() penuh → isAuthenticated false → LoginPage. Tidak dirender
+          saat sudah di halaman login (sessionExpired direset logout). === */}
+      <AlertDialog open={sessionExpired}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sesi Berakhir</AlertDialogTitle>
+            <AlertDialogDescription>Sesi Anda telah berakhir (batas 2 jam). Silakan login kembali.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => logout()}>OK</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }

@@ -9,7 +9,7 @@ import { api, ApiError } from '@/lib/api';
 import { generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { PesananPDFTemplate, PengirimanPDFTemplate, InvoicePDFTemplate, ReturPDFTemplate, type PesananData, type PengirimanData, type InvoiceData, type ReturData, type DetailRow, type BiayaTambahan } from '@/components/erp/sales/pdf-templates';
-import type { SalesOrderResponse, SalesInvoiceResponse, SalesReturResponse, PengirimanBarangResponse, PenawaranResponse } from '@/types/api';
+import type { SalesOrderResponse, SalesInvoiceResponse, SalesReturResponse, PengirimanBarangResponse } from '@/types/api';
 
 // ─── Shared error card ──────────────────────────────────────────────────────
 
@@ -303,26 +303,11 @@ export function InvoiceCetakTab({ id }: { id: string }) {
     setError(null);
     try {
       const res = await api.get<SalesInvoiceResponse>(`/penjualan/sales-invoice/${id}`);
-      // === Update #040 — SISA PEMBAYARAN penawaran sumber SO ter-link
-      // (alur DP bertahap): SO ter-link membawa penawaranId (backend #040)
-      // → ambil kartu sisa dari endpoint penawaran (#039). SO manual tanpa
-      // penawaran → kotak tidak dicetak (penawaran undefined). ===
-      let penawaran: InvoiceData['penawaran'];
-      if (res.salesOrder?.penawaranId) {
-        try {
-          const p = await api.get<PenawaranResponse>(`/penjualan/penawaran/${res.salesOrder.penawaranId}`);
-          penawaran = {
-            no: p.noPenawaran || '',
-            revisi: Number(p.revisiKe) || 1,
-            nilai: Number(p.grandTotal) || 0,
-            sudahJadiSo: Number(p.dipakaiSoTotal) || 0,
-            sisa: Number(p.sisaPenawaran) || 0
-          };
-        } catch {
-          penawaran = undefined;
-        }
-      }
-      setData({ ...mapInvoiceData(res), penawaran });
+      // === Update #043 — blok "Sisa Pembayaran dari Penawaran" DIHAPUS dari
+      //     cetakan invoice (kartu SoPenawaranCard tetap ada di FORM; kotak
+      //     amber cetakan & fetch penawaran terkait dihapus — sisa pembayaran
+      //     cukup lewat baris footer "Sisa pembayaran dari {noSo}"). ===
+      setData(mapInvoiceData(res));
     } catch (e) {
       setError(e instanceof ApiError ? e.detail : e instanceof Error ? e.message : 'Gagal memuat data');
     } finally {

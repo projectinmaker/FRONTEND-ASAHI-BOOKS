@@ -71,17 +71,6 @@ export interface InvoiceData {
   /** Update #004: dulu "No Surat Jalan" — nomor DO ter-link via delivery detail. */
   noDo: string;
   mataUang: string;
-  // === Update #040 — SISA PEMBAYARAN dari penawaran sumber SO (alur DP
-  // bertahap): invoice ini menagih tahap berjalan (mis. DP); sisa akan
-  // ditagih lewat invoice berikutnya dari SO baru penawaran yang sama.
-  // Undefined = SO manual tanpa penawaran → kotak tidak dicetak. ===
-  penawaran?: {
-    no: string;
-    revisi?: number;
-    nilai: number;
-    sudahJadiSo: number;
-    sisa: number;
-  };
   detail: DetailRow[];
   biayaTambahan: BiayaTambahan[];
   keterangan: string;
@@ -175,15 +164,25 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // posisinya dikembalikan ke blok footer kiri template (seperti sebelumnya),
 // tetap menyebut TOTAL.
 
+// === Update #043 — sanitasi tampilan KETERANGAN invoice lama: sebelum #043
+// backend menyimpan nomor dengan dobel "SO SO ..." (mis. "DP atas SO SO
+// ASI/2026/001"). Cukup diganti pada CETAKAN (data tidak diubah) — hanya
+// kembar "SO SO" SETELAH kata "atas " yang dirapatkan jadi satu "SO". ===
+function sanitizeKeterangan(keterangan: string): string {
+  return keterangan.replace(/(atas\s+)(?:SO\s+){2,}/gi, '$1SO ');
+}
+
 function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0, hideDiskon = false, dpPelunasan }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number; hideDiskon?: boolean; dpPelunasan?: number }) {
   // === Update #042 — DP/Pelunasan (header invoice) menggantikan perhitungan
   // dari dp per baris: gross = Σ qty × harga (nilai penuh); effective =
   // dpPelunasan bila > 0 (nilai ditagih), selain itu gross (perilaku lama).
-  // Baris potongan label "DP/Pelunasan" tampil bila gross − effective > 0;
-  // pajak & Total mengikuti nilai efektif. ===
+  // === Update #043 — susunan baris TANPA angka minus: "DP/Pelunasan (nilai
+  // ditagih invoice ini)" = effective (POSITIF) dan "Dialihkan ke invoice
+  // berikutnya" = gross − effective (POSITIF); pajak & Total tetap atas
+  // nilai efektif (rumus tidak berubah). ===
   const gross = detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const effective = dpPelunasan != null && dpPelunasan > 0 ? dpPelunasan : gross;
-  const dpAdjust = gross - effective;
+  const dialihkan = Math.max(gross - effective, 0);
   const subTotal = gross;
   const diskonAmt = diskonGlobal ? (effective * diskonGlobal) / 100 : 0;
   const afterDiskon = effective - diskonAmt;
@@ -200,12 +199,20 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable 
           <td style={{ ...cellStyle, width: '160px' }}>Sub Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', width: '140px' }}>{formatNumber(subTotal)}</td>
         </tr>
-        {/* === Update #042 — potongan DP/Pelunasan (nilai ditagih invoice ini)
-            bila terisi; label menggantikan "DP Diterapkan" lama. === */}
-        {dpAdjust > 0 && (
+        {/* === Update #043 — DP/Pelunasan (nilai yang ditagih invoice ini)
+            tampil POSITIF; selisih nilai baris penuh yang tidak ditagih di
+            sini dicetak sebagai "Dialihkan ke invoice berikutnya" (POSITIF,
+            tanpa tanda minus). === */}
+        {dpPelunasan != null && dpPelunasan > 0 && (
           <tr>
-            <td style={cellStyle}>DP/Pelunasan</td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(dpAdjust)}</td>
+            <td style={cellStyle}>DP/Pelunasan (nilai ditagih invoice ini)</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(effective)}</td>
+          </tr>
+        )}
+        {dialihkan > 0 && (
+          <tr>
+            <td style={cellStyle}>Dialihkan ke invoice berikutnya</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(dialihkan)}</td>
           </tr>
         )}
         {/* Update #004: baris Diskon setelah Sub Total dihapus dari invoice (hideDiskon). */}
@@ -573,25 +580,6 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
         </div>
       </div>
 
-      {/* ── Update #040 — Kotak SISA PEMBAYARAN dari penawaran sumber SO ──
-          (alur DP bertahap: invoice ini menagih tahap berjalan — mis. DP;
-          sisa ditagih lewat invoice berikutnya dari SO baru penawaran sama).
-          Hanya tercetak bila SO ter-link berasal dari penawaran. */}
-      {data.penawaran && (
-        <div style={{ marginBottom: '12px', border: '1px solid #854d0e', padding: '6px 10px', backgroundColor: '#fef3c7' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '2px' }}>
-            Sisa Pembayaran dari Penawaran {data.penawaran.no}
-            {data.penawaran.revisi && data.penawaran.revisi > 1 ? ` (Rev. ${data.penawaran.revisi})` : ''}
-          </div>
-          <div>
-            Nilai penawaran: {formatNumber(data.penawaran.nilai)} · Sudah jadi SO: {formatNumber(data.penawaran.sudahJadiSo)}
-          </div>
-          <div style={{ marginTop: '2px' }}>
-            Sisa pembayaran: <span style={{ fontWeight: 'bold' }}>{formatNumber(data.penawaran.sisa)}</span> — ditagihkan melalui invoice berikutnya (SO baru dari penawaran yang sama).
-          </div>
-        </div>
-      )}
-
       {/* ── Detail Table ── */}
       <div className="mb-4">
         {/* Update #004: kolom Harga tanpa "@"; kolom Diskon dihapus. */}
@@ -616,20 +604,24 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
           </div>
           {/* === Update #042 — baris footer SISA PEMBAYARAN dari SO ter-link:
               tampil bila invoice punya SO (noSo tersedia) & soSisaNilai tidak
-              null (sisa tagihan NILAI SO SETELAH invoice ini — patokan
-              DP/Pelunasan invoice berikutnya atas SO yang sama). === */}
+              null. Update #043 — label TANPA prefix "SO " ganda (noSo sudah
+              mengandung "SO"); nilai: sisa > 0 → Rp; ≤ 0 → "lunas" (baris
+              tetap tercetak saat sisa 0). === */}
           {data.noSo && data.soSisaNilai != null && (
             <div style={{ marginBottom: '6px' }}>
               <strong>
-                Sisa pembayaran dari SO {data.noSo}: Rp {formatNumber(data.soSisaNilai)}
+                Sisa pembayaran dari {data.noSo}: {data.soSisaNilai > 0 ? `Rp ${formatNumber(data.soSisaNilai)}` : 'lunas'}
               </strong>
             </div>
           )}
           {/* Update ASAHI #6: Keterangan SELALU tampil di bawah terbilang
-              (dulu hanya saat diisi) — sesuai susunan invoice yang diminta. */}
+              (dulu hanya saat diisi) — sesuai susunan invoice yang diminta.
+              Update #043: display melewati sanitizeKeterangan — keterangan
+              invoice LAMA tersimpan dengan dobel "SO SO ..." dirapatkan
+              (hanya cetakan; data tidak diubah). */}
           <div style={{ marginBottom: '12px' }}>
             <strong>Keterangan:</strong>
-            <div style={{ whiteSpace: 'pre-wrap' }}>{data.keterangan}</div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{sanitizeKeterangan(data.keterangan)}</div>
           </div>
           {/* Update ASAHI #6: rekening bank perusahaan (Pengaturan → Profil
               Perusahaan) — di bawah Keterangan; tiap rekening dua baris:

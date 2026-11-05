@@ -45,8 +45,9 @@ import { toast } from 'sonner';
 import { PesananPembelianCetakTab, PenerimaanCetakTab, InvoicePembelianCetakTab, ReturPembelianCetakTab, LppbCetakTab } from '@/components/erp/purchasing/cetak-tabs';
 // Update ASAHI #005 — modul LPPB (list + form) sebagai file mandiri
 import { LppbTab, LppbForm } from '@/components/erp/purchasing/lppb';
-import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
-import { useWorkflowStates } from '@/lib/use-workflow-states';
+// === Update #043 — UI approval (workflow) DIHAPUS dari modul Penjualan &
+// Pembelian: dokumen langsung final saat disimpan. Komponen workflow tetap
+// dipakai modul lain (kas-bank/persediaan/produksi/aset + Antrean Persetujuan). ===
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { useInvoiceSaldos } from '@/lib/use-invoice-saldos';
 import type { PurchaseOrderResponse, PurchaseOrderSisaResponse, PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderDetailCreate, PenerimaanBarangResponse, PenerimaanBarangCreate, PenerimaanBarangUpdate, PenerimaanBarangDetailCreate, PurchaseInvoiceResponse, PurchaseInvoiceCreate, PurchaseInvoiceUpdate, PurchaseInvoiceDetailCreate, PurchaseReturResponse, PurchaseReturCreate, PurchaseReturUpdate, PurchaseReturDetailCreate, SupplierDropdown, BarangDropdown, BarangResponse, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
@@ -2671,12 +2672,6 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
     [cancelTarget, fetchData]
   );
 
-  const wfStates = useWorkflowStates(
-    'purchase_order',
-    data.map((d) => d.id),
-    refreshKey
-  );
-
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
@@ -2797,16 +2792,16 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                     <TableHead>Payment Term</TableHead>
                     <TableHead>Currency</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
-                    <TableHead className="w-[140px] text-center">Workflow</TableHead>
+                    {/* Update #043 — kolom Workflow dihapus (PO langsung final). */}
                     <TableHead className="w-[80px] text-center">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={8} />
+                    <SkeletonRows cols={7} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                         Tidak ada data pesanan.
                       </TableCell>
                     </TableRow>
@@ -2820,27 +2815,6 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                         <TableCell className="text-xs">{d.currency || '-'}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {(() => {
-                            const w = wfStates.states[d.id];
-                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                            return (
-                              <div className="flex flex-col items-center gap-1">
-                                <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell
-                                  documentType={w.documentType}
-                                  documentId={w.documentId}
-                                  version={w.version}
-                                  availableActions={w.availableActions}
-                                  onDone={() => {
-                                    fetchData();
-                                    wfStates.refresh();
-                                  }}
-                                />
-                              </div>
-                            );
-                          })()}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
@@ -3025,12 +2999,6 @@ function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchase
     }
   }, [reverseTarget, reverseReason, fetchData]);
 
-  const wfStates = useWorkflowStates(
-    'penerimaan_barang',
-    data.map((d) => d.id),
-    refreshKey
-  );
-
   return (
     <div className="space-y-6">
       <Card>
@@ -3138,16 +3106,16 @@ function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchase
                     <TableHead className="w-[120px] text-center">Invoice</TableHead>
                     <TableHead className="w-[120px] text-center">Jurnal</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
-                    <TableHead className="w-[140px] text-center">Workflow</TableHead>
+                    {/* Update #043 — kolom Workflow dihapus (penerimaan langsung final). */}
                     <TableHead className="w-[80px] text-center">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={10} />
+                    <SkeletonRows cols={9} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                         Tidak ada data penerimaan.
                       </TableCell>
                     </TableRow>
@@ -3185,27 +3153,6 @@ function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchase
                         </TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {(() => {
-                            const w = wfStates.states[d.id];
-                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                            return (
-                              <div className="flex flex-col items-center gap-1">
-                                <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell
-                                  documentType={w.documentType}
-                                  documentId={w.documentId}
-                                  version={w.version}
-                                  availableActions={w.availableActions}
-                                  onDone={() => {
-                                    fetchData();
-                                    wfStates.refresh();
-                                  }}
-                                />
-                              </div>
-                            );
-                          })()}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
@@ -3409,11 +3356,6 @@ function InvoiceTab({ supplierOptions, barangOptions, purchaseOrderOptions, refr
     [cancelTarget, fetchData]
   );
 
-  const wfStates = useWorkflowStates(
-    'purchase_invoice',
-    data.map((d) => d.id),
-    refreshKey
-  );
   const saldoStates = useInvoiceSaldos(
     'hutang',
     data.map((d) => d.id),
@@ -3556,16 +3498,16 @@ function InvoiceTab({ supplierOptions, barangOptions, purchaseOrderOptions, refr
                     <TableHead className="text-right w-[160px]">Total</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
                     <TableHead className="w-[110px] text-center">Status Bayar</TableHead>
-                    <TableHead className="w-[140px] text-center">Workflow</TableHead>
+                    {/* Update #043 — kolom Workflow dihapus (invoice langsung final). */}
                     <TableHead className="w-[80px] text-center">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={11} />
+                    <SkeletonRows cols={10} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="h-24 text-center text-muted-foreground">
                         Tidak ada data invoice.
                       </TableCell>
                     </TableRow>
@@ -3584,18 +3526,6 @@ function InvoiceTab({ supplierOptions, barangOptions, purchaseOrderOptions, refr
                         </TableCell>
                         <TableCell className="text-center">
                           <StatusPembayaranBadge status={saldoStates.saldos[d.id]?.statusPembayaran} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {(() => {
-                            const w = wfStates.states[d.id];
-                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                            return (
-                              <div className="flex flex-col items-center gap-1">
-                                <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={wfStates.refresh} />
-                              </div>
-                            );
-                          })()}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">
@@ -3743,12 +3673,6 @@ function ReturTab({ supplierOptions, barangOptions, purchaseOrderOptions, refres
     [cancelTarget, fetchData]
   );
 
-  const wfStates = useWorkflowStates(
-    'purchase_retur',
-    data.map((d) => d.id),
-    refreshKey
-  );
-
   return (
     <div className="space-y-6">
       <Card>
@@ -3854,16 +3778,16 @@ function ReturTab({ supplierOptions, barangOptions, purchaseOrderOptions, refres
                     <TableHead>Supplier</TableHead>
                     <TableHead className="text-right w-[140px]">Total</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
-                    <TableHead className="w-[140px] text-center">Workflow</TableHead>
+                    {/* Update #043 — kolom Workflow dihapus (retur langsung final). */}
                     <TableHead className="w-[80px] text-center">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={8} />
+                    <SkeletonRows cols={7} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                         Tidak ada data retur.
                       </TableCell>
                     </TableRow>
@@ -3877,18 +3801,6 @@ function ReturTab({ supplierOptions, barangOptions, purchaseOrderOptions, refres
                         <TableCell className="text-right font-mono text-xs font-medium">{formatRp(Number(d.grandTotal))}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {(() => {
-                            const w = wfStates.states[d.id];
-                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                            return (
-                              <div className="flex flex-col items-center gap-1">
-                                <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={wfStates.refresh} />
-                              </div>
-                            );
-                          })()}
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex items-center justify-center gap-1">

@@ -24,6 +24,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { loadSupplierRows, supplierFoundationKeys, supplierFoundationPayload, saveSupplier } from '@/lib/phase-a';
 import { api, ApiError } from '@/lib/api';
 import { getSyaratBayarOptions, clearMasterDataCache, type SyaratBayarOption } from '@/lib/master-data';
+// === Update #043 — auto-singkatan dari nama (mirror aturan backend #043) ===
+import { deriveSingkatan } from '@/lib/singkatan';
 // Update #007 — quick add syarat bayar langsung dari form supplier
 import { QuickAddSyaratBayarButton } from '@/components/erp/quick-add';
 // Update #028 — dialog set saldo awal hutang per supplier
@@ -79,6 +81,8 @@ interface FormState {
   syaratBayarId: string; // UUID, prefer pakai ini (canonical)
   creditLimit: string; // input as string, parse to number on submit
   taxStatus: string; // 'PKP' | 'NON_PKP' | ''
+  // === Update #043 — singkatan nama perusahaan supplier ===
+  singkatan: string;
   // === Legacy (tetap dipertahankan untuk backward compat) ===
   syaratBayarDefault: string;
 }
@@ -105,6 +109,8 @@ const emptyForm: FormState = {
   syaratBayarId: '',
   creditLimit: '',
   taxStatus: '',
+  // === Update #043 ===
+  singkatan: '',
   // === Legacy ===
   syaratBayarDefault: ''
 };
@@ -122,6 +128,10 @@ interface SupplierPageProps {
 
 function SupplierForm({ mode, editId, initialData, preselectedCoaId, preselectedCoaKode, preselectedCoaNama }: { mode: FormMode; editId?: string; initialData?: FormState; preselectedCoaId?: string; preselectedCoaKode?: string; preselectedCoaNama?: string }) {
   const [form, setForm] = useState<FormState>(() => initialData || { ...emptyForm, nama: preselectedCoaNama?.replace(/^Hutang\s*-\s*/i, '').trim() || '' });
+  // === Update #043 — auto-isi singkatan saat mengetik nama, hanya selama
+  // user belum menyentuh field singkatan manual (ref flag; prefill edit
+  // non-empty juga dianggap tersentuh supaya nilai lama tidak tertimpa). ===
+  const singkatanTouched = useRef(false);
   const [detail, setDetail] = useState<SupplierResponse | null>(null);
   const [loading, setLoading] = useState(mode === 'edit');
   const [loadError, setLoadError] = useState('');
@@ -164,7 +174,10 @@ function SupplierForm({ mode, editId, initialData, preselectedCoaId, preselected
       .then((res) => {
         setDetail(res);
         setFormStatus(res.status);
-        setForm({ ...emptyForm, ...Object.fromEntries(supplierFoundationKeys.map((key) => [key, res[key] ?? ''])), kode: res.kode, nama: res.nama, alamat: res.alamat || '', telepon: res.telepon || '', email: res.email || '', kontakPerson: res.kontakPerson || '', npwp: res.npwp || '', nitku: res.nitku || '', syaratBayarId: res.syaratBayarId || '', creditLimit: res.creditLimit != null ? String(res.creditLimit) : '', taxStatus: res.taxStatus || '', syaratBayarDefault: res.syaratBayarDefault || '' });
+        // === Update #043 — singkatan tersimpan dianggap sudah "disentuh"
+        // manual (auto-fill tidak menimpa nilai supplier lama). ===
+        singkatanTouched.current = !!res.singkatan;
+        setForm({ ...emptyForm, ...Object.fromEntries(supplierFoundationKeys.map((key) => [key, res[key] ?? ''])), kode: res.kode, nama: res.nama, alamat: res.alamat || '', telepon: res.telepon || '', email: res.email || '', kontakPerson: res.kontakPerson || '', npwp: res.npwp || '', nitku: res.nitku || '', syaratBayarId: res.syaratBayarId || '', creditLimit: res.creditLimit != null ? String(res.creditLimit) : '', taxStatus: res.taxStatus || '', singkatan: res.singkatan || '', syaratBayarDefault: res.syaratBayarDefault || '' });
       })
       .catch((err) => {
         setLoadError(err instanceof ApiError ? err.detail : 'Gagal memuat supplier');
@@ -194,7 +207,9 @@ function SupplierForm({ mode, editId, initialData, preselectedCoaId, preselected
         nitku: form.nitku.trim() || null,
         syaratBayarId: form.syaratBayarId || null,
         creditLimit: form.creditLimit.trim() ? Number(form.creditLimit) : null,
-        taxStatus: (form.taxStatus.trim() || null) as TaxStatus
+        taxStatus: (form.taxStatus.trim() || null) as TaxStatus,
+        // === Update #043 — singkatan (null = hapus) ===
+        singkatan: form.singkatan.trim() || null
       };
       await saveSupplier(
         { ...payload, ...(formStatus ? { status: formStatus } : {}) },
@@ -220,7 +235,39 @@ function SupplierForm({ mode, editId, initialData, preselectedCoaId, preselected
   const field = (key: keyof FormState, label: string, placeholder?: string) => (
     <div className="space-y-2" key={key}>
       <Label htmlFor={'sup-' + key}>{label}</Label>
-      <Input id={'sup-' + key} value={form[key]} placeholder={placeholder} disabled={submitting || (key === 'kode' && (!!editId || !!createdId))} onChange={(e) => updateForm(key, e.target.value)} />
+      <Input
+        id={'sup-' + key}
+        value={form[key]}
+        placeholder={placeholder}
+        disabled={submitting || (key === 'kode' && (!!editId || !!createdId))}
+        onChange={(e) => {
+          updateForm(key, e.target.value);
+          // === Update #043 — auto-isi singkatan dari nama selama user belum
+          // menyentuh field singkatan manual. ===
+          if (key === 'nama' && !singkatanTouched.current) updateForm('singkatan', deriveSingkatan(e.target.value));
+        }}
+      />
+    </div>
+  );
+  // === Update #043 — field Singkatan (custom block: hint + flag manual). ===
+  const singkatanField = (
+    <div className="space-y-2" key="singkatan">
+      <Label htmlFor="sup-singkatan">Singkatan</Label>
+      <Input
+        id="sup-singkatan"
+        placeholder="mis. TBI"
+        maxLength={20}
+        value={form.singkatan}
+        disabled={submitting}
+        onChange={(e) => {
+          singkatanTouched.current = true;
+          updateForm('singkatan', e.target.value);
+        }}
+        onBlur={() => {
+          singkatanTouched.current = true;
+        }}
+      />
+      <p className="text-[11px] text-muted-foreground">Singkatan nama perusahaan tanpa karakter "/" — identitas singkat vendor (nomor PO memakai format PO ASI/YYYY/NNN, tidak memuat singkatan). Otomatis dari nama — tetap bisa diedit.</p>
     </div>
   );
   const suggestedField = (key: 'supplierType' | 'currency' | 'taxStatus', label: string, placeholder: string) => {
@@ -281,6 +328,8 @@ function SupplierForm({ mode, editId, initialData, preselectedCoaId, preselected
                 <TabsContent value="general" className="space-y-4">
                   {field('kode', 'Kode Supplier *')}
                   {field('nama', 'Nama Supplier *')}
+                  {/* Update #043 — Singkatan (auto-isi dari nama). */}
+                  {singkatanField}
                   {suggestedField('supplierType', 'Tipe Supplier', 'COMPANY / INDIVIDUAL (opsional)')}
                   <div className="space-y-2">
                     <Label>Status</Label>
@@ -414,6 +463,7 @@ export default function SupplierPage({ refreshKey, formMode, formProps }: Suppli
                 email: (formProps?.email as string) || '',
                 kontakPerson: (formProps?.kontakPerson as string) || '',
                 npwp: (formProps?.npwp as string) || '',
+                singkatan: (formProps?.singkatan as string) || '',
                 syaratBayarDefault: (formProps?.syaratBayarDefault as string) || ''
                 // Field baru Phase 2 (nitku, syaratBayarId, creditLimit, taxStatus) akan
                 // di-fetch dari detail endpoint di useEffect SupplierForm.
