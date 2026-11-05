@@ -24,7 +24,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { FileText, Plus, Trash2, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info, Package, Type, History } from 'lucide-react';
 import { formatRp, formatDate, todayStr, generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
-import { useDefaultTaxRates } from '@/lib/use-default-rates';
+// === Update #042 — useDefaultTaxRates tidak dipakai lagi di form penawaran
+// (PPN dihapus dari penawaran; tarif default hanya untuk PO/Invoice). ===
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
@@ -446,11 +447,11 @@ function PenawaranBiayaTable({ rows, setRows }: { rows: PenawaranBiayaRow[]; set
 
 // ─── Totals Breakdown (mirror TotalsBreakdown sales/index.tsx) ──────────────
 
-function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan }: { subtotal: number; diskonGlobalPct: number; ppnPct: number; totalBiayaTambahan: number }) {
+// === Update #042 — PPN DIHAPUS dari penawaran (dokumen nilai penuh):
+// grand total = subtotal − diskon + biaya; pajak hanya di INVOICE. ===
+function TotalsBreakdown({ subtotal, diskonGlobalPct, totalBiayaTambahan }: { subtotal: number; diskonGlobalPct: number; totalBiayaTambahan: number }) {
   const totalDiskon = subtotal * (diskonGlobalPct / 100);
-  const dasarPajak = subtotal - totalDiskon;
-  const ppnAmount = dasarPajak * (ppnPct / 100);
-  const grandTotal = dasarPajak + ppnAmount + totalBiayaTambahan;
+  const grandTotal = subtotal - totalDiskon + totalBiayaTambahan;
 
   return (
     <div className="rounded-md border bg-muted/20 px-4 py-3 space-y-1">
@@ -462,16 +463,6 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground pl-3">- Diskon ({diskonGlobalPct}%)</span>
           <span className="font-mono text-destructive">({formatRp(totalDiskon)})</span>
-        </div>
-      )}
-      <div className="flex justify-between text-xs border-t pt-1 mt-1">
-        <span className="font-medium">Dasar Pajak</span>
-        <span className="font-mono font-medium">{formatRp(dasarPajak)}</span>
-      </div>
-      {ppnPct > 0 && (
-        <div className="flex justify-between text-xs">
-          <span className="text-muted-foreground pl-3">+ PPN ({ppnPct}%)</span>
-          <span className="font-mono">{formatRp(ppnAmount)}</span>
         </div>
       )}
       {totalBiayaTambahan > 0 && (
@@ -571,10 +562,9 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
   // terisi penuh dari penawaran (pelanggan terkunci + seluruh item & biaya),
   // BUKAN lagi membuat SO langsung lewat API. Repeat order tetap jalan:
   // penawaran DRAFT/SELESAI boleh dipakai lagi.
-  // === Update #040 — panduan termin dihapus (fitur Pembayaran Termin SO
-  // dihapus): nilai SO disesuaikan sesuai tahap pembayaran (mis. sebesar DP),
-  // pembayaran murni lewat Invoice; sisa pembayaran → SO BARU lagi dari
-  // penawaran yang sama (lihat kartu Sisa Penawaran / #039). ===
+  // === Update #042 — SO dibuat nilai PENUH (tanpa PPN & tanpa DP); DP
+  // bertahap & pelunasan lewat pembuatan Invoice (bisa berkali-kali) atas
+  // SO ini dengan field DP/Pelunasan. ===
   const handleBuatSo = useCallback(
     (d: PenawaranResponse) => {
       const rev = d.revisiKe && d.revisiKe > 1 ? ` Rev. ${d.revisiKe}` : '';
@@ -586,7 +576,7 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
         formProps: { penawaranId: d.id }
       });
       toast.info(`Form Sales Order terbuka dengan isian ${d.noPenawaran}${rev}`, {
-        description: 'Sesuaikan nilai SO sesuai tahap pembayaran (mis. sebesar DP) lalu Simpan — terbitkan Invoice dari SO ini dan lunasi lewat Pelunasan Invoice. Sisa pembayaran: buat SO baru lagi dari penawaran yang sama.'
+        description: 'Simpan SO dengan nilai penuh (tanpa PPN) — terbitkan Invoice dari SO ini (bisa berkali-kali) dan atur DP bertahap / pelunasan lewat field DP/Pelunasan di invoice, lalu lunasi lewat Pelunasan Invoice (Kas & Bank).'
       });
     },
     [openFormTab]
@@ -933,12 +923,8 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
-  const [fPpn, setFPpn] = useState('11');
-  // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN)
-  const defaultRates = useDefaultTaxRates();
-  useEffect(() => {
-    if (defaultRates) setFPpn(defaultRates.ppn);
-  }, [defaultRates]);
+  // === Update #042 — PPN DIHAPUS dari penawaran (order doc nilai penuh
+  // tanpa PPN); field PPN % & tarif default RATE_PPN tidak dipakai lagi. ===
   // ── Update #003: singkatan customer — ditarik dari master pelanggan. ──
   // (Update #031: field LOCKED read-only — ambil data dari master data.)
   const [fCustomerCode, setFCustomerCode] = useState('');
@@ -1068,7 +1054,8 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         // customer dihapus dari form — nomor PO diisi di SO bila perlu).
         setFCustomerCode(p.customerCode || '');
         setFDiskonGlobal(String(Number(p.diskonGlobal) || 0));
-        setFPpn(String(Number(p.ppn) || 0));
+        // === Update #042 — ppn dihapus dari response penawaran (tidak
+        // diprefill lagi; dokumen nilai penuh tanpa PPN). ===
         setFDetail(
           (p.details || []).map((r) => ({
             id: crypto.randomUUID(),
@@ -1196,7 +1183,8 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         // pelanggan); No. PO customer field dihapus dari form penawaran.
         mataUang: 'IDR',
         diskonGlobal: parseFloat(fDiskonGlobal) || 0,
-        ppn: parseFloat(fPpn) || 0,
+        // === Update #042 — ppn DIHAPUS dari payload penawaran (order doc
+        // nilai penuh; pajak hanya di INVOICE). ===
         details,
         biayaTambahan: biaya.length > 0 ? biaya : undefined
       };
@@ -1219,7 +1207,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     } finally {
       setSubmitting(false);
     }
-  }, [editId, fPelangganId, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fBulan, fTahun, fDiskonGlobal, fPpn, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [editId, fPelangganId, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fBulan, fTahun, fDiskonGlobal, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
 
   const loading = ddLoading || editLoading;
 
@@ -1326,7 +1314,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               ) : (
                 <p className="text-xs text-muted-foreground">Belum ada Sales Order aktif dari penawaran ini — nilai penuh {formatRp(editGrandTotal)} masih tersedia sebagai sisa.</p>
               )}
-              <p className="text-[11px] text-muted-foreground">Alur DP bertahap: buat SO sebesar DP dari penawaran ini → turunkan invoice-nya; sisa pembayaran dibuat SO baru lagi dari penawaran yang sama → invoice baru (pembayaran tetap mengacu invoice). Sisa dihitung otomatis dan berubah mengikuti status SO.</p>
+              <p className="text-[11px] text-muted-foreground">Update #042 — penawaran &amp; SO adalah dokumen nilai PENUH tanpa PPN &amp; tanpa DP. DP bertahap &amp; pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) atas SO turunan penawaran ini dengan field DP/Pelunasan. Sisa dihitung otomatis dan berubah mengikuti status SO.</p>
             </div>
           )}
 
@@ -1500,12 +1488,14 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               <Label className="text-xs font-medium">Diskon Global %</Label>
               <Input type="number" className="h-9 text-xs" value={fDiskonGlobal} min={0} max={100} onChange={(e) => setFDiskonGlobal(e.target.value)} disabled={readOnly} />
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">PPN (%)</Label>
-              <Input type="number" className="h-9 text-xs" value={fPpn} min={0} max={100} onChange={(e) => setFPpn(e.target.value)} disabled={readOnly} />
-            </div>
+            {/* === Update #042 — field PPN % DIHAPUS dari form penawaran
+                (dokumen nilai penuh tanpa PPN; pajak hanya di INVOICE). === */}
           </div>
-          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} />
+          {/* === Update #042 — alur baru (menggantikan petunjuk PPN lama):
+              penawaran dibuat nilai PENUH tanpa PPN — grand total = subtotal
+              − diskon + biaya; DP bertahap & pelunasan ditagih lewat
+              pembuatan Invoice atas SO turunan (field DP/Pelunasan). === */}
+          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} totalBiayaTambahan={formTotalBiaya} />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." disabled={readOnly} />
@@ -1556,8 +1546,9 @@ function mapPenawaranData(d: PenawaranResponse): PenawaranData {
       nama: b.nama || '',
       jumlah: Number(b.jumlah) || 0
     })),
-    diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0
+    diskonGlobal: Number(d.diskonGlobal) || 0
+    // === Update #042 — ppn dihapus dari response penawaran (cetakan tanpa
+    // baris PPN; grand total = subtotal − diskon + biaya). ===
   };
 }
 

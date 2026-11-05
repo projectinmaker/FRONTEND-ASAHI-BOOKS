@@ -15,9 +15,10 @@ export interface DetailRow {
   qty: number;
   diskon: number;
   satuan?: string | null; // nama satuan per baris — kolom "Satuan" di semua cetakan (Update #5)
-  // === Update #041 — DP per baris (invoice): terisi (> 0) → nilai baris
-  // yang ditagih = DP (harga & qty tetap utuh — alur DP bertahap). ===
-  dp?: number;
+  // === Update #042 — DP per baris DIHAPUS: nilai yang ditagih baris kini
+  // porsi header dpPelunasan (distribusi proporsional backend) — dipetakan
+  // dari SalesInvoiceDetailResponse.subTotal (nilai ditagih baris). ===
+  subTotal?: number;
 }
 
 export interface BiayaTambahan {
@@ -41,7 +42,8 @@ export interface PesananData {
   biayaTambahan: BiayaTambahan[];
   keterangan: string;
   diskonGlobal: number;
-  ppn: number;
+  // === Update #042 — PPN dihapus dari SO (order doc nilai penuh tanpa
+  // pajak; PPN hanya di INVOICE). ===
 }
 
 export interface PengirimanData {
@@ -89,6 +91,13 @@ export interface InvoiceData {
   ppnApplicable?: boolean;
   pph23Applicable?: boolean;
   pph23?: number;
+  // === Update #042 — DP/Pelunasan (field header invoice): nilai yang
+  // ditagih invoice ini (0 = tagih penuh; subTotal baris = porsi) +
+  // soSisaNilai = sisa tagihan NILAI SO SETELAH invoice ini (null bila
+  // standalone tanpa SO) — dicetak sebagai baris footer "Sisa pembayaran
+  // dari SO {noSo}". ===
+  dpPelunasan?: number;
+  soSisaNilai?: number | null;
 }
 
 export interface ReturData {
@@ -118,7 +127,8 @@ export interface PenawaranData {
   detail: DetailRow[];
   biayaTambahan: BiayaTambahan[];
   diskonGlobal: number;
-  ppn: number;
+  // === Update #042 — PPN dihapus dari penawaran (dokumen nilai penuh;
+  // grand total = subtotal − diskon + biaya; PPN hanya di INVOICE). ===
 }
 
 // ─── Shared Styles ───────────────────────────────────────────────────────────
@@ -165,12 +175,14 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // posisinya dikembalikan ke blok footer kiri template (seperti sebelumnya),
 // tetap menyebut TOTAL.
 
-function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0, hideDiskon = false }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number; hideDiskon?: boolean }) {
-  // === Update #041 — baris ber-DP: "Sub Total" tetap menampilkan nilai penuh
-  // (Σ qty × harga), baris "DP Diterapkan" memotong ke nilai yang ditagih
-  // (Σ dp); pajak & Total mengikuti nilai efektif. ===
+function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0, hideDiskon = false, dpPelunasan }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number; hideDiskon?: boolean; dpPelunasan?: number }) {
+  // === Update #042 — DP/Pelunasan (header invoice) menggantikan perhitungan
+  // dari dp per baris: gross = Σ qty × harga (nilai penuh); effective =
+  // dpPelunasan bila > 0 (nilai ditagih), selain itu gross (perilaku lama).
+  // Baris potongan label "DP/Pelunasan" tampil bila gross − effective > 0;
+  // pajak & Total mengikuti nilai efektif. ===
   const gross = detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const effective = detail.reduce((s, r) => s + (r.dp && r.dp > 0 ? r.dp : r.qty * r.harga), 0);
+  const effective = dpPelunasan != null && dpPelunasan > 0 ? dpPelunasan : gross;
   const dpAdjust = gross - effective;
   const subTotal = gross;
   const diskonAmt = diskonGlobal ? (effective * diskonGlobal) / 100 : 0;
@@ -188,10 +200,11 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable 
           <td style={{ ...cellStyle, width: '160px' }}>Sub Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', width: '140px' }}>{formatNumber(subTotal)}</td>
         </tr>
-        {/* Update #041 — potongan DP (nilai ditagih tahap ini) bila ada baris DP. */}
+        {/* === Update #042 — potongan DP/Pelunasan (nilai ditagih invoice ini)
+            bila terisi; label menggantikan "DP Diterapkan" lama. === */}
         {dpAdjust > 0 && (
           <tr>
-            <td style={cellStyle}>DP Diterapkan</td>
+            <td style={cellStyle}>DP/Pelunasan</td>
             <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(dpAdjust)}</td>
           </tr>
         )}
@@ -250,8 +263,11 @@ function DetailTableWithPrice({ detail, hideDiskon = false, hideAt = false }: { 
       </thead>
       <tbody>
         {detail.map((row, i) => {
-          // Update #041 — baris ber-DP: nilai yang ditagih = DP.
-          const totalHarga = row.dp && row.dp > 0 ? row.dp : row.qty * row.harga;
+          // === Update #042 — Total Harga = subTotal baris (nilai ditagih —
+          // untuk invoice: porsi dpPelunasan; suffix " (DP)" & row.dp DIHAPUS).
+          // Fallback qty × harga × (1 − diskon%) bila subTotal tak tersedia
+          // (SO/penawaran/retur lama tanpa nilai baris). ===
+          const totalHarga = row.subTotal != null ? row.subTotal : row.qty * row.harga * (1 - (row.diskon || 0) / 100);
           return (
             <tr key={row.id}>
               <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
@@ -260,10 +276,7 @@ function DetailTableWithPrice({ detail, hideDiskon = false, hideAt = false }: { 
               <td style={{ ...cellStyle, textAlign: 'center' }}>{row.satuan || '-'}</td>
               <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(row.harga)}</td>
               {!hideDiskon && <td style={{ ...cellStyle, textAlign: 'center' }}>{row.diskon || 0}</td>}
-              <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                {formatNumber(totalHarga)}
-                {row.dp && row.dp > 0 && <span style={{ fontSize: '9px' }}> (DP)</span>}
-              </td>
+              <td style={{ ...cellStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatNumber(totalHarga)}</td>
             </tr>
           );
         })}
@@ -514,11 +527,13 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
   // memotong grand total — konsisten dengan perhitungan backend.
   const ppnOn = data.ppnApplicable ?? true;
   const pph23On = data.pph23Applicable ?? false;
-  // Update #041 — baris ber-DP: nilai yang ditagih = DP (terbilang & total
-  // mengikuti nilai efektif, bukan Σ qty × harga).
-  const subTotal = data.detail.reduce((s, r) => s + (r.dp && r.dp > 0 ? r.dp : r.qty * r.harga), 0);
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
+  // === Update #042 — DP/Pelunasan (header invoice) menggantikan dp per
+  // baris: nilai yang ditagih invoice ini (0/kosong = tagih penuh
+  // Σ qty × harga). Terbilang & total mengikuti nilai efektif. ===
+  const gross = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const dpEff = data.dpPelunasan != null && data.dpPelunasan > 0 ? data.dpPelunasan : gross;
+  const diskonAmt = data.diskonGlobal ? (dpEff * data.diskonGlobal) / 100 : 0;
+  const afterDiskon = dpEff - diskonAmt;
   const ppnAmt = ppnOn && data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
   const pph23Amt = pph23On && data.pph23 ? (afterDiskon * data.pph23) / 100 : 0;
   const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
@@ -599,6 +614,17 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
           <div style={{ marginBottom: '6px' }}>
             <span style={{ fontStyle: 'italic' }}>Terbilang: {terbilang(grandTotal)}</span>
           </div>
+          {/* === Update #042 — baris footer SISA PEMBAYARAN dari SO ter-link:
+              tampil bila invoice punya SO (noSo tersedia) & soSisaNilai tidak
+              null (sisa tagihan NILAI SO SETELAH invoice ini — patokan
+              DP/Pelunasan invoice berikutnya atas SO yang sama). === */}
+          {data.noSo && data.soSisaNilai != null && (
+            <div style={{ marginBottom: '6px' }}>
+              <strong>
+                Sisa pembayaran dari SO {data.noSo}: Rp {formatNumber(data.soSisaNilai)}
+              </strong>
+            </div>
+          )}
           {/* Update ASAHI #6: Keterangan SELALU tampil di bawah terbilang
               (dulu hanya saat diisi) — sesuai susunan invoice yang diminta. */}
           <div style={{ marginBottom: '12px' }}>
@@ -628,8 +654,10 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
         {/* Right */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
           {/* Update ASAHI: pilihan PPh23/PPN dari data invoice
-              Update #004: baris Diskon setelah Sub Total disembunyikan (hideDiskon). */}
-          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} hideDiskon />
+              Update #004: baris Diskon setelah Sub Total disembunyikan (hideDiskon).
+              Update #042: dpPelunasan (header) menggantikan perhitungan dp per
+              baris — baris potongan "DP/Pelunasan" + pajak atas nilai ditagih. */}
+          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} hideDiskon dpPelunasan={data.dpPelunasan} />
         </div>
       </div>
 
@@ -725,12 +753,14 @@ export function ReturPDFTemplate({ data }: { data: ReturData }) {
 export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
   // Update ASAHI #5: posisi terbilang dikembalikan ke blok footer kiri
   // (seperti sebelum update #4) — tetap menyebut TOTAL.
+  // === Update #042 — PPN DIHAPUS dari penawaran (order doc nilai penuh
+  // tanpa pajak; PPN hanya di INVOICE): grand total = subtotal − diskon
+  // + biaya; ringkasan tanpa baris "DP Diterapkan"/PPN. ===
   const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
   const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+  const grandTotal = afterDiskon + biayaLain;
 
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
@@ -793,7 +823,10 @@ export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
 
         {/* Right */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} />
+          {/* === Update #042 — ringkasan penawaran TANPA PPN (dokumen nilai
+              penuh; pajak hanya di INVOICE) — ppnApplicable=false meniadikan
+              baris PPN di SummaryTable. === */}
+          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={0} biayaTambahan={data.biayaTambahan} ppnApplicable={false} />
         </div>
       </div>
 

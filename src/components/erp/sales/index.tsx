@@ -9,7 +9,7 @@ import { StockOperationErrorDialog, useStockOperationError } from '@/components/
 import OrderDocumentForm from '@/components/erp/orders/order-document-form';
 import { canEditOrder } from '@/lib/order-documents';
 
-import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction, type ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -144,9 +144,9 @@ interface FormDetailRow {
   bebas?: boolean;
   itemNama?: string;
   itemSatuan?: string;
-  // === Update #041 — DP per baris (tarikan baris SO ber-DP / isi manual):
-  // terisi (> 0) → nilai baris yang ditagih = DP — harga & qty tetap utuh. ===
-  dp?: string;
+  // === Update #042 — field `dp` per-baris DIHAPUS: nilai yang ditagih
+  // dikendalikan header DP/Pelunasan (dpPelunasan) — didistribusikan
+  // proporsional otomatis oleh backend (subTotal baris = porsi). ===
 }
 
 interface FormBiayaRow {
@@ -158,8 +158,8 @@ interface FormBiayaRow {
 function newDetailRow(): FormDetailRow {
   // Update #032 — field bebas/itemNama/itemSatuan dipakai form Invoice
   // (jasa/custom tanpa barang master); form Pengiriman tidak memakainya.
-  // Update #041 — dp dipakai form Invoice (tarikan baris SO ber-DP).
-  return { id: crypto.randomUUID(), barangId: '', kodeBarang: '', barangNama: '', harga: '', qty: '1', diskon: '0', satuanId: '', satuanNama: '', bebas: false, itemNama: '', itemSatuan: '', dp: '' };
+  // Update #042 — dp per-baris dihapus (diganti header DP/Pelunasan invoice).
+  return { id: crypto.randomUUID(), barangId: '', kodeBarang: '', barangNama: '', harga: '', qty: '1', diskon: '0', satuanId: '', satuanNama: '', bebas: false, itemNama: '', itemSatuan: '' };
 }
 
 function newBiayaRow(): FormBiayaRow {
@@ -194,6 +194,9 @@ interface InvoicePenjualanDraftData {
   pph23Applicable: boolean;
   pph23: string;
   keterangan: string;
+  // === Update #042 — DP/Pelunasan (field header invoice): canonical string
+  // ("" = kosong). ===
+  dpPelunasan?: string;
   detail: FormDetailRow[];
   biayaTambahan: FormBiayaRow[];
 }
@@ -213,14 +216,15 @@ interface ReturPenjualanDraftData {
 
 // ─── Detail Table With Price (for SO / Invoice / Retur forms) ──────────────
 
-function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false, onBarangCreated, allowBebas = false, showDp = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean; onBarangCreated?: (barang: BarangResponse) => void; allowBebas?: boolean; showDp?: boolean }) {
+function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false, onBarangCreated, allowBebas = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean; onBarangCreated?: (barang: BarangResponse) => void; allowBebas?: boolean }) {
   // Update #004: hideDiskon — invoice tidak lagi menampilkan kolom Diskon %
   // (dokumen invoice tanpa diskon; payload mengirim diskon null).
   // Update #032: allowBebas — form Invoice mengizinkan baris ITEM BEBAS
   // (jasa/custom tanpa barang master; toggle ikon Type di kiri nama). Baris
   // bebas wajib itemNama; satuan teks bebas opsional.
-  // Update #041: showDp — form Invoice menampilkan kolom DP (Rp) setelah
-  // Qty/Diskon (tarikan baris SO ber-DP): nilai baris yang ditagih = DP.
+  // Update #042: kolom DP per baris DIHAPUS — nilai yang ditagih kini satu
+  // field header "DP/Pelunasan" (dpPelunasan) di panel ringkasan invoice;
+  // backend mendistribusikan proporsional ke baris (subTotal = porsi).
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
   // Update #032 — toggle mode baris: master ↔ bebas (reset field yang tidak
@@ -257,9 +261,8 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
   );
 
   const subtotal = rows.reduce((s, r) => {
-    // Update #041 — baris ber-DP: nilai yang ditagih = DP (bukan qty × harga).
-    const dp = showDp && Number(r.dp) > 0 ? Number(r.dp) : 0;
-    if (dp > 0) return s + dp;
+    // Update #004: invoice tanpa diskon — subtotal baris = qty × harga
+    // (Update #042: DP per baris dihapus; potongan nilai via header DP/Pelunasan).
     const q = parseFloat(r.qty) || 0;
     const h = parseFloat(r.harga) || 0;
     if (hideDiskon) return s + q * h;
@@ -278,10 +281,9 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
               <TableHead className="w-[120px] text-right">Harga Satuan</TableHead>
               <TableHead className="w-[80px] text-right">Qty</TableHead>
               {!hideDiskon && <TableHead className="w-[90px] text-right">Diskon %</TableHead>}
-              {/* === Update #041 — kolom DP (Rp) (form Invoice, setelah
-                  Qty/Diskon): nilai baris yang ditagih = DP bila terisi —
-                  harga satuan & qty tetap utuh (tarikan baris SO ber-DP). === */}
-              {showDp && <TableHead className="w-[130px] text-right">DP (Rp)</TableHead>}
+              {/* === Update #042 — kolom DP (Rp) per baris DIHAPUS: nilai yang
+                  ditagih kini satu field header DP/Pelunasan di panel ringkasan
+                  (didistribusikan proporsional oleh backend). === */}
               <TableHead className="w-[140px] text-right">Subtotal</TableHead>
               <TableHead className="w-[40px]" />
             </TableRow>
@@ -291,9 +293,9 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
               const q = parseFloat(row.qty) || 0;
               const h = parseFloat(row.harga) || 0;
               const d = hideDiskon ? 0 : parseFloat(row.diskon) || 0;
-              // Update #041 — baris ber-DP: nilai yang ditagih = DP.
-              const dpVal = showDp && Number(row.dp) > 0 ? Number(row.dp) : 0;
-              const rowSub = dpVal > 0 ? dpVal : q * h * (1 - d / 100);
+              // Update #042 — baris selalu nilai penuh (qty × harga, diskon bila
+              // tampil); potongan nilai ditangani header DP/Pelunasan.
+              const rowSub = q * h * (1 - d / 100);
               return (
                 <TableRow key={row.id}>
                   <TableCell className="font-mono text-xs">
@@ -340,20 +342,9 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
                       <Input type="number" className="h-8 text-right text-xs" value={row.diskon} min={0} max={100} onChange={(e) => updateRow(row.id, 'diskon', e.target.value)} />
                     </TableCell>
                   )}
-                  {/* Update #041 — input DP per baris (nilai ditagih tahap ini). */}
-                  {showDp && (
-                    <TableCell>
-                      <CurrencyInput className="h-8 text-right text-xs" value={row.dp || ''} onValueChange={(v) => updateRow(row.id, 'dp', v)} aria-label="DP baris" />
-                    </TableCell>
-                  )}
-                  <TableCell className="whitespace-nowrap text-right font-mono text-xs font-medium">
-                    {formatRp(rowSub)}
-                    {dpVal > 0 && (
-                      <span className="ml-1 align-middle rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700" title="Baris ditagih sebesar DP (sisa dibuat SO/invoice baru dari penawaran yang sama)">
-                        DP
-                      </span>
-                    )}
-                  </TableCell>
+                  {/* === Update #042 — input DP per baris DIHAPUS (nilai
+                      ditagih diatur header DP/Pelunasan invoice). === */}
+                  <TableCell className="whitespace-nowrap text-right font-mono text-xs font-medium">{formatRp(rowSub)}</TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
                       <Trash2 className="h-3.5 w-3.5" />
@@ -364,7 +355,7 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
             })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={(hideDiskon ? 6 : 7) + (showDp ? 1 : 0)} className="h-16 text-center text-muted-foreground">
+                <TableCell colSpan={hideDiskon ? 6 : 7} className="h-16 text-center text-muted-foreground">
                   Belum ada item. Klik "+ Tambah Baris" untuk menambahkan.
                 </TableCell>
               </TableRow>
@@ -383,10 +374,17 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
 
 // ─── Totals Breakdown (PPN/PPh23 baris terpisah, mengikuti pilihan pajak) ────
 
-function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23Pct = 0 }: { subtotal: number; diskonGlobalPct: number; ppnPct: number; totalBiayaTambahan: number; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23Pct?: number }) {
-  const totalDiskon = subtotal * (diskonGlobalPct / 100);
-  const dasarPajak = subtotal - totalDiskon;
+// === Update #042 — prop dpPelunasan (form Invoice): nilai yang ditagih
+// invoice ini (field header DP/Pelunasan). > 0 → pajak dihitung atas nilai
+// itu + baris potongan "DP/Pelunasan" (subtotal − dp); kosong/0 → perilaku
+// lama (tagih subtotal penuh). dpInput = node input yang diletakkan tepat
+// SETELAH baris Subtotal (hanya untuk form invoice). ===
+function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23Pct = 0, dpPelunasan = 0, dpInput }: { subtotal: number; diskonGlobalPct: number; ppnPct: number; totalBiayaTambahan: number; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23Pct?: number; dpPelunasan?: number; dpInput?: ReactNode }) {
+  const dpEffective = dpPelunasan > 0 ? dpPelunasan : subtotal;
+  const totalDiskon = dpEffective * (diskonGlobalPct / 100);
+  const dasarPajak = dpEffective - totalDiskon;
   // Update ASAHI: PPN hanya bila dipilih; PPh23 (jika dipilih) memotong grand total.
+  // Update #042: PPN/PPh23 dihitung atas nilai ditagih (dp bila terisi).
   const ppnAmount = ppnApplicable ? dasarPajak * (ppnPct / 100) : 0;
   const pph23Amount = pph23Applicable ? dasarPajak * (pph23Pct / 100) : 0;
   const grandTotal = dasarPajak + ppnAmount + totalBiayaTambahan - pph23Amount;
@@ -397,6 +395,21 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
         <span className="text-muted-foreground">Subtotal</span>
         <span className="font-mono">{formatRp(subtotal)}</span>
       </div>
+      {/* === Update #042 — input DP/Pelunasan (Rp) tepat setelah baris Subtotal
+          (form Invoice): nilai yang ditagih invoice ini — kosong = tagih penuh. === */}
+      {dpInput && <div className="pt-1">{dpInput}</div>}
+      {dpPelunasan > 0 && (
+        <>
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground pl-3">DP/Pelunasan (nilai ditagih)</span>
+            <span className="font-mono font-medium text-amber-700">{formatRp(dpPelunasan)}</span>
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-muted-foreground pl-3">- (subtotal − DP/Pelunasan)</span>
+            <span className="font-mono text-destructive">({formatRp(Math.max(subtotal - dpPelunasan, 0))})</span>
+          </div>
+        </>
+      )}
       {diskonGlobalPct > 0 && (
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground pl-3">- Diskon ({diskonGlobalPct}%)</span>
@@ -1247,9 +1260,9 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
 
 // ═════════════════════════════════════════════════════════════════════════════
 // === Update #040 — KOTAK SISA PEMBAYARAN PENAWARAN di form/detail Invoice ===
-// Alur DP bertahap: invoice ini menagih tahap pembayaran dari SO turunan
-// penawaran (mis. DP 70 jt); SISA penawaran (30 jt) adalah cikal bakal SO
-// baru berikutnya dari penawaran yang sama. Info diambil dari endpoint
+// Update #042 — SO kini dokumen nilai PENUH (tanpa DP); DP bertahap &
+// pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) atas SO
+// turunan penawaran dengan field DP/Pelunasan. Info diambil dari endpoint
 // penawaran (#039: grandTotal · dipakaiSoTotal · sisaPenawaran).
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1299,7 +1312,7 @@ function SoPenawaranCard({ info }: { info: SoPenawaranInfo }) {
         <span className={`font-mono font-semibold ${negatif ? 'text-amber-700' : 'text-emerald-700'}`} title={negatif ? 'SO-SO turunan melebihi nilai penawaran' : undefined}>
           {formatRp(info.sisa)}
         </span>{' '}
-        — invoice ini menagih tahap berjalan; sisa dibayar lewat SO baru dari penawaran yang sama.
+        — DP bertahap & pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) atas SO turunan penawaran ini dengan field DP/Pelunasan (Update #042).
       </p>
     </div>
   );
@@ -1339,6 +1352,15 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const [fBiayaTambahan, setFBiayaTambahan] = useState<FormBiayaRow[]>([]);
   const [soLoading, setSoLoading] = useState(false);
   const [doLoading, setDoLoading] = useState(false);
+  // === Update #042 — DP/Pelunasan (field header invoice): nilai yang ditagih
+  // invoice ini (canonical string CurrencyInput; "" = kosong). SO terpilih →
+  // auto-terisi sisa tagihan SO (sisaNilai) & dibatasi ≤ sisa; standalone →
+  // kosong = tagih penuh subtotal (bila diisi: 0 < x ≤ Σ gross baris). ===
+  const [fDpPelunasan, setFDpPelunasan] = useState('');
+  // === Update #042 — info sisa tagihan NILAI SO terpilih (endpoint
+  // /sales-order/{id}/sisa → sisaNilai): dipakai hint + validasi batas atas
+  // DP/Pelunasan (wajib > 0 dan ≤ sisa saat SO ter-link). ===
+  const [soSisaInfo, setSoSisaInfo] = useState<{ noPesanan: string; sisaNilai: number } | null>(null);
   // AUD-10 (update #04) — tarif default dari setting global (RATE_PPN/RATE_PPH23)
   const defaultRates = useDefaultTaxRates();
   useEffect(() => {
@@ -1356,7 +1378,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}).
   // Dipakai saat SO dipilih manual maupun saat draft dipulihkan (salesOrderId tersimpan).
   // Update #040 — sekaligus muat kartu Sisa Pembayaran bila SO berasal dari penawaran.
-  // Update #041 — mengembalikan objek SO (dipakai sinkronisasi PPN dari SO). ===
+  // Update #042 — mengembalikan objek SO (info header saja — PPN invoice tidak
+  // lagi mengikuti SO karena SO tanpa PPN sejak #042). ===
   const loadSoRefInfo = useCallback(async (soId: string): Promise<SalesOrderResponse | null> => {
     try {
       const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
@@ -1370,18 +1393,24 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     }
   }, []);
 
-  // === Update #041 — PPN invoice MENGIKUTI SO terpilih: harga di penawaran/SO
-  //     yang sudah TERMASUK PPN (SO ppn 0) → invoice TIDAK menambah PPN lagi;
-  //     SO ber-PPN (mis. 11%) → invoice ikut tarif yang sama. Mencegah PPN
-  //     ditambahkan dobel di tahap invoice (alur penawaran → SO → invoice
-  //     maupun alur langsung dari SO). Dipanggil saat SO dipilih manual /
-  //     auto-link dari No DO — BUKAN saat draft dipulihkan (pilihan user yang
-  //     tersimpan di draft dipertahankan). Masih bisa diganti manual kapan pun. ===
-  const syncPpnFromSo = useCallback((so: SalesOrderResponse | null) => {
-    if (!so || so.ppn == null) return;
-    const rate = Number(so.ppn) || 0;
-    setFPpnApplicable(rate > 0);
-    if (rate > 0) setFPpn(String(rate));
+  // === Update #042 — muat SISA TAGIHAN NILAI SO (endpoint /sisa → sisaNilai)
+  // untuk hint + validasi DP/Pelunasan. autoFillPenuhBaris = Σ nilai penuh
+  // baris yang ditarik (bila > 0 → prefill min(sisaNilai, Σ); selain itu
+  // sisaNilai) — dipakai saat SO dipilih (baris dari SO) / auto-link dari
+  // No DO (baris dari DO). autoFill=false → hanya mengisi info tanpa
+  // mengubah fDpPelunasan (dipakai saat draft dipulihkan). ===
+  const applySoSisaInfo = useCallback(async (soId: string, penuhNilaiBaris: number, autoFill: boolean) => {
+    try {
+      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+      const sisaNilai = Number(sisa.sisaNilai) || 0;
+      setSoSisaInfo({ noPesanan: sisa.noPesanan || '', sisaNilai });
+      if (autoFill) {
+        const autoDp = penuhNilaiBaris > 0 ? Math.min(sisaNilai, penuhNilaiBaris) : sisaNilai;
+        setFDpPelunasan(autoDp > 0 ? String(autoDp) : '');
+      }
+    } catch {
+      setSoSisaInfo(null);
+    }
   }, []);
 
   // ── Update #4: pilih pelanggan → alamat ditarik otomatis
@@ -1417,10 +1446,17 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFPph23Applicable(d.pph23Applicable ?? false);
     setFPph23(d.pph23 ?? '2');
     setFKeterangan(d.keterangan || '');
+    // Update #042 — pulihkan DP/Pelunasan dari draft (isian user dipertahankan).
+    setFDpPelunasan(d.dpPelunasan || '');
     setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
     setFBiayaTambahan(Array.isArray(d.biayaTambahan) ? d.biayaTambahan : []);
     // Update #4: pulihkan info box No SO · No PO bila draft punya SO terpilih.
-    if (d.salesOrderId) void loadSoRefInfo(d.salesOrderId);
+    // Update #042 — pulihkan juga info sisa tagihan SO (tanpa menimpa nilai DP
+    // dari draft — autoFill=false).
+    if (d.salesOrderId) {
+      void loadSoRefInfo(d.salesOrderId);
+      void applySoSisaInfo(d.salesOrderId, 0, false);
+    }
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Invoice Penjualan dimuat kembali otomatis.' });
   }, []);
 
@@ -1445,10 +1481,12 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       pph23Applicable: fPph23Applicable,
       pph23: fPph23,
       keterangan: fKeterangan,
+      // Update #042 — DP/Pelunasan ikut tersimpan di draft.
+      dpPelunasan: fDpPelunasan,
       detail: fDetail,
       biayaTambahan: fBiayaTambahan
     });
-  }, [fPelangganId, fSalesOrderId, fPengirimanId, fTanggal, fAlamatPengiriman, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDetail, fBiayaTambahan]);
+  }, [fPelangganId, fSalesOrderId, fPengirimanId, fTanggal, fAlamatPengiriman, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDpPelunasan, fDetail, fBiayaTambahan]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
@@ -1458,6 +1496,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFPengirimanId('');
     setSoRefInfo(null);
     setSoPenawaranInfo(null);
+    // Update #042 — reset info sisa SO & DP/Pelunasan.
+    setSoSisaInfo(null);
+    setFDpPelunasan('');
     setFTanggal(todayStr());
     setFAlamatPengiriman('');
     setFPpn('11');
@@ -1477,6 +1518,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // sisa faktur per SO line di backend tetap akurat.
   // Pilihan "Tidak ada" (kosong) TIDAK menghapus baris — user tetap bisa manual.
   // Update #4 (C4): selain sisa, muat info No SO · No PO customer utk info box.
+  // === Update #042 — DP/Pelunasan auto-terisi sisa tagihan NILAI SO
+  // (sisa.sisaNilai; bila Σ nilai penuh baris yang ditarik lebih kecil →
+  // pakai Σ itu — baris parsial). Baris TANPA dp per-baris (dihapus #042). ===
   const handleSalesOrderChange = useCallback(
     async (soId: string) => {
       setFSalesOrderId(soId);
@@ -1485,6 +1529,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       if (!soId) {
         setSoRefInfo(null);
         setSoPenawaranInfo(null);
+        // Update #042 — SO dilepas → invoice standalone: info sisa & DP dikosongkan.
+        setSoSisaInfo(null);
+        setFDpPelunasan('');
         return;
       }
       setSoLoading(true);
@@ -1494,6 +1541,13 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         // Update #032 — baris ITEM BEBAS ikut difakturkan (jasa/custom —
         // pendapatan tanpa stok); barang master difakturkan sisa qty-nya.
         const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+        // === Update #042 — sisa tagihan NILAI SO + auto-isi DP/Pelunasan:
+        // min(sisaNilai, Σ nilai penuh baris yang ditarik). ===
+        const sisaNilai = Number(sisa.sisaNilai) || 0;
+        setSoSisaInfo({ noPesanan: sisa.noPesanan || '', sisaNilai });
+        const penuhBaris = rows.reduce((s, d) => s + (Number(d.sisaFaktur) || 0) * (Number(d.harga) || 0), 0);
+        const autoDp = penuhBaris > 0 ? Math.min(sisaNilai, penuhBaris) : sisaNilai;
+        setFDpPelunasan(autoDp > 0 ? String(autoDp) : '');
         if (rows.length === 0) {
           toast.info('Semua baris SO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk SO ini.' });
           setFDetail([]);
@@ -1514,22 +1568,21 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               // Update #032 — item bebas (jasa/custom) tanpa barang master.
               bebas: !d.barangId,
               itemNama: d.itemNama || '',
-              itemSatuan: d.itemSatuan || '',
-              // Update #041 — DP baris SO ikut ditarik: nilai baris invoice yang
-              // ditagih = DP (harga & qty tetap utuh — alur DP bertahap).
-              dp: d.dp != null && Number(d.dp) > 0 ? String(Number(d.dp)) : ''
+              itemSatuan: d.itemSatuan || ''
+              // Update #042 — dp per baris DIHAPUS (nilai ditagih = header DP/Pelunasan).
             }))
           );
         }
       } catch {
         // Gagal memuat sisa SO — biarkan user isi baris manual
+        // Update #042 — info sisa tidak tersedia → validasi/hint disembunyikan.
+        setSoSisaInfo(null);
       }
       // Info box No SO · No PO (gagal → sembunyikan; tidak mengganggu prefill baris).
-      // Update #041 — PPN invoice mengikuti SO terpilih (SO ppn 0 → PPN off).
-      syncPpnFromSo(await loadSoRefInfo(soId));
+      await loadSoRefInfo(soId);
       setSoLoading(false);
     },
-    [loadSoRefInfo, syncPpnFromSo]
+    [loadSoRefInfo]
   );
 
   // === Update #004: Tarik data otomatis No DO → Invoice Penjualan — mirror
@@ -1548,16 +1601,23 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         setFPelangganId(sisa.pelangganId || '');
         if (sisa.alamatPengiriman) setFAlamatPengiriman(sisa.alamatPengiriman);
         // Auto-link header SO dari DO (No SO & No PO customer ikut tercetak).
-        // Update #041 — PPN juga ikut SO auto-link (jangan tambah PPN dobel).
+        // === Update #042 — SO auto-link juga memuat info sisa tagihan NILAI SO
+        // (untuk hint + validasi DP/Pelunasan) dan meng-auto-isi nilai DP dari
+        // sisa SO (min(sisaNilai, Σ nilai penuh baris DO yang ditarik)). ===
+        const doRows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+        const penuhBaris = doRows.reduce((s, d) => s + (Number(d.sisaFaktur) || 0) * (Number(d.harga) || 0), 0);
         if (sisa.salesOrderId) {
           setFSalesOrderId(sisa.salesOrderId);
-          syncPpnFromSo(await loadSoRefInfo(sisa.salesOrderId));
+          await loadSoRefInfo(sisa.salesOrderId);
+          await applySoSisaInfo(sisa.salesOrderId, penuhBaris, true);
         } else {
           setFSalesOrderId('');
           setSoRefInfo(null);
           setSoPenawaranInfo(null);
+          // Update #042 — DO tanpa SO → invoice standalone: info sisa disembunyikan.
+          setSoSisaInfo(null);
         }
-        const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
+        const rows = doRows;
         if (rows.length === 0) {
           toast.info('Semua baris DO sudah terfaktur sepenuhnya', { description: 'Tidak ada sisa qty yang perlu difaktur untuk DO ini.' });
           setFDetail([]);
@@ -1577,12 +1637,12 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               satuanNama: d.satuanNama || d.itemSatuan || '',
               salesOrderDetailId: d.salesOrderDetailId || undefined,
               deliveryDetailId: d.deliveryDetailId,
-              // Update #041 — baris DO item bebas (SO manufaktur/custom) + DP
-              // dari line SO asal (nilai ditagih = DP).
+              // Update #041 — baris DO item bebas (SO manufaktur/custom).
+              // Update #042 — dp per baris DIHAPUS (nilai ditagih = header
+              // DP/Pelunasan invoice).
               bebas: !d.barangId,
               itemNama: d.itemNama || '',
-              itemSatuan: d.itemSatuan || '',
-              dp: d.dp != null && Number(d.dp) > 0 ? String(Number(d.dp)) : ''
+              itemSatuan: d.itemSatuan || ''
             }))
           );
         }
@@ -1592,7 +1652,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         setDoLoading(false);
       }
     },
-    [loadSoRefInfo, syncPpnFromSo]
+    [loadSoRefInfo, applySoSisaInfo]
   );
 
   // Update #004: opsi No DO difilter per pelanggan terpilih (bila ada).
@@ -1601,10 +1661,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   const formSubtotal = useMemo(
     () =>
       fDetail.reduce((s, r) => {
-        // Update #041 — baris ber-DP: nilai yang ditagih = DP (bukan qty × harga).
-        const dp = Number(r.dp) > 0 ? Number(r.dp) : 0;
-        if (dp > 0) return s + dp;
-        // Update #004: invoice tanpa diskon — subtotal baris = qty × harga.
+        // Update #004: invoice tanpa diskon — subtotal baris = qty × harga
+        // (Update #042: nilai penuh baris — potongan via header DP/Pelunasan).
         const q = parseFloat(r.qty) || 0;
         const h = parseFloat(r.harga) || 0;
         return s + q * h;
@@ -1621,6 +1679,17 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     // Update #032 — baris boleh barang master ATAU item bebas (jasa/custom).
     if (!fDetail.some((r) => r.barangId || (r.bebas && (r.itemNama || '').trim()))) errs.detail = 'Minimal 1 baris (barang atau item bebas) harus diisi';
     if (fDetail.some((r) => r.bebas && !(r.itemNama || '').trim())) errs.detail = 'Setiap baris item bebas wajib memiliki nama item';
+    // === Update #042 — validasi DP/Pelunasan (field header invoice):
+    // • SO terpilih → WAJIB > 0 dan ≤ sisaNilai (melebihi = error merah).
+    // • Standalone → kosong = tagih penuh subtotal; bila diisi harus
+    //   0 < x ≤ Σ gross baris (qty × harga). ===
+    const dpNum = Number(fDpPelunasan) || 0;
+    if (fSalesOrderId) {
+      if (dpNum <= 0) errs.dpPelunasan = 'DP/Pelunasan wajib diisi (nilai yang ditagih invoice ini) bila invoice ter-link Sales Order';
+      else if (soSisaInfo && dpNum > soSisaInfo.sisaNilai + 0.01) errs.dpPelunasan = 'Nilai DP/Pelunasan melebihi sisa tagihan SO';
+    } else if (dpNum > 0 && dpNum > formSubtotal + 0.01) {
+      errs.dpPelunasan = 'Nilai DP/Pelunasan melebihi total nilai baris (subtotal)';
+    }
     if (Object.keys(errs).length) {
       setFormErrors(errs);
       return;
@@ -1632,10 +1701,11 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         .map((r) => {
           const qty = parseFloat(r.qty) || 0;
           const harga = parseFloat(r.harga) || 0;
-          // Update #041 — DP per baris: terisi (> 0) → subTotal = dp
-          // (harga & qty utuh — alur DP bertahap dari baris SO).
-          const dp = Number(r.dp) > 0 ? Number(r.dp) : null;
           // Update #004: invoice tanpa diskon — diskon dikirim null.
+          // Update #042 — dp per baris DIHAPUS: nilai yang ditagih dikendalikan
+          // header dpPelunasan (backend mendistribusikan proporsional —
+          // subTotal baris = porsi; subTotal di bawah tetap dikirim nilai
+          // penuh baris untuk dokumentasi harga).
           // Task 16-c2 / #004: link per baris ke line SO dan/atau line DO
           // (bila baris ditarik dari SO / No DO).
           // Update #032 — baris BEBAS: barangId null + itemNama/itemSatuan
@@ -1647,8 +1717,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             harga,
             qty,
             diskon: null,
-            subTotal: dp != null ? dp : qty * harga,
-            dp,
+            subTotal: qty * harga,
             salesOrderDetailId: r.salesOrderDetailId || null,
             deliveryDetailId: r.deliveryDetailId || null
           };
@@ -1673,6 +1742,12 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         pph23Applicable: fPph23Applicable,
         pph23: parseFloat(fPph23) || 2,
         keterangan: fKeterangan || null,
+        // === Update #042 — DP/Pelunasan (field header): nilai yang ditagih
+        // invoice ini. Ter-link SO: null = auto-isi sisa SO (form selalu
+        // mengirim nilai eksplisit hasil auto-isi/manual); standalone: 0 =
+        // tagih penuh subtotal. Backend mendistribusikan proporsional ke
+        // baris & menghitung PPN/PPh23 atas nilai ini. ===
+        dpPelunasan: (Number(fDpPelunasan) || 0) > 0 ? Number(fDpPelunasan) : fSalesOrderId ? null : 0,
         details,
         biayaTambahan: biaya.length > 0 ? biaya : undefined
       };
@@ -1686,7 +1761,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     } finally {
       setSubmitting(false);
     }
-  }, [fPelangganId, fSalesOrderId, fTanggal, fAlamatPengiriman, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [fPelangganId, fSalesOrderId, fTanggal, fAlamatPengiriman, fPpn, fPpnApplicable, fPph23Applicable, fPph23, fKeterangan, fDpPelunasan, soSisaInfo, formSubtotal, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
 
   if (ddLoading) {
     return (
@@ -1776,15 +1851,14 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             </Label>
             {/* Update #004: kolom Diskon % disembunyikan di invoice. */}
             {/* Update #032: allowBebas — baris invoice boleh item bebas (jasa/custom). */}
-            {/* Update #041: showDp — kolom DP (Rp): nilai baris yang ditagih
-                (tarikan baris SO ber-DP; bisa dikosongkan/diubah manual). */}
+            {/* Update #042: kolom DP per baris DIHAPUS — nilai yang ditagih kini
+                diatur field DP/Pelunasan di panel ringkasan (bawah). */}
             <DetailTableWithPrice
               rows={fDetail}
               setRows={setFDetail}
               barangOptions={barangOptions}
               hideDiskon
               allowBebas
-              showDp
               onBarangCreated={(b) => {
                 setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
                 // Satuan barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan host.
@@ -1837,7 +1911,41 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             </div>
           </div>
           {/* Update #004: tanpa diskon global (baris - Diskon tidak tampil). */}
-          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} ppnApplicable={fPpnApplicable} pph23Applicable={fPph23Applicable} pph23Pct={parseFloat(fPph23) || 0} />
+          {/* === Update #042 — panel ringkasan: field "DP/Pelunasan (Rp)"
+              tepat SETELAH baris Subtotal. SO terpilih → auto-terisi sisa
+              tagihan SO (sisaNilai) & wajib 0 < x ≤ sisa; standalone → kosong
+              = tagih penuh subtotal (bila diisi: 0 < x ≤ Σ gross baris).
+              Pajak dihitung atas nilai ditagih; Total = dp + PPN + biaya − PPh23
+              (dp kosong/0 → perilaku lama: tagih subtotal penuh). === */}
+          <TotalsBreakdown
+            subtotal={formSubtotal}
+            diskonGlobalPct={0}
+            ppnPct={parseFloat(fPpn) || 0}
+            totalBiayaTambahan={formTotalBiaya}
+            ppnApplicable={fPpnApplicable}
+            pph23Applicable={fPph23Applicable}
+            pph23Pct={parseFloat(fPph23) || 0}
+            dpPelunasan={Number(fDpPelunasan) || 0}
+            dpInput={
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-muted-foreground">DP/Pelunasan (Rp)</span>
+                  <CurrencyInput
+                    className="h-8 w-44 text-right text-xs"
+                    value={fDpPelunasan}
+                    onValueChange={(v) => {
+                      setFDpPelunasan(v);
+                      if (formErrors.dpPelunasan) setFormErrors((prev) => ({ ...prev, dpPelunasan: '' }));
+                    }}
+                    aria-label="DP/Pelunasan (nilai yang ditagih invoice ini)"
+                    placeholder="0"
+                  />
+                </div>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">{fSalesOrderId ? `Nilai yang ditagih invoice ini${soSisaInfo ? ` — sisa tagihan SO ${soSisaInfo.noPesanan}: ${formatRp(soSisaInfo.sisaNilai)} (nilai maksimum DP/Pelunasan)` : ' — terisi otomatis sebesar sisa tagihan SO saat SO dipilih'}.` : 'Kosong = tagih penuh subtotal; bila diisi harus 0 < nilai ≤ total baris.'}</p>
+                {formErrors.dpPelunasan && <p className="text-xs text-destructive">{formErrors.dpPelunasan}</p>}
+              </div>
+            }
+          />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
@@ -1891,6 +1999,18 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   const [editPph23, setEditPph23] = useState('2');
   const [editKeterangan, setEditKeterangan] = useState('');
   const [soLoading, setSoLoading] = useState(false);
+  // === Update #042 — DP/Pelunasan (field header invoice): nilai yang ditagih
+  // invoice ini (canonical string; "" = kosong = tagih penuh). Prefill dari
+  // response dpPelunasan (0 → kosong). ===
+  const [editDpPelunasan, setEditDpPelunasan] = useState('');
+  // === Update #042 — dpPelunasan tersimpan (nilai-tagih invoice ini): dipakai
+  // menghitung batas atas validasi edit = sisaNilai (saat ini) + nilai-tagih
+  // invoice ini — endpoint /sisa menghitung sisa SETELAH semua invoice
+  // non-DIBATALKAN (termasuk invoice draft ini), jadi nilai-tagihnya harus
+  // dikembalikan sebagai ruang edit. ===
+  const [editDpSaved, setEditDpSaved] = useState(0);
+  // === Update #042 — info sisa tagihan NILAI SO untuk validasi edit. ===
+  const [soSisaInfo, setSoSisaInfo] = useState<{ noPesanan: string; sisaNilai: number } | null>(null);
   // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
   const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
   // === Update #040 — info penawaran sumber SO (kotak Sisa Pembayaran). ===
@@ -1906,6 +2026,17 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     } catch {
       setSoRefInfo(null);
       setSoPenawaranInfo(null);
+    }
+  }, []);
+
+  // === Update #042 — muat sisa tagihan NILAI SO (untuk hint + batas atas
+  // validasi DP/Pelunasan saat edit: sisaNilai + nilai-tagih invoice ini). ===
+  const loadSoSisaInfo = useCallback(async (soId: string) => {
+    try {
+      const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
+      setSoSisaInfo({ noPesanan: sisa.noPesanan || '', sisaNilai: Number(sisa.sisaNilai) || 0 });
+    } catch {
+      setSoSisaInfo(null);
     }
   }, []);
 
@@ -1929,6 +2060,11 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         setEditPph23Applicable(inv.pph23Applicable ?? false);
         setEditPph23(String(inv.pph23 ?? 2));
         setEditKeterangan(inv.keterangan || '');
+        // === Update #042 — prefill DP/Pelunasan dari response (0 → kosong =
+        // tagih penuh) + info sisa tagihan SO (untuk validasi batas atas). ===
+        const dpSaved = Number(inv.dpPelunasan) || 0;
+        setEditDpSaved(dpSaved);
+        setEditDpPelunasan(dpSaved > 0 ? String(dpSaved) : '');
         // Update #4: info box No SO · No PO dari response invoice (salesOrder nested);
         // fallback fetch bila header ter-link tapi nested tidak ikut terkirim.
         // Update #040 — nested kini membawa penawaranId (backend #040): kotak
@@ -1942,6 +2078,9 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
           setSoRefInfo(null);
           setSoPenawaranInfo(null);
         }
+        // Update #042 — info sisa tagihan SO (validasi DP/Pelunasan edit).
+        if (inv.salesOrderId) await loadSoSisaInfo(inv.salesOrderId);
+        else setSoSisaInfo(null);
       } catch (e) {
         toast.error(e instanceof ApiError ? e.detail : 'Gagal memuat data invoice');
       } finally {
@@ -1952,32 +2091,45 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     return () => {
       cancelled = true;
     };
-  }, [editId, loadSoRefInfo]);
+  }, [editId, loadSoRefInfo, loadSoSisaInfo]);
 
   // === Tarik data otomatis SO → Invoice Penjualan (edit) (Task 16-c2):
   // mengganti SO pada form edit hanya menarik data header (pelanggan) dari
   // endpoint /sisa. Detail barang invoice TIDAK diubah saat edit (payload PUT
   // tanpa `details` — baris tersimpan dipertahankan backend apa adanya).
   // Update #4 (C4): perubahan SO juga memperbarui info box No SO · No PO.
+  // Update #042 — perubahan SO juga memuat sisa tagihan NILAI SO & auto-isi
+  // ulang DP/Pelunasan (min(sisaNilai, dp tersimpan bila ada)). ===
   const handleEditSalesOrderChange = useCallback(
     async (soId: string) => {
       setEditSalesOrderId(soId);
       if (!soId) {
         setSoRefInfo(null);
         setSoPenawaranInfo(null);
+        // Update #042 — SO dilepas → standalone: info sisa disembunyikan & DP
+        // dikosongkan (tagih penuh).
+        setSoSisaInfo(null);
+        setEditDpPelunasan('');
         return;
       }
       setSoLoading(true);
       try {
         const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
         if (sisa.pelangganId) setEditPelangganId(sisa.pelangganId);
+        // Update #042 — sisa tagihan NILAI SO + auto-isi DP/Pelunasan baru.
+        const sisaNilai = Number(sisa.sisaNilai) || 0;
+        setSoSisaInfo({ noPesanan: sisa.noPesanan || '', sisaNilai });
+        const dpLama = Number(editDpPelunasan) || 0;
+        const autoDp = dpLama > 0 ? Math.min(dpLama, sisaNilai) : sisaNilai;
+        setEditDpPelunasan(autoDp > 0 ? String(autoDp) : '');
       } catch {
         // Gagal memuat sisa SO — biarkan isian header saat ini
+        setSoSisaInfo(null);
       }
       await loadSoRefInfo(soId);
       setSoLoading(false);
     },
-    [loadSoRefInfo]
+    [loadSoRefInfo, editDpPelunasan]
   );
 
   // ── Update #4: pilih pelanggan → alamat ditarik otomatis dari master
@@ -2001,6 +2153,19 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
       toast.error('Tanggal wajib diisi');
       return;
     }
+    // === Update #042 — validasi DP/Pelunasan saat edit: SO terpilih → wajib
+    // > 0 dan ≤ (sisaNilai saat ini + nilai-tagih invoice ini yang tersimpan)
+    // — sederhana: endpoint /sisa sudah menghitung sisa SETELAH invoice
+    // non-batal (termasuk draft ini), jadi nilai-tagihnya dikembalikan. ===
+    const dpNum = Number(editDpPelunasan) || 0;
+    if (editSalesOrderId && dpNum <= 0) {
+      toast.error('DP/Pelunasan wajib diisi (nilai yang ditagih invoice ini) bila invoice ter-link Sales Order');
+      return;
+    }
+    if (editSalesOrderId && soSisaInfo && dpNum > soSisaInfo.sisaNilai + editDpSaved + 0.01) {
+      toast.error('Nilai DP/Pelunasan melebihi sisa tagihan SO');
+      return;
+    }
     setEditSubmitting(true);
     try {
       const body: SalesInvoiceUpdate = {
@@ -2017,7 +2182,11 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         ppnApplicable: editPpnApplicable,
         pph23Applicable: editPph23Applicable,
         pph23: parseFloat(editPph23) || 2,
-        keterangan: editKeterangan || null
+        keterangan: editKeterangan || null,
+        // === Update #042 — DP/Pelunasan: nilai yang ditagih invoice ini
+        // (kosong/0 = tagih penuh — dikirim eksplisit 0; backend memvalidasi
+        // ulang terhadap sisa SO dengan invoice ini dikecualikan). ===
+        dpPelunasan: dpNum > 0 ? dpNum : 0
       };
       await api.put<SalesInvoiceResponse>(`/penjualan/sales-invoice/${editId}`, body);
       toast.success('Invoice penjualan berhasil diperbarui');
@@ -2028,7 +2197,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
     } finally {
       setEditSubmitting(false);
     }
-  }, [editId, editPelangganId, editTanggal, editSalesOrderId, editAlamatPengiriman, editMataUang, editPpn, editPpnApplicable, editPph23Applicable, editPph23, editKeterangan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [editId, editPelangganId, editTanggal, editSalesOrderId, editAlamatPengiriman, editMataUang, editPpn, editPpnApplicable, editPph23Applicable, editPph23, editKeterangan, editDpPelunasan, editDpSaved, soSisaInfo, subPage, activeTabId, closeTab, refreshListTab]);
 
   return (
     <FormTabShell title="Edit Invoice Penjualan">
@@ -2113,6 +2282,18 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                 <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
               </div>
               <Separator />
+              {/* === Update #042 — field DP/Pelunasan (nilai yang ditagih
+                  invoice ini): prefill dari dpPelunasan tersimpan (0 → kosong
+                  = tagih penuh); batas atas = sisa tagihan SO (saat ini) +
+                  nilai-tagih invoice ini (endpoint /sisa menghitung sisa
+                  SETELAH invoice non-batal — termasuk draft ini — jadi
+                  nilai-tagihnya dikembalikan). Pajak dihitung ulang backend
+                  atas nilai baru. === */}
+              <div className="space-y-1.5 rounded-md border p-4">
+                <Label className="text-xs font-medium">DP/Pelunasan (Rp)</Label>
+                <CurrencyInput className="h-9 text-right text-xs" value={editDpPelunasan} onValueChange={(v) => setEditDpPelunasan(v)} aria-label="DP/Pelunasan (nilai yang ditagih invoice ini)" placeholder="0" />
+                <p className="text-[11px] leading-relaxed text-muted-foreground">{editSalesOrderId ? `Nilai yang ditagih invoice ini${soSisaInfo ? ` — sisa tagihan SO ${soSisaInfo.noPesanan}: ${formatRp(soSisaInfo.sisaNilai)} (maksimum: ${formatRp(soSisaInfo.sisaNilai + editDpSaved)})` : ' (terisi otomatis dari sisa tagihan SO saat SO dipilih)'}. Kosongkan hanya bila SO dilepas (tagih penuh).` : 'Kosong = tagih penuh subtotal (invoice tanpa SO). Bila diisi harus 0 < nilai ≤ total baris.'}</p>
+              </div>
               {/* ── Update ASAHI (PPh23/PPN opsional) — pilih pajak saat edit:
                   boleh dua-duanya, salah satu, atau tidak sama sekali. ── */}
               <div className="space-y-3 rounded-md border p-4">
@@ -2801,7 +2982,10 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-base">Daftar Sales Order</CardTitle>
-              <CardDescription>Daftar seluruh Sales Order (SO) yang telah dicatat — langsung final saat disimpan (tanpa approval); pembayaran termin bisa dilakukan berkali-kali lewat Kas &amp; Bank</CardDescription>
+              {/* === Update #042 — SO nilai penuh tanpa PPN; DP bertahap & pelunasan
+                  lewat pembuatan Invoice (bisa berkali-kali) dengan field
+                  DP/Pelunasan (termin lama hanya histori Kas & Bank). === */}
+              <CardDescription>Daftar seluruh Sales Order (SO) yang telah dicatat — langsung final saat disimpan (tanpa approval); DP bertahap &amp; pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) dengan field DP/Pelunasan</CardDescription>
             </div>
             <Button
               size="sm"
@@ -2936,7 +3120,10 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                           {/* Update #031 — progress pembayaran termin SO.
                               Update #036 — baris "via invoice" untuk termin bebas
                               (total termin < Grand Total): sisanya ditagih lewat
-                              Invoice → DP otomatis diterapkan saat invoice diposting. */}
+                              Invoice. Update #042 — DP/Pelunasan kini diatur
+                              lewat field DP/Pelunasan di invoice (bukan otomatis
+                              saat posting). Kolom ini murni HISTORI termin SO
+                              lama (fitur termin dihapus #040). */}
                           {(() => {
                             const total = Number(d.terminTotal) || 0;
                             if (!total) return <span className="text-xs text-muted-foreground">—</span>;
@@ -2949,7 +3136,7 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                                 </span>
                                 <p className="text-[10px] text-muted-foreground">Termin SO · sisa {formatRp(Math.max(total - dibayar, 0))}</p>
                                 {viaInvoice > 0 && (
-                                  <p className="text-[10px] text-amber-700" title="Sisa tagihan di luar termin — ditagih lewat Invoice; DP termin otomatis diterapkan saat invoice diposting.">
+                                  <p className="text-[10px] text-amber-700" title="Sisa tagihan di luar termin — ditagih lewat Invoice dengan field DP/Pelunasan (Update #042).">
                                     Via invoice: {formatRp(viaInvoice)}
                                   </p>
                                 )}

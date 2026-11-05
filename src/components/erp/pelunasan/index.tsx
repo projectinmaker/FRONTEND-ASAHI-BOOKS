@@ -321,12 +321,15 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     });
   }, []);
 
-  const updateAllocation = useCallback((invoiceId: string, val: string) => {
-    setSelected((prev) => {
-      const row = prev[invoiceId];
-      if (!row) return prev;
-      return { ...prev, [invoiceId]: { ...row, nilaiDisplay: sanitizeRupiahInput(val) } };
-    });
+  // === Update #042 — KUNCI nominal alokasi: nilai pembayaran per invoice
+  // TERKUNCI = sisaTagihan (tidak bisa diedit — updateAllocation menjadi
+  // no-op; input di tabel read-only menampilkan sisa). PPh23/bukti potong/
+  // masa pajak TETAP bisa diedit (potongan pajak atas nilai pokok yang terkunci).
+  // nilaiDisplay tetap diisi toggleSelect (prefill = sisaTagihan). ===
+  const updateAllocation = useCallback((invoiceId: string, _val: string) => {
+    // No-op sengaja (Update #042): nominal per invoice terkunci = sisa tagihan.
+    void invoiceId;
+    void _val;
   }, []);
 
   // Update cetak "Bayar Pemasok" — input diskon pelunasan per faktur (hutang)
@@ -514,7 +517,13 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     const restored: Record<string, AllocationRow> = {};
     for (const a of d.alokasi) {
       const inv = map.get(a.invoiceId);
-      if (inv) restored[a.invoiceId] = { invoice: inv, nilaiDisplay: a.nilaiDisplay || '', diskonDisplay: a.diskonDisplay || '', pph23Display: a.pph23Display || '', noBuktiPotong: a.noBuktiPotong || '', masaPajak: a.masaPajak || '' };
+      // === Update #042 — nominal terkunci: saat draft dipulihkan, nilaiDisplay
+      // disinkronkan ulang ke sisaTagihan terbaru (nilai tersimpan mungkin
+      // stale — sisa berubah bila ada pembayaran lain). ===
+      if (inv) {
+        const sisaNow = parseNum(inv.sisaTagihan);
+        restored[a.invoiceId] = { invoice: inv, nilaiDisplay: sisaNow > 0 ? sanitizeRupiahInput(String(sisaNow)) : '', diskonDisplay: a.diskonDisplay || '', pph23Display: a.pph23Display || '', noBuktiPotong: a.noBuktiPotong || '', masaPajak: a.masaPajak || '' };
+      }
     }
     if (Object.keys(restored).length > 0) {
       setSelected(restored);
@@ -600,8 +609,10 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         hasInvalid = true;
         break;
       }
+      // === Update #042 — nominal alokasi TERKUNCI = sisaTagihan: submit hanya
+      // sah bila nilai == sisa (toleransi 0). ===
       const sisa = parseNum(row.invoice.sisaTagihan);
-      if (n > sisa + 0.01) {
+      if (n !== sisa) {
         hasOver = true;
         break;
       }
@@ -620,7 +631,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       }
     }
     if (hasInvalid) e.alokasi = 'Semua nilai pembayaran harus lebih dari 0';
-    if (!e.alokasi && hasOver) e.alokasi = 'Nilai pembayaran tidak boleh melebihi sisa tagihan';
+    if (!e.alokasi && hasOver) e.alokasi = 'Nilai pembayaran terkunci dan harus sama dengan sisa tagihan invoice terkait (Update #042)';
     if (!e.alokasi && hasDiskonOver) e.alokasi = 'Diskon tidak boleh melebihi nilai pembayaran invoice terkait';
     if (!e.alokasi && hasPph23Over) e.alokasi = 'Diskon + PPh 23 tidak boleh melebihi nilai pembayaran invoice terkait';
     // Update #5 — penalti
@@ -1137,6 +1148,12 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
             {/* Allocation table */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">Rincian Alokasi Pembayaran</Label>
+              {/* === Update #042 — nominal per invoice TERKUNCI = sisa tagihan
+                  (read-only; DP bertahap & pelunasan diatur lewat field
+                  DP/Pelunasan saat membuat Invoice — sisa tagihan invoice
+                  selalu sisa nilai yang belum dibayar). PPh23/diskon/bukti
+                  potong tetap dapat diedit. === */}
+              <p className="text-xs text-muted-foreground">Nilai pembayaran per invoice terkunci otomatis sebesar sisa tagihan (tidak dapat diedit). PPh 23, bukti potong, masa pajak{!isPiutang ? ' dan diskon' : ''} tetap dapat diisi.</p>
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -1158,7 +1175,8 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                     {selectedList.map((row, idx) => {
                       const sisa = parseNum(row.invoice.sisaTagihan);
                       const n = parseNum(parseRupiahInput(row.nilaiDisplay));
-                      const over = n > sisa + 0.01;
+                      // Update #042 — nominal terkunci: nilai == sisa (input read-only).
+                      const over = n !== sisa;
                       const sisaSetelah = sisa - n;
                       const disk = parseNum(parseRupiahInput(row.diskonDisplay || ''));
                       const diskonOver = disk > n + 0.01;
@@ -1172,8 +1190,11 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                           <TableCell className="font-mono text-xs font-medium">{row.invoice.noDokumen}</TableCell>
                           <TableCell className="text-right font-mono text-xs">{formatRp(sisa)}</TableCell>
                           <TableCell className="text-right">
-                            <Input type="text" inputMode="numeric" placeholder="0" value={row.nilaiDisplay} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${over ? 'border-destructive' : ''}`} />
-                            {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">Melebihi sisa tagihan</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">Lunas</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
+                            {/* === Update #042 — input nilai READ-ONLY (terkunci =
+                                sisaTagihan; styling abu — nilai tetap nilaiDisplay
+                                dari toggleSelect prefill). === */}
+                            <Input type="text" inputMode="numeric" value={row.nilaiDisplay} readOnly aria-readonly="true" title="Nilai terkunci — otomatis sebesar sisa tagihan invoice (Update #042)" onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className="text-right font-mono h-8 text-sm bg-muted/50 text-muted-foreground cursor-not-allowed focus-visible:ring-0" />
+                            {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">Nilai harus sama dengan sisa tagihan</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">Lunas</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
                           </TableCell>
                           {/* Update #01 — input PPh 23 per faktur + shortcut 2% */}
                           <TableCell className="text-right">

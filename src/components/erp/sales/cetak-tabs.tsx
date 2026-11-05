@@ -65,8 +65,9 @@ function mapPesananData(d: SalesOrderResponse): PesananData {
       jumlah: Number(b.jumlah) || 0
     })),
     keterangan: d.keterangan || '',
-    diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0
+    diskonGlobal: Number(d.diskonGlobal) || 0
+    // === Update #042 — ppn DIHAPUS dari response SO (order doc nilai penuh
+    // tanpa pajak; cetakan SO tanpa PPN). ===
   };
 }
 
@@ -264,9 +265,10 @@ function mapInvoiceData(d: SalesInvoiceResponse): InvoiceData {
       diskon: Number(r.diskon) || 0,
       // Update #5: nama satuan per baris dari backend (SalesInvoiceDetailResponse.satuan).
       satuan: r.satuan ?? r.itemSatuan ?? null,
-      // Update #041 — DP per baris: nilai baris yang ditagih = DP (Total
-      // Harga baris & ringkasan mengikuti nilai efektif).
-      dp: Number(r.dp) || 0
+      // === Update #042 — subTotal baris = NILAI DITAGIH baris (porsi
+      // dpPelunasan; Total Harga mengikuti nilai ini — bukan lagi qty × harga
+      // dikurangi dp per baris). ===
+      subTotal: Number(r.subTotal) || 0
     })),
     biayaTambahan: (d.biayaTambahan || []).map<BiayaTambahan>((b) => ({
       id: b.id,
@@ -279,7 +281,12 @@ function mapInvoiceData(d: SalesInvoiceResponse): InvoiceData {
     // === Update ASAHI — pilihan PPh23/PPN saat input SI (opsional) ===
     ppnApplicable: d.ppnApplicable ?? true,
     pph23Applicable: d.pph23Applicable ?? false,
-    pph23: Number(d.pph23) || 0
+    pph23: Number(d.pph23) || 0,
+    // === Update #042 — DP/Pelunasan (nilai yang ditagih invoice ini) +
+    // soSisaNilai (sisa tagihan NILAI SO SETELAH invoice ini; null bila
+    // standalone) — dicetak sebagai baris footer "Sisa pembayaran dari SO". ===
+    dpPelunasan: Number(d.dpPelunasan) || 0,
+    soSisaNilai: d.soSisaNilai != null ? Number(d.soSisaNilai) : null
   };
 }
 
@@ -387,7 +394,10 @@ function mapReturData(d: SalesReturResponse): ReturData {
       qty: Number(r.qty) || 0,
       diskon: 0,
       // Update #5: nama satuan per baris dari backend (SalesReturDetailResponse.satuan).
-      satuan: r.satuan ?? null
+      satuan: r.satuan ?? null,
+      // === Update #042 — subTotal baris (nilai ditagih) dipetakan supaya
+      // kolom Total Harga mengikuti nilai tersimpan backend. ===
+      subTotal: Number(r.subTotal) || 0
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,

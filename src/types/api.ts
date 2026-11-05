@@ -1102,7 +1102,9 @@ export interface PenawaranCreate {
   customerCode?: string | null;
   mataUang?: string;
   diskonGlobal?: number;
-  ppn?: number;
+  // === Update #042 — PPN DIHAPUS dari Penawaran (mirror SO): dokumen nilai
+  // penuh tanpa PPN — grand total = subtotal − diskon + biaya; pajak hanya
+  // dihitung di INVOICE. ===
   // === Update #031 — No Quotation: user hanya input bulan & tahun; nomor
   // urut otomatis per pelanggan (reset tahunan), singkatan dari master. ===
   bulan?: number;
@@ -1120,9 +1122,11 @@ export interface PenawaranResponse {
   // pemakaian SO (repeat order). ===
   revisiKe: number;
   digunakanCount: number;
-  // === Update #039 — sisa penawaran (alur DP bertahap: 1 penawaran → SO DP
-  // → SO sisa; sisa = grandTotal − Σ grandTotal SO aktif turunan). Negatif
-  // = SO-SO turunan melebihi nilai penawaran (warning, bukan blok). ===
+  // === Update #039 — sisa penawaran (repeat order: sisa = grandTotal − Σ
+  // grandTotal SO aktif turunan). Negatif = SO-SO turunan melebihi nilai
+  // penawaran (warning, bukan blok). Update #042 — SO kini selalu nilai
+  // PENUH (tanpa DP); DP bertahap & pelunasan lewat Invoice ber-ulang
+  // atas SO turunan penawaran yang sama. ===
   dipakaiSoTotal: string;
   sisaPenawaran: string;
   soList: PenawaranSoRingkas[];
@@ -1137,10 +1141,10 @@ export interface PenawaranResponse {
   customerCode?: string | null;
   mataUang: string;
   diskonGlobal: string;
-  ppn: string;
+  // === Update #042 — ppn/totalPpn DIHAPUS dari response penawaran (kolom
+  // model di-drop backend; grand total = subtotal − diskon + biaya). ===
   subTotal: string;
   totalDiskon: string;
-  totalPpn: string;
   totalBiayaTambahan: string;
   grandTotal: string;
   status: string;
@@ -1220,9 +1224,8 @@ export interface SalesOrderSisaDetail {
   sisaFaktur: number;
   harga: number;
   diskon: number;
-  // === Update #041 — DP baris SO (ditarik form invoice: baris invoice
-  // ber-DP mengikuti nilai ini, subTotal = dp). ===
-  dp?: number | null;
+  // === Update #042 — field `dp` per-baris DIHAPUS (DP/Pelunasan kini satu
+  // nilai header invoice dpPelunasan; baris SO selalu nilai penuh). ===
 }
 
 // === Update #039 — SO turunan penawaran (kartu pemakaian/sisa di detail
@@ -1260,6 +1263,11 @@ export interface SalesOrderSisaResponse {
   syaratBayarId?: string | null;
   noPesanan: string;
   alamatPengiriman?: string | null;
+  // === Update #042 — sisa tagihan NILAI SO = max(0, grand_total − Σ
+  // nilai-tagih invoice non-DIBATALKAN milik SO; nilai-tagih invoice =
+  // dp_pelunasan bila > 0, selain itu sub_total). Patokan auto-isi & batas
+  // atas field DP/Pelunasan invoice berikutnya atas SO ini. ===
+  sisaNilai: number;
   details: SalesOrderSisaDetail[];
 }
 
@@ -1281,7 +1289,8 @@ export interface PengirimanSisaDetail {
   sisaFaktur: number;
   harga: number;
   diskon: number;
-  dp?: number | null;
+  // === Update #042 — field `dp` DIHAPUS (baris SO tidak lagi ber-DP;
+  // nilai tagih dikendalikan dpPelunasan header invoice). ===
 }
 
 export interface PengirimanSisaResponse {
@@ -1668,10 +1677,9 @@ export interface SalesOrderDetailCreate {
   qty: number;
   diskon?: number | null;
   subTotal?: number;
-  // === Update #041 — DP per baris (alur DP bertahap): nominal uang muka
-  // yang ditagih untuk baris ini. Terisi (> 0) → subTotal baris = dp —
-  // harga satuan & qty tetap utuh; grand total SO mengikuti Σ dp. ===
-  dp?: number | null;
+  // === Update #042 — field `dp` per-baris DIHAPUS: DP/Pelunasan kini satu
+  // nilai header INVOICE (dpPelunasan) yang didistribusikan proporsional
+  // otomatis oleh backend (baris SO selalu nilai penuh harga × qty). ===
 }
 
 export interface SalesOrderDetailResponse extends SalesOrderDetailCreate {
@@ -1697,7 +1705,8 @@ export interface SalesOrderCreate {
   tanggalPengiriman?: string | null;
   alamatPengiriman?: string | null;
   diskonGlobal?: number | null;
-  ppn?: number;
+  // === Update #042 — PPN DIHAPUS dari SO (pajak hanya di INVOICE): field
+  // ppn tidak lagi dikirim/tersimpan; grand total = subtotal − diskon + biaya. ===
   keterangan?: string | null;
   /** @deprecated Orders never post journals. */
   autoPostJurnal?: false;
@@ -1723,7 +1732,7 @@ export interface SalesOrderUpdate {
   tanggalPengiriman?: string | null;
   alamatPengiriman?: string | null;
   diskonGlobal?: number | null;
-  ppn?: number;
+  // === Update #042 — ppn DIHAPUS dari update SO (kolom model di-drop). ===
   keterangan?: string | null;
 }
 
@@ -1747,13 +1756,14 @@ export interface SalesOrderResponse {
   tanggalPengiriman: string | null;
   alamatPengiriman: string | null;
   diskonGlobal: number;
-  ppn: number;
+  // === Update #042 — ppn/totalPpn DIHAPUS: SO tidak lagi ber-PPN (PPN hanya
+  // di INVOICE; dasarPajak ikut dihapus karena tak bermakna tanpa PPN).
+  // Grand total = subtotal − diskon + biaya. ===
   keterangan: string | null;
   /** @deprecated Retained only for legacy responses. */
   autoPostJurnal: boolean;
   subTotal: number;
   totalDiskon: number;
-  totalPpn: number;
   totalBiayaTambahan: number;
   grandTotal: number;
   // === Update #031 — ringkasan termin pembayaran (kolom "Pembayaran" di
@@ -1783,9 +1793,9 @@ export interface SalesInvoiceDetailCreate {
   qty: number;
   diskon?: number | null;
   subTotal: number;
-  // === Update #041 — DP per baris invoice (tarikan baris SO ber-DP / isi
-  // manual). Terisi (> 0) → subTotal baris = dp. ===
-  dp?: number | null;
+  // === Update #042 — field `dp` per-baris invoice DIHAPUS: nilai yang
+  // ditagih dikendalikan header dpPelunasan (distribusi proporsional
+  // otomatis oleh backend; subTotal baris = porsi dpPelunasan saat > 0). ===
   // === Phase 4 — source-line trace (optional, kalau di-set dari delivery line) ===
   salesOrderDetailId?: string | null;
   deliveryDetailId?: string | null;
@@ -1814,6 +1824,12 @@ export interface SalesInvoiceCreate {
   pph23?: number;
   keterangan?: string | null;
   autoPostJurnal?: false;
+  // === Update #042 — DP/Pelunasan (field header): nilai yang ditagih
+  // invoice ini. Ter-link SO: null = auto-isi sisa tagihan SO (guard
+  // 0 < x ≤ sisa). Standalone: null/0 = perilaku lama; bila diisi harus
+  // 0 < x ≤ Σ gross baris (harga × qty). Saat > 0 baris invoice otomatis
+  // didistribusikan proporsional (subTotal baris = porsi). ===
+  dpPelunasan?: number | null;
   details: SalesInvoiceDetailCreate[];
   biayaTambahan?: TransaksiBiayaCreate[];
 }
@@ -1832,6 +1848,10 @@ export interface SalesInvoiceUpdate {
   pph23?: number;
   keterangan?: string | null;
   autoPostJurnal?: boolean;
+  // === Update #042 — DP/Pelunasan opsional saat update: bila dikirim →
+  // divalidasi ulang terhadap sisa tagihan SO (invoice ini dikecualikan);
+  // nilai tersimpan dipertahankan bila tidak dikirim. ===
+  dpPelunasan?: number | null;
 }
 
 export interface SalesInvoiceResponse {
@@ -1873,6 +1893,13 @@ export interface SalesInvoiceResponse {
   jurnal: JurnalSimple | null;
   details: SalesInvoiceDetailResponse[];
   biayaTambahan: TransaksiBiayaResponse[];
+  // === Update #042 — DP/Pelunasan: nilai yang ditagih invoice ini
+  // (0 = invoice lama / tagih penuh). soSisaNilai = sisa tagihan NILAI SO
+  // SETELAH invoice ini (null bila standalone tanpa SO) = grand_total SO −
+  // Σ nilai-tagih invoice non-DIBATALKAN milik SO (nilai-tagih invoice =
+  // dpPelunasan bila > 0, selain itu subTotal). ===
+  dpPelunasan: number;
+  soSisaNilai?: number | null;
 }
 
 export interface SalesReturDetailCreate {
