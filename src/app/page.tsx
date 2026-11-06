@@ -304,7 +304,7 @@ export default function HomePage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Sesi Berakhir</AlertDialogTitle>
-            <AlertDialogDescription>Sesi Anda telah berakhir (batas 2 jam). Silakan login kembali.</AlertDialogDescription>
+            <AlertDialogDescription>Sesi Anda telah berakhir. Silakan login kembali.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => logout()}>OK</AlertDialogAction>

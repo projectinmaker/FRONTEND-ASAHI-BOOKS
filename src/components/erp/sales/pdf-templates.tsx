@@ -176,13 +176,13 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable 
   // === Update #042 — DP/Pelunasan (header invoice) menggantikan perhitungan
   // dari dp per baris: gross = Σ qty × harga (nilai penuh); effective =
   // dpPelunasan bila > 0 (nilai ditagih), selain itu gross (perilaku lama).
-  // === Update #043 — susunan baris TANPA angka minus: "DP/Pelunasan (nilai
-  // ditagih invoice ini)" = effective (POSITIF) dan "Dialihkan ke invoice
-  // berikutnya" = gross − effective (POSITIF); pajak & Total tetap atas
-  // nilai efektif (rumus tidak berubah). ===
+  // === Update #043 (rev. catatan user) — ringkasan kembali SEDERHANA: satu
+  // baris "DP/Pelunasan" = nilai yang ditagih invoice ini (POSITIF); baris
+  // "Dialihkan ke invoice berikutnya" DIHAPUS (sisa tagihan SO sudah tercetak
+  // di footer "Sisa pembayaran dari {noSo}"); pajak & Total tetap atas nilai
+  // efektif (rumus tidak berubah). ===
   const gross = detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const effective = dpPelunasan != null && dpPelunasan > 0 ? dpPelunasan : gross;
-  const dialihkan = Math.max(gross - effective, 0);
   const subTotal = gross;
   const diskonAmt = diskonGlobal ? (effective * diskonGlobal) / 100 : 0;
   const afterDiskon = effective - diskonAmt;
@@ -199,20 +199,14 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable 
           <td style={{ ...cellStyle, width: '160px' }}>Sub Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', width: '140px' }}>{formatNumber(subTotal)}</td>
         </tr>
-        {/* === Update #043 — DP/Pelunasan (nilai yang ditagih invoice ini)
-            tampil POSITIF; selisih nilai baris penuh yang tidak ditagih di
-            sini dicetak sebagai "Dialihkan ke invoice berikutnya" (POSITIF,
-            tanpa tanda minus). === */}
+        {/* === Update #043 (rev. catatan user) — label kembali pendek
+            "DP/Pelunasan" (tanpa kurung "nilai ditagih invoice ini"); nilai
+            = nilai yang ditagih invoice ini, POSITIF; baris "Dialihkan ke
+            invoice berikutnya" DIHAPUS dari cetakan. === */}
         {dpPelunasan != null && dpPelunasan > 0 && (
           <tr>
-            <td style={cellStyle}>DP/Pelunasan (nilai ditagih invoice ini)</td>
+            <td style={cellStyle}>DP/Pelunasan</td>
             <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(effective)}</td>
-          </tr>
-        )}
-        {dialihkan > 0 && (
-          <tr>
-            <td style={cellStyle}>Dialihkan ke invoice berikutnya</td>
-            <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(dialihkan)}</td>
           </tr>
         )}
         {/* Update #004: baris Diskon setelah Sub Total dihapus dari invoice (hideDiskon). */}
@@ -534,7 +528,7 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
   // memotong grand total — konsisten dengan perhitungan backend.
   const ppnOn = data.ppnApplicable ?? true;
   const pph23On = data.pph23Applicable ?? false;
-  // === Update #042 — DP/Pelunasan (header invoice) menggantikan dp per
+  // === Update #043 — DP/Pelunasan (header invoice) menggantikan dp per
   // baris: nilai yang ditagih invoice ini (0/kosong = tagih penuh
   // Σ qty × harga). Terbilang & total mengikuti nilai efektif. ===
   const gross = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
@@ -545,6 +539,12 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
   const pph23Amt = pph23On && data.pph23 ? (afterDiskon * data.pph23) / 100 : 0;
   const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
   const grandTotal = afterDiskon + ppnAmt + biayaLain - pph23Amt;
+  // === Update #043 (rev. catatan user) — kolom "Total Harga" tiap baris
+  // kembali PENUH mengikuti rumus sub total (harga × qty) — BUKAN porsi
+  // dpPelunasan yang tersimpan di baris; nilai yang ditagih invoice ini
+  // dibaca lewat baris ringkasan "DP/Pelunasan". Sub Total ringkasan =
+  // Σ Total Harga baris (konsisten). ===
+  const detailFull = data.detail.map((r) => ({ ...r, subTotal: r.qty * r.harga }));
 
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
@@ -582,8 +582,10 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
 
       {/* ── Detail Table ── */}
       <div className="mb-4">
-        {/* Update #004: kolom Harga tanpa "@"; kolom Diskon dihapus. */}
-        <DetailTableWithPrice detail={data.detail} hideDiskon hideAt />
+        {/* Update #004: kolom Harga tanpa "@"; kolom Diskon dihapus.
+            Update #043 (rev. catatan user): detailFull — Total Harga baris =
+            harga × qty (rumus sub total), bukan porsi DP. */}
+        <DetailTableWithPrice detail={detailFull} hideDiskon hideAt />
       </div>
 
       {/* ── Biaya Tambahan ── */}
@@ -649,7 +651,7 @@ export function InvoicePDFTemplate({ data }: { data: InvoiceData }) {
               Update #004: baris Diskon setelah Sub Total disembunyikan (hideDiskon).
               Update #042: dpPelunasan (header) menggantikan perhitungan dp per
               baris — baris potongan "DP/Pelunasan" + pajak atas nilai ditagih. */}
-          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} hideDiskon dpPelunasan={data.dpPelunasan} />
+          <SummaryTable detail={detailFull} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} hideDiskon dpPelunasan={data.dpPelunasan} />
         </div>
       </div>
 
