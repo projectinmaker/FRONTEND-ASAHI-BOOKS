@@ -3786,6 +3786,9 @@ export interface InvoiceSaldoResponse {
   /** Update #036 — DP termin SO yang diterapkan ke invoice ini (piutang
    * saja); sisaTagihan sudah NET setelah DP. */
   uangMuka?: string;
+  /** === Update #044 — total penghapusan piutang aktif (Gagal Tagih /
+   * Voucher Memorial); sisaTagihan sudah NET setelah penghapusan. === */
+  totalGagalTagih?: string;
   sisaTagihan: string;
   kelebihan: string;
   statusPembayaran: StatusPembayaran;
@@ -3811,6 +3814,66 @@ export interface InvoicePaymentHistoryItem {
 export interface InvoiceSaldoDetailResponse extends InvoiceSaldoResponse {
   asOfDate: string;
   pembayaran: InvoicePaymentHistoryItem[];
+}
+
+// ── === Update #044 — Voucher Memorial (Gagal Tagih / penghapusan piutang) ── ─
+// Cabang "Gagal Tagih" alur Penerimaan Piutang modul Kas & Bank:
+// dokumen non-kas — Dr Beban Penghapusan Piutang, Cr Piutang Usaha.
+
+export interface VoucherMemorialAlokasiCreate {
+  invoiceId: string;
+  /** 0 < nilai <= sisa tagihan invoice */
+  nilai: string;
+}
+
+export interface VoucherMemorialCreate {
+  pelangganId: string;
+  tanggal: string;
+  alokasi: VoucherMemorialAlokasiCreate[];
+  catatan?: string | null;
+  /** Opsional — kosong → default Setting Akun BEBAN_PENGHAPUSAN_PIUTANG */
+  akunBebanId?: string | null;
+}
+
+export interface VoucherMemorialRincianResponse {
+  id: string;
+  invoiceId: string;
+  noInvoice: string | null;
+  akunPiutang: { id: string; kode: string; nama: string } | null;
+  nilai: number | string;
+  terutang: number | string | null;
+}
+
+export interface VoucherMemorialResponse {
+  id: string;
+  noBukti: string;
+  tanggal: string;
+  pelangganId: string;
+  pelanggan: { id: string; nama: string; alamat?: string | null } | null;
+  akunBebanId: string | null;
+  akunBeban: { id: string; kode: string; nama: string } | null;
+  catatan: string | null;
+  totalNilai: number | string;
+  status: StatusTransaksi;
+  jurnalUmumId: string | null;
+  jurnal: { id: string; noJurnal: string } | null;
+  creator: PenggunaSimple | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  rincian: VoucherMemorialRincianResponse[];
+}
+
+export interface VoucherMemorialSummaryResponse {
+  id: string;
+  noBukti: string;
+  tanggal: string;
+  totalNilai: number | string;
+  status: string;
+  jurnalUmumId: string | null;
+  pelangganId: string;
+  akunBebanId: string | null;
+  alokasi: VoucherMemorialAlokasiCreate[];
 }
 
 // ── Import & Export Excel (Update #5) ────────────────────────────────────

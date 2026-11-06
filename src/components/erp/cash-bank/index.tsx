@@ -18,14 +18,16 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { formatRp, formatDate, generatePDF } from '@/lib/pdf-utils';
-import { TransferBankPDFTemplate, PembayaranKasPDFTemplate, PenerimaanKasPDFTemplate, RincianPembayaranPDFTemplate, RincianPenerimaanPDFTemplate, type TransferBankData, type PembayaranKasData, type PenerimaanKasData, type RincianPembayaranData, type RincianPembayaranItem, type RincianPenerimaanData, type RincianPenerimaanItem } from '@/components/erp/cash-bank/pdf-templates';
+import { TransferBankPDFTemplate, PembayaranKasPDFTemplate, PenerimaanKasPDFTemplate, RincianPembayaranPDFTemplate, RincianPenerimaanPDFTemplate, VoucherMemorialPDFTemplate, type TransferBankData, type PembayaranKasData, type PenerimaanKasData, type RincianPembayaranData, type RincianPembayaranItem, type RincianPenerimaanData, type RincianPenerimaanItem, type VoucherMemorialData } from '@/components/erp/cash-bank/pdf-templates';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
-import type { KasBankAkunResponse, COADropdownResponse, PembayaranKasResponse, PenerimaanKasResponse, TransferBankResponse, HardDeleteResponse } from '@/types/api';
+// === Update #044 — Voucher Memorial (Gagal Tagih / penghapusan piutang) ===
+import { voucherMemorialApi } from '@/lib/voucher-memorial-api';
+import type { KasBankAkunResponse, COADropdownResponse, PembayaranKasResponse, PenerimaanKasResponse, TransferBankResponse, HardDeleteResponse, VoucherMemorialResponse } from '@/types/api';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
-import { Wallet, Building2, ArrowRightLeft, Plus, Download, Printer, X, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Undo2, type LucideIcon } from 'lucide-react';
+import { Wallet, Building2, ArrowRightLeft, Plus, Download, Printer, X, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Undo2, BookX, type LucideIcon } from 'lucide-react';
 import RekonsiliasiBankTab from '@/components/erp/cash-bank/rekonsiliasi-bank';
 import PembayaranForm from '@/components/erp/cash-bank/forms/pembayaran-form';
 import PenerimaanForm from '@/components/erp/cash-bank/forms/penerimaan-form';
@@ -1169,7 +1171,9 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
 // Pembayaran Lain", tanpa meniru tata letaknya).
 // Update #16 — tambah mode 'rincian-penerimaan': "Cetak Daftar Penerimaan"
 // (paritas fitur Cetak Daftar pada tab Pembayaran).
-type CetakType = 'pembayaran' | 'penerimaan' | 'transfer' | 'rincian-pembayaran' | 'rincian-penerimaan';
+// === Update #044 — tambah mode 'voucher-memorial': "Cetak Voucher Memorial"
+// (dokumen Gagal Tagih — penghapusan piutang non-kas). ===
+type CetakType = 'pembayaran' | 'penerimaan' | 'transfer' | 'rincian-pembayaran' | 'rincian-penerimaan' | 'voucher-memorial';
 
 /** Filter aktif tab Pembayaran/Penerimaan yang dibawa ke tab "Cetak Rincian". */
 interface RincianPembayaranFilters {
@@ -1198,6 +1202,11 @@ function CetakTab({ type, id, filters, initialJenis, initialJenisPenerimaan }: {
   const [transferData, setTransferData] = useState<TransferBankData | null>(null);
   const [pembayaranData, setPembayaranData] = useState<PembayaranKasData | null>(null);
   const [penerimaanData, setPenerimaanData] = useState<PenerimaanKasData | null>(null);
+  // === Update #044 — data cetak Voucher Memorial (Gagal Tagih) ===
+  const [voucherMemorialData, setVoucherMemorialData] = useState<VoucherMemorialData | null>(null);
+  // === Update #044 — jenis akun kas/bank penerimaan (KAS/BANK) untuk judul
+  // voucher "Voucher Penerimaan Bank/Kas" (alur Penerimaan Piutang poin 5). ===
+  const [penerimaanJenisAkun, setPenerimaanJenisAkun] = useState<string>('');
 
   // Update cetak "Pembayaran Lain": voucher pembayaran tanpa alokasi faktur/
   // pemasok dicetak sebagai "Pembayaran Lain" (bukan "Bayar Pemasok").
@@ -1332,8 +1341,30 @@ function CetakTab({ type, id, filters, initialJenis, initialJenisPenerimaan }: {
             diskon: Number(a.diskon) || 0
           }))
         });
+      } else if (type === 'voucher-memorial') {
+        // === Update #044 — Cetak Voucher Memorial (Gagal Tagih): detail
+        // dokumen + rincian per invoice (akun piutang Cr + snapshot terutang). ===
+        const res = await voucherMemorialApi.getDetail(String(id));
+        setVoucherMemorialData({
+          noBukti: res.noBukti || '-',
+          tanggal: res.tanggal || '',
+          pelangganNama: res.pelanggan?.nama || '-',
+          pelangganAlamat: res.pelanggan?.alamat || '-',
+          akunBeban: res.akunBeban ? `${res.akunBeban.kode} — ${res.akunBeban.nama}` : '-',
+          catatan: res.catatan || '',
+          rincian: (res.rincian || []).map((r) => ({
+            noInvoice: r.noInvoice || '-',
+            akunPiutang: r.akunPiutang ? `${r.akunPiutang.kode} — ${r.akunPiutang.nama}` : '-',
+            terutang: r.terutang != null ? Number(r.terutang) || 0 : 0,
+            nilai: Number(r.nilai) || 0
+          })),
+          totalNilai: Number(res.totalNilai) || 0
+        });
       } else {
         const res = await api.get<PenerimaanKasResponse>(`/kas-bank/penerimaan/${id}`);
+        // === Update #044 — bawa jenis akun kas/bank (KAS/BANK) supaya judul
+        // cetak menjadi "Voucher Penerimaan Bank" / "Voucher Penerimaan Kas". ===
+        setPenerimaanJenisAkun(res.kasBank?.jenis || '');
         setPenerimaanData({
           noBukti: res.noBukti || '-',
           noBuktiFisik: res.noNukti || '-',
@@ -1352,7 +1383,9 @@ function CetakTab({ type, id, filters, initialJenis, initialJenisPenerimaan }: {
           alokasi: (res.alokasi || []).map((a) => ({
             invoiceId: a.invoiceId,
             nilai: a.nilai
-          }))
+          })),
+          // === Update #044 — judul voucher per jenis akun ===
+          kasBankJenis: res.kasBank?.jenis || ''
         });
       }
     } catch (err) {
@@ -1368,9 +1401,11 @@ function CetakTab({ type, id, filters, initialJenis, initialJenisPenerimaan }: {
 
   // Update cetak "Pembayaran Lain": judul & nama file voucher dinamis sesuai
   // jenis dokumen (settlement = Bayar Pemasok, non-settlement = Pembayaran Lain).
-  const title = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Cetak Bayar Pemasok' : 'Cetak Pembayaran Lain') : type === 'rincian-pembayaran' ? 'Cetak Rincian Pembayaran' : type === 'rincian-penerimaan' ? 'Cetak Rincian Penerimaan' : type === 'penerimaan' ? 'Cetak Bukti Penerimaan Kas' : 'Cetak Bukti Transfer Bank';
+  // === Update #044 — penerimaan: "Cetak Voucher Penerimaan Bank/Kas" sesuai
+  // jenis akun tujuan; voucher-memorial: "Cetak Voucher Memorial". ===
+  const title = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Cetak Bayar Pemasok' : 'Cetak Pembayaran Lain') : type === 'rincian-pembayaran' ? 'Cetak Rincian Pembayaran' : type === 'rincian-penerimaan' ? 'Cetak Rincian Penerimaan' : type === 'voucher-memorial' ? 'Cetak Voucher Memorial' : type === 'penerimaan' ? (penerimaanJenisAkun === 'BANK' ? 'Cetak Voucher Penerimaan Bank' : penerimaanJenisAkun === 'KAS' ? 'Cetak Voucher Penerimaan Kas' : 'Cetak Bukti Penerimaan Kas') : 'Cetak Bukti Transfer Bank';
 
-  const filename = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Bayar-Pemasok.pdf' : 'Pembayaran-Lain.pdf') : type === 'rincian-pembayaran' ? (jenis === 'lain' ? 'Rincian-Pembayaran-Lain.pdf' : jenis === 'pemasok' ? 'Rincian-Bayar-Pemasok.pdf' : 'Rincian-Pembayaran.pdf') : type === 'rincian-penerimaan' ? (jenisPenerimaan === 'lain' ? 'Rincian-Penerimaan-Lain.pdf' : jenisPenerimaan === 'pelanggan' ? 'Rincian-Pelunasan-Piutang.pdf' : 'Rincian-Penerimaan.pdf') : type === 'penerimaan' ? 'Bukti-Penerimaan-Kas.pdf' : 'Bukti-Transfer-Bank.pdf';
+  const filename = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Bayar-Pemasok.pdf' : 'Pembayaran-Lain.pdf') : type === 'rincian-pembayaran' ? (jenis === 'lain' ? 'Rincian-Pembayaran-Lain.pdf' : jenis === 'pemasok' ? 'Rincian-Bayar-Pemasok.pdf' : 'Rincian-Pembayaran.pdf') : type === 'rincian-penerimaan' ? (jenisPenerimaan === 'lain' ? 'Rincian-Penerimaan-Lain.pdf' : jenisPenerimaan === 'pelanggan' ? 'Rincian-Pelunasan-Piutang.pdf' : 'Rincian-Penerimaan.pdf') : type === 'voucher-memorial' ? 'Voucher-Memorial.pdf' : type === 'penerimaan' ? (penerimaanJenisAkun === 'BANK' ? 'Voucher-Penerimaan-Bank.pdf' : penerimaanJenisAkun === 'KAS' ? 'Voucher-Penerimaan-Kas.pdf' : 'Bukti-Penerimaan-Kas.pdf') : 'Bukti-Transfer-Bank.pdf';
 
   // Update cetak "Rincian Pembayaran": turunkan data laporan dari seluruh
   // pembayaran + pilihan jenis (filter client-side — tidak perlu refetch).
@@ -1508,10 +1543,275 @@ function CetakTab({ type, id, filters, initialJenis, initialJenisPenerimaan }: {
             {type === 'penerimaan' && penerimaanData && <PenerimaanKasPDFTemplate data={penerimaanData} elementId={pdfElementId} />}
             {type === 'rincian-pembayaran' && rincianData && <RincianPembayaranPDFTemplate data={rincianData} elementId={pdfElementId} />}
             {type === 'rincian-penerimaan' && rincianPenerimaanData && <RincianPenerimaanPDFTemplate data={rincianPenerimaanData} elementId={pdfElementId} />}
+            {/* === Update #044 — cetak Voucher Memorial (Gagal Tagih) === */}
+            {type === 'voucher-memorial' && voucherMemorialData && <VoucherMemorialPDFTemplate data={voucherMemorialData} elementId={pdfElementId} />}
           </div>
         </div>
       )}
     </FormTabShell>
+  );
+}
+
+// ─── === Update #044 — Voucher Memorial Tab (Gagal Tagih) ─────────────────────
+// Daftar dokumen penghapusan piutang non-kas (Dr Beban Penghapusan Piutang,
+// Cr Piutang Usaha). Dibuat lewat form Penerimaan → Pelunasan Invoice →
+// mode "Gagal Tagih"; workflow submit/approve/post seperti dokumen kas lain.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
+  // ── History data state ──
+  const [data, setData] = useState<VoucherMemorialResponse[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [skip, setSkip] = useState(0);
+
+  // ── Filter state ──
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // ── Cancel dialog (hard delete / jurnal pembalik) ──
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<string | null>(null);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+
+  // ── Tab store + workflow ──
+  const openFormTab = useTabStore((s) => s.openFormTab);
+  const ids = useMemo(() => data.map((d) => d.id), [data]);
+  const wfStates = useWorkflowStates('voucher_memorial', ids, refreshKey);
+
+  // ── Debounce search ──
+  useEffect(() => {
+    debounceTimer.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, [search]);
+
+  // ── Reset skip when filter changes ──
+  useEffect(() => {
+    setSkip(0);
+  }, [debouncedSearch, statusFilter, dateFrom, dateTo]);
+
+  // ── Fetch history ──
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await voucherMemorialApi.list({
+        skip,
+        limit: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+        status: statusFilter || undefined,
+        tanggalFrom: dateFrom || undefined,
+        tanggalTo: dateTo || undefined
+      });
+      setData(res.data);
+      setTotal(res.total);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : 'Gagal memuat data Voucher Memorial');
+    } finally {
+      setLoading(false);
+    }
+  }, [debouncedSearch, statusFilter, dateFrom, dateTo, skip]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData, refreshKey]);
+
+  // ── Cancel (DRAFT → hard delete; posted → jurnal pembalik + BATAL) ──
+  const confirmCancel = useCallback((id: string) => {
+    setCancelTarget(id);
+    setCancelOpen(true);
+  }, []);
+
+  const handleCancel = useCallback(
+    async (reason?: string) => {
+      if (!cancelTarget) return;
+      setCancelSubmitting(true);
+      try {
+        const res = await voucherMemorialApi.cancel(cancelTarget, reason);
+        toast.success(res.message || `Voucher Memorial ${res.documentNumber ?? ''} dibatalkan`);
+        setCancelOpen(false);
+        setCancelTarget(null);
+        fetchData();
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal membatalkan Voucher Memorial');
+      } finally {
+        setCancelSubmitting(false);
+      }
+    },
+    [cancelTarget, fetchData]
+  );
+
+  // ── Cetak → open cetak tab ──
+  const openCetakTab = useCallback(
+    (id: string) => {
+      openFormTab({
+        title: 'Cetak Voucher Memorial',
+        module: 'cash-bank',
+        subPage: 'voucher-memorial',
+        formKey: 'voucher-memorial-cetak',
+        formProps: { id, type: 'voucher-memorial' }
+      });
+    },
+    [openFormTab]
+  );
+
+  const hasNext = skip + PAGE_SIZE < total;
+  const hasPrev = skip > 0;
+  const onWorkflowDone = useCallback(() => {
+    fetchData();
+    wfStates.refresh();
+  }, [fetchData, wfStates]);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BookX className="h-4 w-4 text-amber-600" aria-hidden="true" />
+              Voucher Memorial (Gagal Tagih)
+            </CardTitle>
+            <CardDescription>
+              Penghapusan piutang non-kas — Dr Beban Penghapusan Piutang, Cr Piutang Usaha. Dibuat lewat Penerimaan → Pelunasan Invoice → mode <strong>Gagal Tagih</strong>.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Filter bar */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input placeholder="Cari no bukti / catatan…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" aria-label="Cari Voucher Memorial" />
+          </div>
+          <div className="w-full sm:w-36">
+            <Select value={statusFilter || 'ALL'} onValueChange={(v) => setStatusFilter(v === 'ALL' ? '' : v)}>
+              <SelectTrigger aria-label="Filter status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Semua Status</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="SELESAI">Selesai</SelectItem>
+                <SelectItem value="BATAL">Batal</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full sm:w-40" aria-label="Tanggal dari" />
+          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full sm:w-40" aria-label="Tanggal sampai" />
+        </div>
+
+        {/* History table */}
+        {error ? (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => fetchData()}>
+              Coba Lagi
+            </Button>
+          </div>
+        ) : (
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="w-[150px]">No Dokumen</TableHead>
+                  <TableHead className="w-[100px]">Tanggal</TableHead>
+                  <TableHead>Pelanggan</TableHead>
+                  <TableHead className="hidden md:table-cell">Akun Beban (Dr)</TableHead>
+                  <TableHead className="text-right w-[140px]">Total</TableHead>
+                  <TableHead className="w-[110px] text-center">Status</TableHead>
+                  <TableHead className="w-[150px]">Workflow</TableHead>
+                  <TableHead className="w-24 text-center">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      {Array.from({ length: 8 }).map((_, j) => (
+                        <TableCell key={j}>
+                          <Skeleton className="h-5 w-full" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : data.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">
+                      Belum ada Voucher Memorial. Buat lewat <strong>Kas &amp; Bank → Penerimaan → Pelunasan Invoice → mode Gagal Tagih</strong>.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  data.map((row) => (
+                    <TableRow key={row.id} className={row.status === 'BATAL' ? 'opacity-60' : ''}>
+                      <TableCell className="font-mono text-xs font-medium">{row.noBukti}</TableCell>
+                      <TableCell className="text-xs">{formatDate(row.tanggal)}</TableCell>
+                      <TableCell className="text-xs">{row.pelanggan?.nama || '-'}</TableCell>
+                      <TableCell className="hidden md:table-cell text-xs">{row.akunBeban ? `${row.akunBeban.kode} — ${row.akunBeban.nama}` : '-'}</TableCell>
+                      <TableCell className="text-right font-mono text-xs font-semibold">{formatRp(Number(row.totalNilai) || 0)}</TableCell>
+                      <TableCell className="text-center">
+                        <StatusBadge status={row.status} />
+                      </TableCell>
+                      <TableCell>{wfStates.states[row.id] ? <WorkflowStateBadge state={wfStates.states[row.id].state} /> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-1">
+                          {wfStates.states[row.id] && <WorkflowActionsCell documentType="voucher_memorial" documentId={row.id} version={wfStates.states[row.id].version} availableActions={wfStates.states[row.id].availableActions} onDone={onWorkflowDone} />}
+                          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => openCetakTab(row.id)} title="Cetak Voucher Memorial" aria-label={`Cetak ${row.noBukti}`}>
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          {row.status !== 'BATAL' && (
+                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => confirmCancel(row.id)} title="Batalkan Voucher Memorial" aria-label={`Batalkan ${row.noBukti}`}>
+                              <Undo2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Menampilkan {total === 0 ? 0 : skip + 1}–{Math.min(skip + PAGE_SIZE, total)} dari {total} dokumen
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={!hasPrev} onClick={() => setSkip((p) => Math.max(0, p - PAGE_SIZE))} className="h-8">
+              <ChevronLeft className="h-4 w-4 mr-1" /> Sebelumnya
+            </Button>
+            <Button variant="outline" size="sm" disabled={!hasNext} onClick={() => setSkip((p) => p + PAGE_SIZE)} className="h-8">
+              Berikutnya <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+
+      {/* Hard-delete / cancel dialog (alasan + konfirmasi) */}
+      <HardDeleteCancelDialog
+        open={cancelOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setCancelOpen(false);
+            setCancelTarget(null);
+          }
+        }}
+        title="Batalkan Voucher Memorial?"
+        formLabel="Voucher Memorial"
+        submitting={cancelSubmitting}
+        onConfirm={(reason) => handleCancel(reason)}
+      />
+    </Card>
   );
 }
 
@@ -1532,7 +1832,8 @@ export default function CashBankModule(props: CashBankModuleProps) {
     const id = formProps?.id as string | undefined;
     const typeRaw = formProps?.type as CetakType | undefined;
     // Derive type from formMode if not provided
-    const type: CetakType = typeRaw || (formMode.startsWith('transfer') ? 'transfer' : formMode.startsWith('pembayaran') ? 'pembayaran' : 'penerimaan');
+    // === Update #044 — tambah derivasi 'voucher-memorial' ===
+    const type: CetakType = typeRaw || (formMode.startsWith('transfer') ? 'transfer' : formMode.startsWith('pembayaran') ? 'pembayaran' : formMode.startsWith('voucher-memorial') ? 'voucher-memorial' : 'penerimaan');
     // Update cetak "Rincian Pembayaran": laporan daftar tidak punya id dokumen
     // Update #16 — begitu juga laporan daftar penerimaan.
     if (id || type === 'rincian-pembayaran' || type === 'rincian-penerimaan') {
@@ -1623,6 +1924,8 @@ function CashBankListContent({ subPage: subPageProp, refreshKey, formMode, formP
           {subPage === 'penerimaan' && <PenerimaanTab kasBankOptions={kasBankOptions} coaOptions={coaOptions} refreshKey={refreshKey} />}
           {subPage === 'transfer-bank' && <TransferBankTab kasBankOptions={kasBankOptions} onPreview={setPreviewData} refreshKey={refreshKey} />}
           {subPage === 'rekonsiliasi-bank' && <RekonsiliasiBankTab formMode={formMode} formProps={formProps} refreshKey={refreshKey} />}
+          {/* === Update #044 — daftar Voucher Memorial (Gagal Tagih) === */}
+          {subPage === 'voucher-memorial' && <VoucherMemorialTab refreshKey={refreshKey} />}
         </>
       )}
 

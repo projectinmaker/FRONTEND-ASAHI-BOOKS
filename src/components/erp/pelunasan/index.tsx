@@ -18,13 +18,15 @@ import { useTabStore } from '@/store/tab-store';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
-import { HandCoins, Loader2, Search, AlertCircle, CheckCircle2, Info, Save, X, History, FileSpreadsheet } from 'lucide-react';
+import { HandCoins, Loader2, Search, AlertCircle, CheckCircle2, Info, Save, X, History, FileSpreadsheet, CircleCheck, Split, BookX } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 import { api, ApiError } from '@/lib/api';
 import { pelunasanApi } from '@/lib/pelunasan-api';
+// === Update #044 — cabang Gagal Tagih → Voucher Memorial (penghapusan piutang) ===
+import { voucherMemorialApi } from '@/lib/voucher-memorial-api';
 import { downloadExcelFile } from '@/lib/excel';
-import type { JenisPelunasan, StatusPembayaran, InvoiceSaldoResponse, InvoiceSaldoDetailResponse, PelunasanCreate, KasBankAkunResponse, PelangganDropdown, SupplierDropdown, CoaDropdownItem } from '@/types/api';
+import type { JenisPelunasan, StatusPembayaran, InvoiceSaldoResponse, InvoiceSaldoDetailResponse, PelunasanCreate, KasBankAkunResponse, PelangganDropdown, SupplierDropdown, CoaDropdownItem, VoucherMemorialCreate } from '@/types/api';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -134,6 +136,34 @@ function parseRupiahInput(v: string): string {
 
 // ─── Pelunasan Tab ────────────────────────────────────────────────────────────
 
+// ─── === Update #044 — Mode Penerimaan Piutang (alur Kas & Bank, poin 5) === ───
+// Penerimaan Penuh / Sebagian → Voucher Penerimaan Bank/Kas (PenerimaanKas);
+// Gagal Tagih → Voucher Memorial (Adjustment) — penghapusan piutang non-kas.
+// Selector hanya muncul untuk piutang; hutang (pembayaran) tidak berubah.
+
+type ModePenerimaan = 'penuh' | 'sebagian' | 'gagal';
+
+const MODE_PENERIMAAN_OPTIONS: { value: ModePenerimaan; title: string; description: string; icon: typeof CircleCheck }[] = [
+  {
+    value: 'penuh',
+    title: 'Penerimaan Penuh',
+    description: 'Nominal per invoice terkunci = sisa tagihan — melunasi invoice sekaligus.',
+    icon: CircleCheck
+  },
+  {
+    value: 'sebagian',
+    title: 'Penerimaan Sebagian',
+    description: 'Nominal per invoice dapat diedit (≤ sisa tagihan) — invoice menjadi PARSIAL.',
+    icon: Split
+  },
+  {
+    value: 'gagal',
+    title: 'Gagal Tagih',
+    description: 'Sisa tagihan dihapusbukukan (non-kas) → Voucher Memorial: Dr Beban Penghapusan Piutang, Cr Piutang Usaha.',
+    icon: BookX
+  }
+];
+
 // ─── Draft Otomatis (localStorage) — bentuk data form alokasi pelunasan ─────
 
 interface PelunasanDraftData {
@@ -154,6 +184,9 @@ interface PelunasanDraftData {
   nilaiTukar?: string;
   /** Update #01 — pph23Display per baris (potongan PPh 23 saat pelunasan) */
   alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string; pph23Display?: string; noBuktiPotong?: string; masaPajak?: string }[];
+  /** === Update #044 — mode Penerimaan Piutang + akun beban Gagal Tagih === */
+  modePenerimaan?: ModePenerimaan;
+  akunBebanId?: string;
 }
 
 function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }: { jenis: JenisPelunasan; refreshKey?: number; embedded?: boolean; onFinished?: () => void; onDirtyChange?: (dirty: boolean) => void }) {
@@ -164,6 +197,18 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   // m-13: Administrator — dokumen kas/bank pelunasan otomatis final (direct_complete)
   // saat dibuat; non-admin tetap lewat workflow submit → approve → post.
   const isAdmin = useAuthStore((s) => s.user?.role === 'ADMINISTRATOR');
+
+  // ── === Update #044 — mode Penerimaan Piutang: Penuh / Sebagian / Gagal
+  // Tagih (hanya piutang — hutang tidak berubah). Gagal Tagih membuat
+  // Voucher Memorial non-kas, bukan penerimaan kas/bank. ──
+  const [modePenerimaan, setModePenerimaan] = useState<ModePenerimaan>('penuh');
+  const isGagalTagih = isPiutang && modePenerimaan === 'gagal';
+  // Nominal per invoice terkunci hanya pada mode Penuh (dan hutang #042).
+  const nominalTerKunci = !isPiutang || modePenerimaan === 'penuh';
+
+  // ── Update #044 — akun beban penghapusan piutang (mode Gagal Tagih;
+  // opsional — kosong = default Setting Akun BEBAN_PENGHAPUSAN_PIUTANG) ──
+  const [akunBebanId, setAkunBebanId] = useState('');
 
   // ── Pihak dropdown options (pelanggan / supplier) ──
   const [pihakOptions, setPihakOptions] = useState<(PelangganDropdown | SupplierDropdown)[]>([]);
@@ -321,16 +366,26 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     });
   }, []);
 
-  // === Update #042 — KUNCI nominal alokasi: nilai pembayaran per invoice
-  // TERKUNCI = sisaTagihan (tidak bisa diedit — updateAllocation menjadi
-  // no-op; input di tabel read-only menampilkan sisa). PPh23/bukti potong/
-  // masa pajak TETAP bisa diedit (potongan pajak atas nilai pokok yang terkunci).
-  // nilaiDisplay tetap diisi toggleSelect (prefill = sisaTagihan). ===
-  const updateAllocation = useCallback((invoiceId: string, _val: string) => {
-    // No-op sengaja (Update #042): nominal per invoice terkunci = sisa tagihan.
-    void invoiceId;
-    void _val;
-  }, []);
+  // === Update #044 — nominal alokasi: terkunci HANYA pada mode Penerimaan
+  // Penuh (dan hutang — kebijakan #042). Mode Sebagian / Gagal Tagih:
+  // nominal dapat diedit (0 < nilai <= sisa tagihan; PPh23/diskon tetap
+  // bisa diisi pada mode Sebagian). ===
+  const updateAllocation = useCallback(
+    (invoiceId: string, val: string) => {
+      if (nominalTerKunci) {
+        // No-op sengaja (Update #042): nominal per invoice terkunci = sisa tagihan.
+        void invoiceId;
+        void val;
+        return;
+      }
+      setSelected((prev) => {
+        const row = prev[invoiceId];
+        if (!row) return prev;
+        return { ...prev, [invoiceId]: { ...row, nilaiDisplay: sanitizeRupiahInput(val) } };
+      });
+    },
+    [nominalTerKunci]
+  );
 
   // Update cetak "Bayar Pemasok" — input diskon pelunasan per faktur (hutang)
   const updateDiskon = useCallback((invoiceId: string, val: string) => {
@@ -443,7 +498,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   // meminta konfirmasi sebelum kembali ke kartu pilihan Jenis Transaksi.
   // Isian pelunasan sendiri tetap aman — draft tersimpan otomatis (useFormDraft)
   // dan dipulihkan bila user memilih Pelunasan Invoice kembali.
-  const isDirty = Boolean(pihakFilter) || selectedList.length > 0 || Boolean(kasBankId) || Boolean(noNukti) || Boolean(catatan) || Boolean(noCek) || Boolean(tanggalCek) || Boolean(jumlahCek) || Boolean(penaltiDisplay) || Boolean(akunPenaltiId);
+  const isDirty = Boolean(pihakFilter) || selectedList.length > 0 || Boolean(kasBankId) || Boolean(noNukti) || Boolean(catatan) || Boolean(noCek) || Boolean(tanggalCek) || Boolean(jumlahCek) || Boolean(penaltiDisplay) || Boolean(akunPenaltiId) || Boolean(akunBebanId);
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -458,6 +513,16 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   }, [coaOptions, isPiutang]);
 
   const akunPenaltiOptionsFmt = useMemo(() => akunPenaltiOptions.map((c) => ({ id: c.id, label: `${c.kode} — ${c.nama}` })), [akunPenaltiOptions]);
+
+  // === Update #044 — opsi akun beban penghapusan piutang (mode Gagal Tagih):
+  // utamakan akun BEBAN; fallback seluruh akun AKTIF bertingkat DETAIL. ===
+  const akunBebanOptions = useMemo(() => {
+    const base = coaOptions.filter((c) => c.status === 'AKTIF' && c.tingkat === 'DETAIL');
+    const preferred = base.filter((c) => (c.header || '').includes('BEBAN'));
+    return preferred.length > 0 ? preferred : base;
+  }, [coaOptions]);
+
+  const akunBebanOptionsFmt = useMemo(() => akunBebanOptions.map((c) => ({ id: c.id, label: `${c.kode} — ${c.nama}` })), [akunBebanOptions]);
 
   // ── Muat daftar akun (COA) saat form alokasi pertama kali dibutuhkan ──
   useEffect(() => {
@@ -502,6 +567,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     if (d.jumlahCek) setJumlahCek(d.jumlahCek);
     if (d.mataUang) setMataUang(d.mataUang);
     if (d.nilaiTukar) setNilaiTukar(d.nilaiTukar);
+    // === Update #044 — mode Penerimaan Piutang + akun beban Gagal Tagih ===
+    if (isPiutang && d.modePenerimaan) setModePenerimaan(d.modePenerimaan);
+    if (d.akunBebanId) setAkunBebanId(d.akunBebanId);
   }, []);
 
   // Tahap 2 — alokasi invoice dipulihkan saat daftar tagihan selesai dimuat
@@ -520,9 +588,15 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       // === Update #042 — nominal terkunci: saat draft dipulihkan, nilaiDisplay
       // disinkronkan ulang ke sisaTagihan terbaru (nilai tersimpan mungkin
       // stale — sisa berubah bila ada pembayaran lain). ===
+      // === Update #044 — mode Sebagian/Gagal: pulihkan nominal TERSIMPAN
+      // (bisa < sisa); mode Penuh & hutang tetap sinkron ke sisa terbaru. ===
       if (inv) {
         const sisaNow = parseNum(inv.sisaTagihan);
-        restored[a.invoiceId] = { invoice: inv, nilaiDisplay: sisaNow > 0 ? sanitizeRupiahInput(String(sisaNow)) : '', diskonDisplay: a.diskonDisplay || '', pph23Display: a.pph23Display || '', noBuktiPotong: a.noBuktiPotong || '', masaPajak: a.masaPajak || '' };
+        const savedNilai = parseNum(parseRupiahInput(a.nilaiDisplay));
+        const modeDraft = (d.modePenerimaan || 'penuh') as ModePenerimaan;
+        const pakaiTersimpan = isPiutang && (modeDraft === 'sebagian' || modeDraft === 'gagal') && savedNilai > 0 && savedNilai <= sisaNow;
+        const nilaiRestore = pakaiTersimpan ? sanitizeRupiahInput(String(savedNilai)) : sisaNow > 0 ? sanitizeRupiahInput(String(sisaNow)) : '';
+        restored[a.invoiceId] = { invoice: inv, nilaiDisplay: nilaiRestore, diskonDisplay: a.diskonDisplay || '', pph23Display: a.pph23Display || '', noBuktiPotong: a.noBuktiPotong || '', masaPajak: a.masaPajak || '' };
       }
     }
     if (Object.keys(restored).length > 0) {
@@ -557,9 +631,12 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       jumlahCek,
       mataUang,
       nilaiTukar,
+      // === Update #044 — mode Penerimaan Piutang + akun beban Gagal Tagih ===
+      modePenerimaan: isPiutang ? modePenerimaan : undefined,
+      akunBebanId,
       alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '', pph23Display: r.pph23Display || '', noBuktiPotong: r.noBuktiPotong || '', masaPajak: r.masaPajak || '' }))
     });
-  }, [pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, selected]);
+  }, [pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, selected, modePenerimaan, akunBebanId, isPiutang]);
 
   const handleDiscardDraft = useCallback(() => {
     skipNextSaveRef.current = true;
@@ -577,6 +654,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     setJumlahCek('');
     setMataUang('IDR');
     setNilaiTukar('1');
+    // === Update #044 — reset mode + akun beban Gagal Tagih ===
+    setModePenerimaan('penuh');
+    setAkunBebanId('');
     setErrors({});
   }, []);
 
@@ -596,8 +676,11 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     if (selectedList.length > 0 && !selectedPihakId) e.pihak = `Semua invoice yang dipilih harus dari satu ${pihakLabel.toLowerCase()} yang sama`;
     if (!pihakFilter) e.pihak = `Pilih ${pihakLabel.toLowerCase()} terlebih dahulu`;
     if (!tanggal) e.tanggal = 'Tanggal wajib diisi';
-    if (!kasBankId) e.kasBank = 'Kas/Bank wajib dipilih';
-    if (!noNukti.trim()) e.noNukti = 'No. referensi wajib diisi';
+    // === Update #044 — mode Gagal Tagih: dokumen non-kas (Voucher Memorial) —
+    // Kas/Bank + No. Referensi tidak relevan; akun beban opsional (default
+    // Setting Akun). ===
+    if (!isGagalTagih && !kasBankId) e.kasBank = 'Kas/Bank wajib dipilih';
+    if (!isGagalTagih && !noNukti.trim()) e.noNukti = 'No. referensi wajib diisi';
     if (selectedList.length === 0) e.alokasi = 'Pilih minimal 1 invoice untuk dialokasikan';
     let hasInvalid = false;
     let hasOver = false;
@@ -609,10 +692,10 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         hasInvalid = true;
         break;
       }
-      // === Update #042 — nominal alokasi TERKUNCI = sisaTagihan: submit hanya
-      // sah bila nilai == sisa (toleransi 0). ===
       const sisa = parseNum(row.invoice.sisaTagihan);
-      if (n !== sisa) {
+      // === Update #044 — nominal: mode Penuh (dan hutang) terkunci == sisa
+      // (#042); mode Sebagian / Gagal Tagih boleh 0 < n <= sisa. ===
+      if (nominalTerKunci ? n !== sisa : n > sisa + 0.01) {
         hasOver = true;
         break;
       }
@@ -630,24 +713,60 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         break;
       }
     }
-    if (hasInvalid) e.alokasi = 'Semua nilai pembayaran harus lebih dari 0';
-    if (!e.alokasi && hasOver) e.alokasi = 'Nilai pembayaran terkunci dan harus sama dengan sisa tagihan invoice terkait (Update #042)';
+    const nilaiLabel = isGagalTagih ? 'penghapusan' : 'pembayaran';
+    if (hasInvalid) e.alokasi = `Semua nilai ${nilaiLabel} harus lebih dari 0`;
+    if (!e.alokasi && hasOver) e.alokasi = nominalTerKunci ? `Nilai ${nilaiLabel} terkunci dan harus sama dengan sisa tagihan invoice terkait (mode Penerimaan Penuh)` : `Nilai ${nilaiLabel} tidak boleh melebihi sisa tagihan invoice terkait`;
     if (!e.alokasi && hasDiskonOver) e.alokasi = 'Diskon tidak boleh melebihi nilai pembayaran invoice terkait';
     if (!e.alokasi && hasPph23Over) e.alokasi = 'Diskon + PPh 23 tidak boleh melebihi nilai pembayaran invoice terkait';
-    // Update #5 — penalti
-    if (penaltiNum < 0) e.penalti = 'Penalti tidak boleh negatif';
-    if (penaltiNum > 0 && !akunPenaltiId) e.penalti = 'Akun penalti wajib dipilih bila penalti > 0';
+    // Update #5 — penalti (tidak relevan untuk Gagal Tagih — non-kas)
+    if (!isGagalTagih && penaltiNum < 0) e.penalti = 'Penalti tidak boleh negatif';
+    if (!isGagalTagih && penaltiNum > 0 && !akunPenaltiId) e.penalti = 'Akun penalti wajib dipilih bila penalti > 0';
     // Update cetak "Bayar Pemasok" — nilai tukar
     if (!isPiutang && !(parseFloat(nilaiTukar.replace(',', '.')) > 0)) e.nilaiTukar = 'Nilai tukar harus lebih dari 0';
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [pihakFilter, tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId, isPiutang, nilaiTukar]);
+  }, [pihakFilter, tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId, isPiutang, nilaiTukar, isGagalTagih, nominalTerKunci]);
 
   // ── Submit draft ──
   const handleSubmit = useCallback(async () => {
     if (!validate()) return;
     setSubmitting(true);
     try {
+      // === Update #044 — mode Gagal Tagih: submit Voucher Memorial (non-kas,
+      // penghapusan piutang) — Dr Beban Penghapusan Piutang, Cr Piutang Usaha.
+      // Hasil dokumen muncul di daftar "Voucher Memorial" modul Kas & Bank. ===
+      if (isGagalTagih) {
+        const payload: VoucherMemorialCreate = {
+          pelangganId: selectedPihakId || pihakFilter,
+          tanggal,
+          catatan: catatan.trim() || undefined,
+          akunBebanId: akunBebanId || null,
+          alokasi: selectedList.map((r) => ({
+            invoiceId: r.invoice.invoiceId,
+            nilai: parseRupiahInput(r.nilaiDisplay)
+          }))
+        };
+        const res = await voucherMemorialApi.create(payload);
+        toast.success(`Voucher Memorial ${res.noBukti} dibuat`, {
+          description: isAdmin ? 'Sebagai Administrator, jurnal penghapusan piutang langsung diposting otomatis (Dr Beban Penghapusan, Cr Piutang Usaha) — invoice terkait menjadi lunas.' : 'Lakukan workflow submit → approve → post untuk memposting jurnal penghapusan piutang.',
+          duration: 9000
+        });
+        skipNextSaveRef.current = true;
+        draft.clearDraft();
+        clearSelection();
+        setCatatan('');
+        setAkunBebanId('');
+        setModePenerimaan('penuh');
+        setRiwayatInvoiceId(null);
+        setRiwayatData(null);
+        setTanggal(todayStr());
+        void fetchTagihan();
+        // Refresh daftar Voucher Memorial (Kas & Bank) + Penerimaan.
+        useTabStore.getState().refreshListTab('cash-bank', 'voucher-memorial');
+        useTabStore.getState().refreshListTab('cash-bank', 'penerimaan');
+        if (embedded && onFinished) onFinished();
+        return;
+      }
       const payload: PelunasanCreate = {
         pihakId: selectedPihakId || pihakFilter,
         tanggal,
@@ -717,7 +836,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     } finally {
       setSubmitting(false);
     }
-  }, [validate, selectedPihakId, pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft, embedded, onFinished]);
+  }, [validate, selectedPihakId, pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft, embedded, onFinished, isGagalTagih, akunBebanId, isAdmin]);
 
   // ── Export Excel daftar tagihan (Update #5) — ikut filter aktif ──
   const handleExport = useCallback(async () => {
@@ -1032,6 +1151,60 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
             </div>
           </CardHeader>
           <CardContent className="space-y-5">
+            {/* === Update #044 — Mode Penerimaan Piutang (Penuh / Sebagian /
+                Gagal Tagih; hanya piutang — hutang tidak berubah). === */}
+            {isPiutang && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">
+                  Mode Penerimaan Piutang <span className="text-destructive">*</span>
+                </Label>
+                <div role="radiogroup" aria-label="Mode Penerimaan Piutang" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {MODE_PENERIMAAN_OPTIONS.map((opt) => {
+                    const active = modePenerimaan === opt.value;
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => {
+                          if (modePenerimaan === opt.value) return;
+                          setModePenerimaan(opt.value);
+                          // === Update #044 — pindah ke mode Penuh: sinkronkan
+                          // ulang nominal terpilih ke sisa tagihan terbaru
+                          // (nilai mode Sebagian/Gagal bisa < sisa). ===
+                          if (opt.value === 'penuh') {
+                            setSelected((prev) => {
+                              const next: Record<string, AllocationRow> = {};
+                              for (const [key, row] of Object.entries(prev)) {
+                                const sisaNow = parseNum(row.invoice.sisaTagihan);
+                                next[key] = { ...row, nilaiDisplay: sisaNow > 0 ? sanitizeRupiahInput(String(sisaNow)) : '' };
+                              }
+                              return next;
+                            });
+                          }
+                        }}
+                        className={'flex h-full flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors ' + (active ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500' : 'border-border bg-background hover:border-emerald-300 hover:bg-emerald-50/40')}>
+                        <span className="flex items-center gap-2">
+                          <span className={'flex h-7 w-7 items-center justify-center rounded-md ' + (active ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground')}>
+                            <Icon className="h-4 w-4" aria-hidden="true" />
+                          </span>
+                          <span className={'text-sm font-semibold ' + (active ? 'text-emerald-700' : 'text-foreground')}>{opt.title}</span>
+                        </span>
+                        <span className="text-[11px] leading-snug text-muted-foreground">{opt.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {isGagalTagih && (
+                  <p className="text-xs text-amber-700">
+                    Mode <strong>Gagal Tagih</strong> tidak menyetor kas — sisa tagihan dihapusbukukan lewat <strong>Voucher Memorial (Adjustment)</strong> dengan jurnal Dr Beban Penghapusan Piutang, Cr Piutang Usaha. Invoice terkait menjadi lunas tanpa penerimaan kas/bank.
+                  </p>
+                )}
+              </div>
+            )}
+
             {/* Info banner */}
             <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 p-3">
               <Info className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -1039,23 +1212,36 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                 {/* m-13: teks disesuaikan per role — admin auto-final (direct_complete), non-admin workflow manual */}
                 {isAdmin ? (
                   <>
-                    Sebagai <strong>Administrator</strong>, dokumen pembayaran akan langsung diproses &amp; diposting otomatis setelah dibuat (submit → approve → post berjalan dalam satu transaksi) — tidak ada langkah persetujuan manual yang perlu dilakukan.
+                    Sebagai <strong>Administrator</strong>, {isGagalTagih ? 'Voucher Memorial (jurnal penghapusan piutang)' : 'dokumen pembayaran'} akan langsung diproses &amp; diposting otomatis setelah dibuat (submit → approve → post berjalan dalam satu transaksi) — tidak ada langkah persetujuan manual yang perlu dilakukan.
                   </>
                 ) : (
                   <>
-                    Draft pembayaran akan dibuat dengan status <strong>DRAFT</strong>. Untuk menyelesaikan pelunasan, lakukan workflow: <strong>Submit → Approve → Post</strong> melalui kolom Workflow pada daftar dokumen atau modul <strong>Antrean Persetujuan</strong>.
+                    Draft {isGagalTagih ? 'Voucher Memorial' : 'pembayaran'} akan dibuat dengan status <strong>DRAFT</strong>. Untuk menyelesaikannya, lakukan workflow: <strong>Submit → Approve → Post</strong> melalui kolom Workflow pada daftar dokumen atau modul <strong>Antrean Persetujuan</strong>.
                   </>
                 )}
               </p>
             </div>
 
-            {/* Update #01 — info PPh 23 & akun yang dipakai saat posting */}
-            <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-3">
-              <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-              <p className="text-xs text-muted-foreground">
-                <strong>PPh 23 per faktur (opsional):</strong> {isPiutang ? 'potongan PPh 23 yang dipotong pelanggan dari setoran — kas masuk berkurang, selisihnya didebit ke akun PPh 23 Dibayar di Muka.' : 'PPh 23 yang ditahan dari pembayaran supplier — kas keluar berkurang, selisihnya dikredit ke akun Hutang PPh 23.'} Tombol <strong>2%</strong> mengisi otomatis 2% dari nilai pembayaran. Sisa tagihan tetap berkurang sebesar nilai penuh (tidak ada pencatatan ganda). Setelah diposting, dokumen otomatis muncul di daftar {isPiutang ? 'Penerimaan' : 'Pembayaran'} Kas &amp; Bank.
-              </p>
-            </div>
+            {/* Update #01 — info PPh 23 & akun yang dipakai saat posting
+                (Update #044 — disembunyikan pada mode Gagal Tagih: non-kas) */}
+            {!isGagalTagih && (
+              <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-3">
+                <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                <p className="text-xs text-muted-foreground">
+                  <strong>PPh 23 per faktur (opsional):</strong> {isPiutang ? 'potongan PPh 23 yang dipotong pelanggan dari setoran — kas masuk berkurang, selisihnya didebit ke akun PPh 23 Dibayar di Muka.' : 'PPh 23 yang ditahan dari pembayaran supplier — kas keluar berkurang, selisihnya dikredit ke akun Hutang PPh 23.'} Tombol <strong>2%</strong> mengisi otomatis 2% dari nilai pembayaran. Sisa tagihan tetap berkurang sebesar nilai penuh (tidak ada pencatatan ganda). Setelah diposting, dokumen otomatis muncul di daftar {isPiutang ? 'Penerimaan' : 'Pembayaran'} Kas &amp; Bank.
+                </p>
+              </div>
+            )}
+
+            {/* === Update #044 — info akun jurnal Gagal Tagih (Voucher Memorial) === */}
+            {isGagalTagih && (
+              <div className="flex items-start gap-2 rounded-md border bg-amber-50 p-3">
+                <Info className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-700">
+                  <strong>Voucher Memorial (Adjustment):</strong> sisa tagihan invoice yang dipilih akan dihapusbukukan — jurnal sistem <strong>Dr Beban Penghapusan Piutang</strong>, <strong>Cr Piutang Usaha</strong> (akun kontrol invoice). Tidak ada kas yang diterima; setelah diposting, dokumen muncul di daftar <strong>Voucher Memorial</strong> modul Kas &amp; Bank dan invoice terkait menjadi lunas.
+                </p>
+              </div>
+            )}
 
             {/* Form fields */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1066,20 +1252,39 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                 <Input type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} className={errors.tanggal ? 'border-destructive' : ''} />
                 {errors.tanggal && <p className="text-xs text-destructive">{errors.tanggal}</p>}
               </div>
-              <div className="space-y-1.5 sm:col-span-1">
-                <Label className="text-xs font-medium">
-                  Kas/Bank <span className="text-destructive">*</span>
-                </Label>
-                <SearchableDropdown value={kasBankId} onValueChange={setKasBankId} options={kasBankOptionsFmt} loading={kasBankLoading} placeholder="Pilih kas/bank" searchPlaceholder="Cari kas/bank..." error={errors.kasBank} />
-                {errors.kasBank && <p className="text-xs text-destructive">{errors.kasBank}</p>}
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">
-                  No. Referensi <span className="text-destructive">*</span>
-                </Label>
-                <Input value={noNukti} onChange={(e) => setNoNukti(e.target.value)} placeholder="No. referensi bank" className={errors.noNukti ? 'border-destructive' : ''} />
-                {errors.noNukti && <p className="text-xs text-destructive">{errors.noNukti}</p>}
-              </div>
+              {/* === Update #044 — Kas/Bank hanya untuk mode Penuh/Sebagian
+                  (dan hutang); Gagal Tagih non-kas → diganti Akun Beban. === */}
+              {!isGagalTagih && (
+                <div className="space-y-1.5 sm:col-span-1">
+                  <Label className="text-xs font-medium">
+                    Kas/Bank <span className="text-destructive">*</span>
+                  </Label>
+                  <SearchableDropdown value={kasBankId} onValueChange={setKasBankId} options={kasBankOptionsFmt} loading={kasBankLoading} placeholder="Pilih kas/bank" searchPlaceholder="Cari kas/bank..." error={errors.kasBank} />
+                  {errors.kasBank && <p className="text-xs text-destructive">{errors.kasBank}</p>}
+                </div>
+              )}
+              {!isGagalTagih && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">
+                    No. Referensi <span className="text-destructive">*</span>
+                  </Label>
+                  <Input value={noNukti} onChange={(e) => setNoNukti(e.target.value)} placeholder="No. referensi bank" className={errors.noNukti ? 'border-destructive' : ''} />
+                  {errors.noNukti && <p className="text-xs text-destructive">{errors.noNukti}</p>}
+                </div>
+              )}
+              {/* === Update #044 — akun beban penghapusan piutang (Gagal Tagih;
+                  opsional — kosong memakai default Setting Akun) === */}
+              {isGagalTagih && (
+                <div className="space-y-1.5 sm:col-span-1">
+                  <Label className="text-xs font-medium">
+                    Akun Beban <span className="font-normal text-muted-foreground">(opsional)</span>
+                  </Label>
+                  <SearchableDropdown value={akunBebanId} onValueChange={setAkunBebanId} options={akunBebanOptionsFmt} loading={coaLoading} placeholder="Default Setting Akun" searchPlaceholder="Cari kode / nama akun beban..." emptyText="Akun beban tidak ditemukan." allOption={{ id: '', label: '— Default Setting Akun —' }} />
+                  <p className="text-[11px] text-muted-foreground">
+                    Didebit saat posting (Dr Beban Penghapusan Piutang). Kosongkan untuk memakai default <strong>Setting Akun → Beban Penghapusan Piutang (Gagal Tagih)</strong>.
+                  </p>
+                </div>
+              )}
               <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
                 <Label className="text-xs font-medium">Catatan</Label>
                 <Textarea value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Catatan tambahan (opsional)" rows={1} />
@@ -1113,29 +1318,32 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
               </div>
             )}
 
-            {/* Penalti (Update #5) — opsional; akun wajib bila penalti > 0 */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="penalti-input" className="text-xs font-medium">
-                  Penalti <span className="font-normal text-muted-foreground">(denda, opsional)</span>
-                </Label>
-                <Input id="penalti-input" type="text" inputMode="numeric" placeholder="0" value={penaltiDisplay} onChange={(e) => setPenaltiDisplay(sanitizeRupiahInput(e.target.value))} className="text-right font-mono h-9 text-sm" />
-                <p className="text-[11px] text-muted-foreground">Bila diisi, nilainya ditambahkan ke Total Pembayaran dan wajib memilih akun {isPiutang ? 'pendapatan' : 'beban'}.</p>
-              </div>
-              {penaltiNum > 0 && (
+            {/* Penalti (Update #5) — opsional; akun wajib bila penalti > 0
+                (Update #044 — tidak relevan untuk Gagal Tagih: non-kas) */}
+            {!isGagalTagih && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">
-                    Akun Penalti <span className="text-destructive">*</span>
+                  <Label htmlFor="penalti-input" className="text-xs font-medium">
+                    Penalti <span className="font-normal text-muted-foreground">(denda, opsional)</span>
                   </Label>
-                  <SearchableDropdown value={akunPenaltiId} onValueChange={setAkunPenaltiId} options={akunPenaltiOptionsFmt} loading={coaLoading} placeholder={`Pilih akun ${isPiutang ? 'pendapatan' : 'beban'}`} searchPlaceholder="Cari kode / nama akun..." emptyText="Akun tidak ditemukan." allOption={{ id: '', label: '— Tanpa akun —' }} />
-                  {penaltiMissingAkun && (
-                    <p className="flex items-center gap-1 text-xs text-destructive">
-                      <AlertCircle className="h-3.5 w-3.5" /> Akun penalti wajib dipilih sebelum menyimpan draft
-                    </p>
-                  )}
+                  <Input id="penalti-input" type="text" inputMode="numeric" placeholder="0" value={penaltiDisplay} onChange={(e) => setPenaltiDisplay(sanitizeRupiahInput(e.target.value))} className="text-right font-mono h-9 text-sm" />
+                  <p className="text-[11px] text-muted-foreground">Bila diisi, nilainya ditambahkan ke Total Pembayaran dan wajib memilih akun {isPiutang ? 'pendapatan' : 'beban'}.</p>
                 </div>
-              )}
-            </div>
+                {penaltiNum > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">
+                      Akun Penalti <span className="text-destructive">*</span>
+                    </Label>
+                    <SearchableDropdown value={akunPenaltiId} onValueChange={setAkunPenaltiId} options={akunPenaltiOptionsFmt} loading={coaLoading} placeholder={`Pilih akun ${isPiutang ? 'pendapatan' : 'beban'}`} searchPlaceholder="Cari kode / nama akun..." emptyText="Akun tidak ditemukan." allOption={{ id: '', label: '— Tanpa akun —' }} />
+                    {penaltiMissingAkun && (
+                      <p className="flex items-center gap-1 text-xs text-destructive">
+                        <AlertCircle className="h-3.5 w-3.5" /> Akun penalti wajib dipilih sebelum menyimpan draft
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {errors.pihak && (
               <div className="text-xs text-destructive flex items-center gap-1">
@@ -1147,13 +1355,12 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
 
             {/* Allocation table */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Rincian Alokasi Pembayaran</Label>
-              {/* === Update #042 — nominal per invoice TERKUNCI = sisa tagihan
-                  (read-only; DP bertahap & pelunasan diatur lewat field
-                  DP/Pelunasan saat membuat Invoice — sisa tagihan invoice
-                  selalu sisa nilai yang belum dibayar). PPh23/diskon/bukti
-                  potong tetap dapat diedit. === */}
-              <p className="text-xs text-muted-foreground">Nilai pembayaran per invoice terkunci otomatis sebesar sisa tagihan (tidak dapat diedit). PPh 23, bukti potong, masa pajak{!isPiutang ? ' dan diskon' : ''} tetap dapat diisi.</p>
+              <Label className="text-sm font-medium">{isGagalTagih ? 'Rincian Penghapusan Piutang' : 'Rincian Alokasi Pembayaran'}</Label>
+              {/* === Update #044 — nominal per invoice: mode Penuh (dan hutang)
+                  TERKUNCI = sisa tagihan (#042); mode Sebagian / Gagal Tagih
+                  dapat diedit (≤ sisa). Gagal Tagih: tanpa PPh 23 / bukti
+                  potong / diskon (non-kas). === */}
+              <p className="text-xs text-muted-foreground">{nominalTerKunci ? `Nilai ${isGagalTagih ? 'penghapusan' : 'pembayaran'} per invoice terkunci otomatis sebesar sisa tagihan (tidak dapat diedit). PPh 23, bukti potong, masa pajak${!isPiutang ? ' dan diskon' : ''} tetap dapat diisi.` : `Nilai ${isGagalTagih ? 'penghapusan' : 'penerimaan'} per invoice dapat diedit — maksimal sebesar sisa tagihan (mode ${isGagalTagih ? 'Gagal Tagih' : 'Penerimaan Sebagian'}).`}</p>
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -1161,11 +1368,13 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                       <TableHead className="w-12 text-center">No</TableHead>
                       <TableHead>No Invoice</TableHead>
                       <TableHead className="text-right w-[140px]">Sisa Tagihan</TableHead>
-                      <TableHead className="text-right w-[180px]">Nilai Pembayaran</TableHead>
-                      {/* Update #01 — PPh 23 per faktur (piutang & hutang) */}
-                      <TableHead className="text-right w-[160px]">PPh 23</TableHead>
-                      {/* AUD-08 (update #04) — bukti potong + masa pajak per faktur */}
-                      <TableHead className="w-[200px]">Bukti Potong / Masa Pajak</TableHead>
+                      <TableHead className="text-right w-[180px]">{isGagalTagih ? 'Nilai Penghapusan' : 'Nilai Pembayaran'}</TableHead>
+                      {/* Update #01 — PPh 23 per faktur (Update #044: disembunyikan
+                          pada mode Gagal Tagih — non-kas) */}
+                      {!isGagalTagih && <TableHead className="text-right w-[160px]">PPh 23</TableHead>}
+                      {/* AUD-08 (update #04) — bukti potong + masa pajak per faktur
+                          (Update #044: disembunyikan pada mode Gagal Tagih) */}
+                      {!isGagalTagih && <TableHead className="w-[200px]">Bukti Potong / Masa Pajak</TableHead>}
                       {/* Update cetak "Bayar Pemasok" — diskon pelunasan per faktur (hutang) */}
                       {!isPiutang && <TableHead className="text-right w-[160px]">Diskon</TableHead>}
                       <TableHead className="w-12" />
@@ -1175,8 +1384,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                     {selectedList.map((row, idx) => {
                       const sisa = parseNum(row.invoice.sisaTagihan);
                       const n = parseNum(parseRupiahInput(row.nilaiDisplay));
-                      // Update #042 — nominal terkunci: nilai == sisa (input read-only).
-                      const over = n !== sisa;
+                      // Update #044 — nominal: terkunci (== sisa) hanya mode
+                      // Penuh & hutang; Sebagian/Gagal boleh ≤ sisa.
+                      const over = nominalTerKunci ? n !== sisa : n > sisa + 0.01;
                       const sisaSetelah = sisa - n;
                       const disk = parseNum(parseRupiahInput(row.diskonDisplay || ''));
                       const diskonOver = disk > n + 0.01;
@@ -1190,33 +1400,39 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                           <TableCell className="font-mono text-xs font-medium">{row.invoice.noDokumen}</TableCell>
                           <TableCell className="text-right font-mono text-xs">{formatRp(sisa)}</TableCell>
                           <TableCell className="text-right">
-                            {/* === Update #042 — input nilai READ-ONLY (terkunci =
-                                sisaTagihan; styling abu — nilai tetap nilaiDisplay
-                                dari toggleSelect prefill). === */}
-                            <Input type="text" inputMode="numeric" value={row.nilaiDisplay} readOnly aria-readonly="true" title="Nilai terkunci — otomatis sebesar sisa tagihan invoice (Update #042)" onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className="text-right font-mono h-8 text-sm bg-muted/50 text-muted-foreground cursor-not-allowed focus-visible:ring-0" />
-                            {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">Nilai harus sama dengan sisa tagihan</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">Lunas</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
+                            {/* === Update #044 — input nilai: READ-ONLY hanya pada
+                                mode terkunci (Penuh/hutang — #042); mode Sebagian /
+                                Gagal Tagih dapat diedit (≤ sisa). === */}
+                            {nominalTerKunci ? <Input type="text" inputMode="numeric" value={row.nilaiDisplay} readOnly aria-readonly="true" title="Nilai terkunci — otomatis sebesar sisa tagihan invoice (mode Penerimaan Penuh)" onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className="text-right font-mono h-8 text-sm bg-muted/50 text-muted-foreground cursor-not-allowed focus-visible:ring-0" /> : <Input type="text" inputMode="numeric" value={row.nilaiDisplay} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${over ? 'border-destructive' : ''}`} aria-label={`Nilai ${isGagalTagih ? 'penghapusan' : 'penerimaan'} ${row.invoice.noDokumen}`} />}
+                            {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">{nominalTerKunci ? 'Nilai harus sama dengan sisa tagihan' : 'Tidak boleh melebihi sisa tagihan'}</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">{isGagalTagih ? 'Dihapus penuh' : 'Lunas'}</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
                           </TableCell>
-                          {/* Update #01 — input PPh 23 per faktur + shortcut 2% */}
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Input type="text" inputMode="numeric" placeholder="0" value={row.pph23Display || ''} onChange={(e) => updatePph23(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm w-24 ${pph23Over ? 'border-destructive' : ''}`} aria-label={`PPh 23 pelunasan ${row.invoice.noDokumen}`} />
-                              <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-[11px] shrink-0" onClick={() => setPph23DuaPersen(row.invoice.invoiceId)} title="Isi otomatis 2% dari nilai pembayaran">
-                                2%
-                              </Button>
-                            </div>
-                            {pph23Over ? (
-                              <p className="mt-1 text-[11px] leading-tight text-destructive">Diskon + PPh 23 melebihi nilai</p>
-                            ) : pph > 0 ? (
-                              <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
-                                {isPiutang ? 'Diterima tunai' : 'Dibayar tunai'}: {formatRp(netTunai)}
-                              </p>
-                            ) : null}
-                          </TableCell>
-                          {/* AUD-08 (update #04) — no bukti potong + masa pajak (YYYY-MM) */}
-                          <TableCell>
-                            <Input type="text" placeholder="No. bukti potong" value={row.noBuktiPotong || ''} onChange={(e) => updateBuktiPotong(row.invoice.invoiceId, e.target.value)} className="h-8 text-sm" aria-label={`No bukti potong ${row.invoice.noDokumen}`} />
-                            <Input type="text" placeholder="Masa pajak (YYYY-MM)" value={row.masaPajak || ''} onChange={(e) => updateMasaPajak(row.invoice.invoiceId, e.target.value)} className={`mt-1 h-8 text-sm font-mono ${(row.masaPajak || '') && !/^\d{4}-(0[1-9]|1[0-2])$/.test(row.masaPajak || '') ? 'border-destructive' : ''}`} aria-label={`Masa pajak ${row.invoice.noDokumen}`} />
-                          </TableCell>
+                          {/* Update #01 — input PPh 23 per faktur + shortcut 2%
+                              (Update #044 — disembunyikan mode Gagal Tagih) */}
+                          {!isGagalTagih && (
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Input type="text" inputMode="numeric" placeholder="0" value={row.pph23Display || ''} onChange={(e) => updatePph23(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm w-24 ${pph23Over ? 'border-destructive' : ''}`} aria-label={`PPh 23 pelunasan ${row.invoice.noDokumen}`} />
+                                <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-[11px] shrink-0" onClick={() => setPph23DuaPersen(row.invoice.invoiceId)} title="Isi otomatis 2% dari nilai pembayaran">
+                                  2%
+                                </Button>
+                              </div>
+                              {pph23Over ? (
+                                <p className="mt-1 text-[11px] leading-tight text-destructive">Diskon + PPh 23 melebihi nilai</p>
+                              ) : pph > 0 ? (
+                                <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
+                                  {isPiutang ? 'Diterima tunai' : 'Dibayar tunai'}: {formatRp(netTunai)}
+                                </p>
+                              ) : null}
+                            </TableCell>
+                          )}
+                          {/* AUD-08 (update #04) — no bukti potong + masa pajak (YYYY-MM)
+                              (Update #044 — disembunyikan mode Gagal Tagih) */}
+                          {!isGagalTagih && (
+                            <TableCell>
+                              <Input type="text" placeholder="No. bukti potong" value={row.noBuktiPotong || ''} onChange={(e) => updateBuktiPotong(row.invoice.invoiceId, e.target.value)} className="h-8 text-sm" aria-label={`No bukti potong ${row.invoice.noDokumen}`} />
+                              <Input type="text" placeholder="Masa pajak (YYYY-MM)" value={row.masaPajak || ''} onChange={(e) => updateMasaPajak(row.invoice.invoiceId, e.target.value)} className={`mt-1 h-8 text-sm font-mono ${(row.masaPajak || '') && !/^\d{4}-(0[1-9]|1[0-2])$/.test(row.masaPajak || '') ? 'border-destructive' : ''}`} aria-label={`Masa pajak ${row.invoice.noDokumen}`} />
+                            </TableCell>
+                          )}
                           {!isPiutang && (
                             <TableCell className="text-right">
                               <Input type="text" inputMode="numeric" placeholder="0" value={row.diskonDisplay || ''} onChange={(e) => updateDiskon(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${diskonOver ? 'border-destructive' : ''}`} aria-label={`Diskon pelunasan ${row.invoice.noDokumen}`} />
@@ -1237,11 +1453,12 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
               {errors.alokasi && <p className="text-xs text-destructive">{errors.alokasi}</p>}
             </div>
 
-            {/* Ringkasan total (Update #5: subtotal alokasi + penalti; Update cetak "Bayar Pemasok": − diskon) */}
+            {/* Ringkasan total (Update #5: subtotal alokasi + penalti; Update cetak "Bayar Pemasok": − diskon;
+                Update #044 — mode Gagal Tagih: total penghapusan, tanpa komponen kas) */}
             <div className="flex justify-end">
               <div className="w-full max-w-xs space-y-1.5 rounded-md border bg-muted/30 p-3 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Subtotal Alokasi</span>
+                  <span className="text-muted-foreground">{isGagalTagih ? 'Subtotal Penghapusan' : 'Subtotal Alokasi'}</span>
                   <span className="font-mono">{formatRp(totalAllocation)}</span>
                 </div>
                 {!isPiutang && (
@@ -1250,19 +1467,23 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                     <span className="font-mono">−{formatRp(totalDiskon)}</span>
                   </div>
                 )}
-                {/* Update #01 — PPh 23 memotong kas */}
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">PPh 23</span>
-                  <span className="font-mono">−{formatRp(totalPPh23)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Penalti</span>
-                  <span className="font-mono">{formatRp(penaltiNum)}</span>
-                </div>
+                {/* Update #01 — PPh 23 memotong kas (Update #044 — Gagal Tagih: tanpa) */}
+                {!isGagalTagih && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">PPh 23</span>
+                    <span className="font-mono">−{formatRp(totalPPh23)}</span>
+                  </div>
+                )}
+                {!isGagalTagih && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Penalti</span>
+                    <span className="font-mono">{formatRp(penaltiNum)}</span>
+                  </div>
+                )}
                 <Separator />
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">Total Pembayaran</span>
-                  <span className="font-mono text-base font-bold">{formatRp(totalPembayaran)}</span>
+                  <span className="font-medium">{isGagalTagih ? 'Total Penghapusan' : 'Total Pembayaran'}</span>
+                  <span className="font-mono text-base font-bold">{formatRp(isGagalTagih ? totalAllocation : totalPembayaran)}</span>
                 </div>
               </div>
             </div>
@@ -1272,9 +1493,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
               <Button variant="outline" onClick={clearSelection} disabled={submitting}>
                 Batal
               </Button>
-              <Button onClick={handleSubmit} disabled={submitting || penaltiMissingAkun} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Button onClick={handleSubmit} disabled={submitting || (!isGagalTagih && penaltiMissingAkun)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}
-                Simpan Draft
+                {isGagalTagih ? 'Simpan Voucher Memorial' : 'Simpan Draft'}
               </Button>
             </div>
           </CardContent>

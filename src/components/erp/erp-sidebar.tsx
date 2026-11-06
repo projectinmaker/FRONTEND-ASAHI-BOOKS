@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 // === Update ASAHI #019 — ikon baru modul Preferensi (SlidersHorizontal) + submenu ===
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory, SlidersHorizontal, Bell, Type, Hash, CalendarRange } from 'lucide-react';
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory, SlidersHorizontal, Bell, Type, Hash, CalendarRange, BookX } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -70,7 +70,10 @@ const modules: NavModule[] = [
       { id: 'pembayaran', label: 'Pembayaran', icon: CreditCard },
       { id: 'penerimaan', label: 'Penerimaan', icon: ArrowDownToLine },
       { id: 'transfer-bank', label: 'Transfer Bank', icon: ArrowLeftRight },
-      { id: 'rekonsiliasi-bank', label: 'Rekonsiliasi Bank', icon: GitCompareArrows }
+      { id: 'rekonsiliasi-bank', label: 'Rekonsiliasi Bank', icon: GitCompareArrows },
+      // === Update #044 — daftar Voucher Memorial (Gagal Tagih): cabang
+      // penghapusan piutang non-kas alur Penerimaan Piutang. ===
+      { id: 'voucher-memorial', label: 'Voucher Memorial', icon: BookX }
       // Update #02 — koreksi miskom catatan-update-01: Pelunasan Piutang &
       // Hutang BUKAN menu terpisah — kini menjadi pilihan Jenis Transaksi
       // 'Pelunasan Invoice' di dalam form Penerimaan (piutang) & Pembayaran
@@ -286,6 +289,8 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     penerimaan: 'finance.cash_receipt.view',
     'transfer-bank': 'finance.bank_transfer.view',
     'rekonsiliasi-bank': 'finance.bank_reconciliation.view',
+    // === Update #044 — Voucher Memorial (Gagal Tagih) ===
+    'voucher-memorial': 'finance.voucher_memorial.view',
     // Mapping lama dipertahankan supaya tab tersimpan sebelum update tetap
     // lolos RBAC saat di-remap ke list Penerimaan/Pembayaran di page.tsx
     // (termasuk 'belum-teridentifikasi' — di-remap ke Penerimaan, Update #14).

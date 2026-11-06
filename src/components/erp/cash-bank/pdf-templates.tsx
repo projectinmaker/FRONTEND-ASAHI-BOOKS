@@ -82,6 +82,33 @@ export interface PenerimaanKasData {
   // Phase 1.B: kalau alokasi ada isi, dokumen ini adalah AR Settlement
   // (pelunasan piutang dari pelanggan), akan tampilkan badge khusus di PDF.
   alokasi?: { invoiceId: string; nilai: number | string }[];
+  /** === Update #044 — jenis akun kas/bank (KAS/BANK) penentu judul voucher:
+   * BANK → "Voucher Penerimaan Bank"; KAS → "Voucher Penerimaan Kas"
+   * (alur Penerimaan Piutang poin 5). === */
+  kasBankJenis?: string;
+}
+
+// ─── === Update #044 — Voucher Memorial (Gagal Tagih / penghapusan piutang) ───
+
+export interface VoucherMemorialItem {
+  noInvoice: string;
+  /** Akun piutang kontrol invoice (kode — nama) */
+  akunPiutang: string;
+  /** Sisa tagihan SEBELUM penghapusan (snapshot terutang) */
+  terutang: number;
+  /** Nilai yang dihapusbukukan */
+  nilai: number;
+}
+
+export interface VoucherMemorialData {
+  noBukti: string;
+  tanggal: string;
+  pelangganNama: string;
+  pelangganAlamat: string;
+  akunBeban: string;
+  catatan: string;
+  rincian: VoucherMemorialItem[];
+  totalNilai: number;
 }
 
 // ═══ Baris daftar untuk laporan "Rincian Pembayaran" ═══
@@ -457,13 +484,17 @@ export function PembayaranKasPDFTemplate({ data, elementId = 'pdf-content' }: { 
 export function PenerimaanKasPDFTemplate({ data, elementId = 'pdf-content' }: { data: PenerimaanKasData; elementId?: string }) {
   const total = Number(data.totalNilai) || 0;
   const isARSettlement = !!data.alokasi && data.alokasi.length > 0;
+  // === Update #044 — judul voucher mengikuti JENIS akun kas/bank tujuan
+  // (alur Penerimaan Piutang poin 5): BANK → "Voucher Penerimaan Bank",
+  // KAS → "Voucher Penerimaan Kas". Dokumen lama tanpa jenis → judul lama. ===
+  const judulVoucher = data.kasBankJenis === 'BANK' ? 'Voucher Penerimaan Bank' : data.kasBankJenis === 'KAS' ? 'Voucher Penerimaan Kas' : 'Bukti Penerimaan Kas';
   return (
     <div id={elementId} className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
         <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>
-          Bukti Penerimaan Kas
+          {judulVoucher}
           {isARSettlement && <SettlementBadge kind="ar" />}
         </div>
       </div>
@@ -719,6 +750,98 @@ export function RincianPenerimaanPDFTemplate({ data, elementId = 'pdf-content' }
       <div className="mt-2" style={{ fontStyle: 'italic' }}>
         <strong>Terbilang:</strong> {terbilang(total)}
       </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 6. === Update #044 — VOUCHER MEMORIAL (GAGAL TAGIH / PENGHAPUSAN PIUTANG) ===
+// ═════════════════════════════════════════════════════════════════════════════
+// Cabang "Gagal Tagih" alur Penerimaan Piutang (revisi pemilik, poin 5):
+// dokumen non-kas — sisa tagihan invoice dihapusbukukan lewat jurnal
+// Dr Beban Penghapusan Piutang, Cr Piutang Usaha (kontrol).
+
+export function VoucherMemorialPDFTemplate({ data, elementId = 'pdf-content' }: { data: VoucherMemorialData; elementId?: string }) {
+  const total = Number(data.totalNilai) || 0;
+  return (
+    <div id={elementId} className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
+      {/* ── Header ── */}
+      <div className="flex justify-between items-start mb-4">
+        <CompanyBrand />
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Voucher Memorial (Adjustment)</div>
+      </div>
+
+      {/* ── Info Section ── */}
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        {/* Left column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <InfoCell label="No. Dokumen" value={data.noBukti} />
+          <InfoCell label="Tanggal" value={formatDate(data.tanggal)} />
+          <InfoCell label="Pelanggan" value={data.pelangganNama} />
+          <InfoCell label="Alamat" value={data.pelangganAlamat} />
+        </div>
+        {/* Right column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <InfoCell label="Akun Beban (Dr)" value={data.akunBeban} />
+          <InfoCell label="Jenis" value="Penghapusan Piutang (Gagal Tagih) — non-kas" />
+          <InfoCell label="Catatan" value={data.catatan} />
+        </div>
+      </div>
+
+      {/* ── Jurnal ringkas ── */}
+      <div className="mb-2" style={{ fontSize: '11px' }}>
+        <strong>Jurnal:</strong> Dr {data.akunBeban || '-'} — Rp {formatNumber(total)} · Cr Piutang Usaha (akun kontrol per invoice di bawah)
+      </div>
+
+      {/* ── Rincian Table ── */}
+      <table style={tableStyle} className="mb-2">
+        <thead>
+          <tr style={{ background: '#f3f4f6' }}>
+            <th style={{ ...cellStyle, width: '40px', textAlign: 'center' }}>No</th>
+            <th style={{ ...cellStyle, textAlign: 'left' }}>No Invoice</th>
+            <th style={{ ...cellStyle, textAlign: 'left' }}>Akun Piutang (Cr)</th>
+            <th style={{ ...cellStyle, width: '140px', textAlign: 'right' }}>Sisa Sebelum</th>
+            <th style={{ ...cellStyle, width: '140px', textAlign: 'right' }}>Nilai Dihapus</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.rincian.length === 0 ? (
+            <tr>
+              <td colSpan={5} style={{ ...cellStyle, textAlign: 'center', fontStyle: 'italic', color: '#777' }}>
+                Tidak ada rincian
+              </td>
+            </tr>
+          ) : (
+            data.rincian.map((r, i) => (
+              <tr key={i}>
+                <td style={{ ...cellStyle, textAlign: 'center' }}>{i + 1}</td>
+                <td style={cellStyle}>{r.noInvoice || '-'}</td>
+                <td style={cellStyle}>{r.akunPiutang || '-'}</td>
+                <td style={{ ...cellStyle, textAlign: 'right' }}>Rp {formatNumber(Number(r.terutang) || 0)}</td>
+                <td style={{ ...cellStyle, textAlign: 'right' }}>Rp {formatNumber(Number(r.nilai) || 0)}</td>
+              </tr>
+            ))
+          )}
+          {/* Total row */}
+          <tr style={{ background: '#fafafa' }}>
+            <td colSpan={4} style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>
+              Total Penghapusan
+            </td>
+            <td style={{ ...cellStyle, textAlign: 'right', fontWeight: 'bold' }}>Rp {formatNumber(total)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* ── Terbilang ── */}
+      <div className="mb-2" style={{ fontStyle: 'italic' }}>
+        <strong>Terbilang:</strong> {terbilang(total)}
+      </div>
+
+      {/* ── Signatures ── */}
+      <SignatureRow labels={['Dibuat oleh', 'Disetujui', 'Diketahui']} />
+
+      {/* Indikator halaman digambar otomatis oleh jsPDF di kanan bawah
+          (lihat generatePDF di src/lib/pdf-utils.ts) — berlaku semua dokumen. */}
     </div>
   );
 }
