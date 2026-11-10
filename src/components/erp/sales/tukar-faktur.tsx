@@ -268,9 +268,10 @@ function mapTukarFakturPDFData(d: TukarFakturResponse): TukarFakturPDFData {
     keterangan: d.keterangan || '',
     details: (d.details || []).map<TukarFakturDetailRow>((r) => ({
       id: r.id,
-      nama: r.barang?.nama || '',
+      // Update #045 — fallback item bebas (barang null → nama/satuan snapshot).
+      nama: r.itemNama || r.barang?.nama || '',
       qty: Number(r.qty) || 0,
-      satuan: r.satuan?.nama || ''
+      satuan: r.satuan?.nama || r.itemSatuan || ''
     }))
   };
 }
@@ -784,7 +785,7 @@ export function TukarFakturCreateForm() {
                   <TableBody>
                     {(preview.details || []).map((r) => (
                       <TableRow key={r.id}>
-                        <TableCell className="text-xs">{r.barang?.nama || '-'}</TableCell>
+                        <TableCell className="text-xs">{r.itemNama || r.barang?.nama || '-'}</TableCell>
                         <TableCell className="text-right font-mono text-xs">{formatNumber(Number(r.qty) || 0)}</TableCell>
                       </TableRow>
                     ))}
@@ -953,7 +954,7 @@ export function TukarFakturEditForm({ id }: { id: string }) {
                 <TableBody>
                   {(doc.details || []).map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="text-xs">{r.barang?.nama || '-'}</TableCell>
+                      <TableCell className="text-xs">{r.itemNama || r.barang?.nama || '-'}</TableCell>
                       <TableCell className="text-right font-mono text-xs">{formatNumber(Number(r.qty) || 0)}</TableCell>
                       <TableCell className="text-xs">{r.satuan?.nama || '-'}</TableCell>
                     </TableRow>

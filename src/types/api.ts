@@ -1168,7 +1168,12 @@ export interface PenawaranResponse {
 
 export interface TukarFakturDetailResponse {
   id: string;
-  barangId: string;
+  // === Update #045 — barangId OPSIONAL: baris bisa berupa ITEM BEBAS
+  // (jasa/custom dari penawaran → SO → invoice; itemNama/itemSatuan =
+  // snapshot nama & satuan saat barangId null). ===
+  barangId?: string | null;
+  itemNama?: string | null;
+  itemSatuan?: string | null;
   satuanId?: string | null;
   qty: number;
   barang?: { id: string; kode: string; nama: string; hargaPokok?: number | string | null } | null;

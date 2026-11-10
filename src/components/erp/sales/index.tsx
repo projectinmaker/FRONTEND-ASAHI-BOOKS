@@ -217,7 +217,7 @@ interface ReturPenjualanDraftData {
 
 // ─── Detail Table With Price (for SO / Invoice / Retur forms) ──────────────
 
-function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false, onBarangCreated, allowBebas = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean; onBarangCreated?: (barang: BarangResponse) => void; allowBebas?: boolean }) {
+function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false, onBarangCreated, allowBebas = false, locked = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; hideDiskon?: boolean; onBarangCreated?: (barang: BarangResponse) => void; allowBebas?: boolean; locked?: boolean }) {
   // Update #004: hideDiskon — invoice tidak lagi menampilkan kolom Diskon %
   // (dokumen invoice tanpa diskon; payload mengirim diskon null).
   // Update #032: allowBebas — form Invoice mengizinkan baris ITEM BEBAS
@@ -228,6 +228,11 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
   // backend mendistribusikan proporsional ke baris (subTotal = porsi).
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
+  // === Update #045 — LOCK baris hasil tarikan data: baris ter-link ke line
+  // SO (salesOrderDetailId) / line DO (deliveryDetailId), ATAU seluruh tabel
+  // dikunci via prop locked (dokumen sumber terpilih), tidak bisa diedit &
+  // tidak bisa dihapus — data mengikuti dokumen sumber. ===
+  const rowLocked = useCallback((r: FormDetailRow) => locked || !!r.salesOrderDetailId || !!r.deliveryDetailId, [locked]);
   // Update #032 — toggle mode baris: master ↔ bebas (reset field yang tidak
   // relevan agar switching bolak-balik tidak menyisakan data nyasar).
   const toggleBebas = useCallback((id: string) => setRows((p) => p.map((r) => (r.id === id ? { ...r, bebas: !r.bebas, barangId: r.bebas ? '' : r.barangId, kodeBarang: r.bebas ? '' : r.kodeBarang, itemNama: r.bebas ? '' : r.itemNama || '', itemSatuan: r.bebas ? '' : r.itemSatuan || '' } : r))), [setRows]);
@@ -307,49 +312,54 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
                     <div className="flex items-center gap-1">
                       {/* Update #032 — toggle master ↔ item bebas (form Invoice). */}
                       {allowBebas && (
-                        <Button variant="ghost" size="icon" className={row.bebas ? 'h-7 w-7 shrink-0 text-amber-600' : 'h-7 w-7 shrink-0 text-muted-foreground'} onClick={() => toggleBebas(row.id)} title={row.bebas ? 'Item bebas (jasa/custom — tidak di master barang). Klik untuk pilih dari master barang.' : 'Pilih dari master barang. Klik untuk ketik item bebas (jasa/custom).'} aria-label={row.bebas ? 'Ganti ke mode master barang' : 'Ganti ke mode item bebas'}>
+                        <Button variant="ghost" size="icon" className={row.bebas ? 'h-7 w-7 shrink-0 text-amber-600' : 'h-7 w-7 shrink-0 text-muted-foreground'} onClick={() => toggleBebas(row.id)} disabled={rowLocked(row)} title={row.bebas ? 'Item bebas (jasa/custom — tidak di master barang). Klik untuk pilih dari master barang.' : 'Pilih dari master barang. Klik untuk ketik item bebas (jasa/custom).'} aria-label={row.bebas ? 'Ganti ke mode master barang' : 'Ganti ke mode item bebas'}>
                           {row.bebas ? <Type className="h-3.5 w-3.5" /> : <Package className="h-3.5 w-3.5" />}
                         </Button>
                       )}
                       {allowBebas && row.bebas ? (
                         <>
-                          <Input aria-label="Nama item bebas" placeholder="Nama item / jasa (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} />
-                          <Input aria-label="Satuan item bebas" placeholder="Satuan" className="h-8 w-24 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} />
+                          <Input aria-label="Nama item bebas" placeholder="Nama item / jasa (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} disabled={rowLocked(row)} />
+                          <Input aria-label="Satuan item bebas" placeholder="Satuan" className="h-8 w-24 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} disabled={rowLocked(row)} />
                         </>
                       ) : (
                         <>
-                          <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                          <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact disabled={rowLocked(row)} />
                           {/* Update #007: quick add barang langsung di baris */}
-                          <QuickAddBarangButton
-                            compact
-                            onCreated={(b) => {
-                              const drop = toBarangDropdown(b);
-                              onBarangCreated?.(b);
-                              applyBarang(row.id, b.id, drop);
-                            }}
-                          />
+                          {!rowLocked(row) && (
+                            <QuickAddBarangButton
+                              compact
+                              onCreated={(b) => {
+                                const drop = toBarangDropdown(b);
+                                onBarangCreated?.(b);
+                                applyBarang(row.id, b.id, drop);
+                              }}
+                            />
+                          )}
                         </>
                       )}
                     </div>
                   </TableCell>
                   <TableCell>
-                    <CurrencyInput className="h-8 text-right text-xs" value={row.harga} onValueChange={(v) => updateRow(row.id, 'harga', v)} />
+                    <CurrencyInput className="h-8 text-right text-xs" value={row.harga} onValueChange={(v) => updateRow(row.id, 'harga', v)} disabled={rowLocked(row)} />
                   </TableCell>
                   <TableCell>
-                    <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} />
+                    <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} disabled={rowLocked(row)} />
                   </TableCell>
                   {!hideDiskon && (
                     <TableCell>
-                      <Input type="number" className="h-8 text-right text-xs" value={row.diskon} min={0} max={100} onChange={(e) => updateRow(row.id, 'diskon', e.target.value)} />
+                      <Input type="number" className="h-8 text-right text-xs" value={row.diskon} min={0} max={100} onChange={(e) => updateRow(row.id, 'diskon', e.target.value)} disabled={rowLocked(row)} />
                     </TableCell>
                   )}
                   {/* === Update #042 — input DP per baris DIHAPUS (nilai
                       ditagih diatur header DP/Pelunasan invoice). === */}
                   <TableCell className="whitespace-nowrap text-right font-mono text-xs font-medium">{formatRp(rowSub)}</TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {/* Update #045 — tombol hapus disembunyikan utk baris terkunci. */}
+                    {!rowLocked(row) && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               );
@@ -364,11 +374,15 @@ function DetailTableWithPrice({ rows, setRows, barangOptions, hideDiskon = false
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center">
-        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={addRow}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Baris
-        </Button>
-      </div>
+      {/* === Update #045 — tombol "Tambah Baris" TIDAK DITAMPILKAN saat menarik
+          data dari dokumen sumber (SO / No DO terpilih). === */}
+      {!locked && (
+        <div className="flex items-center">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={addRow}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Baris
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -398,22 +412,10 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
       </div>
       {/* === Update #042 — input DP/Pelunasan (Rp) tepat setelah baris Subtotal
           (form Invoice): nilai yang ditagih invoice ini — kosong = tagih penuh. === */}
+      {/* === Update #045 — baris ringkasan "DP/Pelunasan (nilai ditagih)" &
+          "Dialihkan ke invoice berikutnya" DIHAPUS (permintaan user) — nilai
+          DP cukup terlihat di input DP/Pelunasan di atas. === */}
       {dpInput && <div className="pt-1">{dpInput}</div>}
-      {dpPelunasan > 0 && (
-        <>
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground pl-3">DP/Pelunasan (nilai ditagih)</span>
-            <span className="font-mono font-medium text-amber-700">{formatRp(dpPelunasan)}</span>
-          </div>
-          {/* === Update #043 — relabel + nilai POSITIF (samakan dengan cetakan
-              invoice): "Dialihkan ke invoice berikutnya" = subtotal − DP/
-              Pelunasan — sisa nilai SO yang ditagih invoice berikutnya. === */}
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground pl-3">Dialihkan ke invoice berikutnya</span>
-            <span className="font-mono">{formatRp(Math.max(subtotal - dpPelunasan, 0))}</span>
-          </div>
-        </>
-      )}
       {diskonGlobalPct > 0 && (
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground pl-3">- Diskon ({diskonGlobalPct}%)</span>
@@ -452,9 +454,13 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
 
 // ─── Detail Table Simple (for Pengiriman form) ──────────────────────────────
 
-function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, onBarangCreated, onSatuanCreated }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; onBarangCreated?: (barang: BarangResponse) => void; onSatuanCreated?: (satuan: SatuanResponse) => void }) {
+function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, onBarangCreated, onSatuanCreated, locked = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; onBarangCreated?: (barang: BarangResponse) => void; onSatuanCreated?: (satuan: SatuanResponse) => void; locked?: boolean }) {
   const addRow = useCallback(() => setRows((p) => [...p, newDetailRow()]), [setRows]);
   const removeRow = useCallback((id: string) => setRows((p) => p.filter((r) => r.id !== id)), [setRows]);
+  // === Update #045 — LOCK baris hasil tarikan data: baris ter-link ke line
+  // Sales Order (salesOrderDetailId) ATAU seluruh tabel dikunci via prop
+  // locked (SO terpilih) — tidak bisa diedit/dihapus; data mengikuti SO. ===
+  const rowLocked = useCallback((r: FormDetailRow) => locked || !!r.salesOrderDetailId, [locked]);
   // Update #007: terapkan barang ke baris — dipakai manual pick DAN quick-add.
   // satuanNamaOverride: nama satuan dari response create barang (satuan bisa
   // baru dibuat via nested quick-add, belum ada di satuanOptions host).
@@ -531,47 +537,54 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, onBara
                 <TableCell>
                   {/* Update #041 — baris item bebas: nama diketik manual (bukan dropdown master). */}
                   {row.bebas ? (
-                    <Input aria-label="Nama item bebas" placeholder="Nama item / manufaktur (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} />
+                    <Input aria-label="Nama item bebas" placeholder="Nama item / manufaktur (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} disabled={rowLocked(row)} />
                   ) : (
                     <div className="flex items-center gap-1">
-                      <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact />
+                      <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact disabled={rowLocked(row)} />
                       {/* Update #007: quick add barang langsung di baris */}
-                      <QuickAddBarangButton
-                        compact
-                        onCreated={(b) => {
-                          const drop = toBarangDropdown(b);
-                          onBarangCreated?.(b);
-                          applyBarang(row.id, b.id, drop, b.satuan?.nama);
-                        }}
-                      />
+                      {!rowLocked(row) && (
+                        <QuickAddBarangButton
+                          compact
+                          onCreated={(b) => {
+                            const drop = toBarangDropdown(b);
+                            onBarangCreated?.(b);
+                            applyBarang(row.id, b.id, drop, b.satuan?.nama);
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                 </TableCell>
                 <TableCell>
-                  <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} step={1} aria-invalid={(row.bebas || !!row.barangId) && (!Number.isInteger(Number(row.qty)) || Number(row.qty) < 1)} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} />
+                  <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} step={1} aria-invalid={(row.bebas || !!row.barangId) && (!Number.isInteger(Number(row.qty)) || Number(row.qty) < 1)} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} disabled={rowLocked(row)} />
                 </TableCell>
                 <TableCell>
                   {/* Update #041 — baris item bebas: satuan teks bebas (bukan dropdown master). */}
                   {row.bebas ? (
-                    <Input aria-label="Satuan item bebas" placeholder="mis. UNIT / JOB" className="h-8 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} />
+                    <Input aria-label="Satuan item bebas" placeholder="mis. UNIT / JOB" className="h-8 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} disabled={rowLocked(row)} />
                   ) : (
                     <div className="flex items-center gap-1">
-                      <SearchableDropdown className="min-w-0 flex-1" value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact />
+                      <SearchableDropdown className="min-w-0 flex-1" value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact disabled={rowLocked(row)} />
                       {/* Update #007: quick add satuan langsung di baris */}
-                      <QuickAddSatuanButton
-                        compact
-                        onCreated={(s) => {
-                          onSatuanCreated?.(s);
-                          updateRow(row.id, 'satuanId', s.id);
-                        }}
-                      />
+                      {!rowLocked(row) && (
+                        <QuickAddSatuanButton
+                          compact
+                          onCreated={(s) => {
+                            onSatuanCreated?.(s);
+                            updateRow(row.id, 'satuanId', s.id);
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                 </TableCell>
                 <TableCell>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {/* Update #045 — tombol hapus disembunyikan utk baris terkunci. */}
+                  {!rowLocked(row) && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -585,11 +598,15 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, onBara
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center">
-        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={addRow}>
-          <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Baris
-        </Button>
-      </div>
+      {/* === Update #045 — tombol "Tambah Baris" TIDAK DITAMPILKAN saat menarik
+          data dari Sales Order (baris mengikuti SO terpilih). === */}
+      {!locked && (
+        <div className="flex items-center">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={addRow}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Tambah Baris
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -936,16 +953,20 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               </Label>
               <div className="flex items-start gap-1.5">
                 {/* Update #4: pilih pelanggan → alamat ditarik otomatis dari master */}
-                <SearchableDropdown className="min-w-0 flex-1" value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                {/* === Update #045 — pelanggan DIKUNCI saat SO terpilih (menarik
+                    data dari SO; pelanggan mengikuti dokumen sumber). === */}
+                <SearchableDropdown className="min-w-0 flex-1" value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder={fSalesOrderId ? 'Mengikuti Sales Order terpilih' : 'Pilih pelanggan...'} disabled={!!fSalesOrderId} />
                 {/* Update #007: quick add pelanggan */}
-                <QuickAddPelangganButton
-                  onCreated={(p) => {
-                    const drop = toPelangganDropdown(p);
-                    setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
-                    handlePelangganChange(p.id, drop);
-                    setFormErrors((prev) => (prev.pelangganId ? { ...prev, pelangganId: '' } : prev));
-                  }}
-                />
+                {!fSalesOrderId && (
+                  <QuickAddPelangganButton
+                    onCreated={(p) => {
+                      const drop = toPelangganDropdown(p);
+                      setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                      handlePelangganChange(p.id, drop);
+                      setFormErrors((prev) => (prev.pelangganId ? { ...prev, pelangganId: '' } : prev));
+                    }}
+                  />
+                )}
               </div>
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
@@ -992,6 +1013,8 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               setRows={setFDetail}
               barangOptions={barangOptions}
               satuanOptions={satuanOptions}
+              /* Update #045 — baris terkunci saat menarik data dari SO. */
+              locked={!!fSalesOrderId}
               onBarangCreated={(b) => {
                 setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
                 // Satuan barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan host.
@@ -1263,68 +1286,11 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// === Update #040 — KOTAK SISA PEMBAYARAN PENAWARAN di form/detail Invoice ===
-// Update #042 — SO kini dokumen nilai PENUH (tanpa DP); DP bertahap &
-// pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) atas SO
-// turunan penawaran dengan field DP/Pelunasan. Info diambil dari endpoint
-// penawaran (#039: grandTotal · dipakaiSoTotal · sisaPenawaran).
-// ═════════════════════════════════════════════════════════════════════════════
-
-interface SoPenawaranInfo {
-  noPenawaran: string;
-  revisiKe: number;
-  nilai: number;
-  sudahJadiSo: number;
-  sisa: number;
-  mataUang: string;
-}
-
-async function fetchSoPenawaranInfo(penawaranId: string): Promise<SoPenawaranInfo | null> {
-  try {
-    const p = await api.get<PenawaranResponse>(`/penjualan/penawaran/${penawaranId}`);
-    return {
-      noPenawaran: p.noPenawaran || '',
-      revisiKe: Number(p.revisiKe) || 1,
-      nilai: Number(p.grandTotal) || 0,
-      sudahJadiSo: Number(p.dipakaiSoTotal) || 0,
-      sisa: Number(p.sisaPenawaran) || 0,
-      mataUang: p.mataUang || 'IDR'
-    };
-  } catch {
-    return null;
-  }
-}
-
-function SoPenawaranCard({ info }: { info: SoPenawaranInfo }) {
-  const negatif = info.sisa < 0;
-  return (
-    <div className="rounded-md border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs" role="status">
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-        <Info className="h-3.5 w-3.5 text-amber-600" aria-hidden="true" />
-        <span className="font-medium text-foreground">Sisa Pembayaran dari Penawaran</span>
-        <span className="text-muted-foreground">·</span>
-        <span className="font-mono font-medium">
-          {info.noPenawaran}
-          {info.revisiKe > 1 ? ` Rev. ${info.revisiKe}` : ''}
-        </span>
-      </div>
-      <p className="mt-1 text-muted-foreground">
-        Nilai penawaran <span className="font-mono font-medium text-foreground">{formatRp(info.nilai)}</span>
-        <span> · sudah jadi SO </span>
-        <span className="font-mono font-medium text-foreground">{formatRp(info.sudahJadiSo)}</span>
-        <span> · sisa pembayaran </span>
-        <span className={`font-mono font-semibold ${negatif ? 'text-amber-700' : 'text-emerald-700'}`} title={negatif ? 'SO-SO turunan melebihi nilai penawaran' : undefined}>
-          {formatRp(info.sisa)}
-        </span>{' '}
-        — DP bertahap & pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) atas SO turunan penawaran ini dengan field DP/Pelunasan (Update #042).
-      </p>
-    </div>
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
 // FORM: Invoice Penjualan Create
 // ═════════════════════════════════════════════════════════════════════════════
+// === Update #045 — kartu "Sisa Pembayaran dari Penawaran" (SoPenawaranCard +
+// fetchSoPenawaranInfo) DIHAPUS dari form Invoice (permintaan user): keterangan
+// sisa pembayaran tidak perlu tampil saat pembuatan invoice. ===
 
 function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // Update #004: + pengirimanOptions (tarik No DO); syaratBayarOptions tidak dipakai lagi.
@@ -1376,23 +1342,20 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
 
   // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
   const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
-  // === Update #040 — info penawaran sumber SO (kotak Sisa Pembayaran). ===
-  const [soPenawaranInfo, setSoPenawaranInfo] = useState<SoPenawaranInfo | null>(null);
 
   // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}).
   // Dipakai saat SO dipilih manual maupun saat draft dipulihkan (salesOrderId tersimpan).
-  // Update #040 — sekaligus muat kartu Sisa Pembayaran bila SO berasal dari penawaran.
+  // Update #045 — fetch kartu Sisa Pembayaran penawaran dihapus (kartu tidak
+  // lagi ditampilkan; hanya info No SO · No PO yang dimuat).
   // Update #042 — mengembalikan objek SO (info header saja — PPN invoice tidak
   // lagi mengikuti SO karena SO tanpa PPN sejak #042). ===
   const loadSoRefInfo = useCallback(async (soId: string): Promise<SalesOrderResponse | null> => {
     try {
       const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
       setSoRefInfo({ noPesanan: so.noPesanan || '', customerPoNumber: so.customerPoNumber || '' });
-      setSoPenawaranInfo(so.penawaranId ? await fetchSoPenawaranInfo(so.penawaranId) : null);
       return so;
     } catch {
       setSoRefInfo(null);
-      setSoPenawaranInfo(null);
       return null;
     }
   }, []);
@@ -1499,7 +1462,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFSalesOrderId('');
     setFPengirimanId('');
     setSoRefInfo(null);
-    setSoPenawaranInfo(null);
     // Update #042 — reset info sisa SO & DP/Pelunasan.
     setSoSisaInfo(null);
     setFDpPelunasan('');
@@ -1532,7 +1494,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       setFPengirimanId('');
       if (!soId) {
         setSoRefInfo(null);
-        setSoPenawaranInfo(null);
         // Update #042 — SO dilepas → invoice standalone: info sisa & DP dikosongkan.
         setSoSisaInfo(null);
         setFDpPelunasan('');
@@ -1617,7 +1578,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         } else {
           setFSalesOrderId('');
           setSoRefInfo(null);
-          setSoPenawaranInfo(null);
           // Update #042 — DO tanpa SO → invoice standalone: info sisa disembunyikan.
           setSoSisaInfo(null);
         }
@@ -1788,16 +1748,21 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
               <div className="flex items-start gap-1.5">
-                <SearchableDropdown className="min-w-0 flex-1" value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
+                {/* === Update #045 — pelanggan DIKUNCI saat menarik data dari
+                    SO / No DO (mengikuti dokumen sumber; invoice standalone
+                    tetap bebas memilih pelanggan). === */}
+                <SearchableDropdown className="min-w-0 flex-1" value={fPelangganId} onValueChange={handlePelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder={fSalesOrderId || fPengirimanId ? 'Mengikuti dokumen sumber' : 'Pilih pelanggan...'} disabled={!!fSalesOrderId || !!fPengirimanId} />
                 {/* Update #007: quick add pelanggan */}
-                <QuickAddPelangganButton
-                  onCreated={(p) => {
-                    const drop = toPelangganDropdown(p);
-                    setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
-                    handlePelangganChange(p.id, drop);
-                    setFormErrors((prev) => (prev.pelangganId ? { ...prev, pelangganId: '' } : prev));
-                  }}
-                />
+                {!fSalesOrderId && !fPengirimanId && (
+                  <QuickAddPelangganButton
+                    onCreated={(p) => {
+                      const drop = toPelangganDropdown(p);
+                      setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                      handlePelangganChange(p.id, drop);
+                      setFormErrors((prev) => (prev.pelangganId ? { ...prev, pelangganId: '' } : prev));
+                    }}
+                  />
+                )}
               </div>
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
@@ -1822,10 +1787,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
                   No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
                 </div>
               )}
-              {/* === Update #040 — kotak SISA PEMBAYARAN penawaran sumber SO:
-                  tracking alur DP bertahap (invoice ini = tahap berjalan;
-                  sisa = cikal bakal SO baru dari penawaran yang sama). === */}
-              {soPenawaranInfo && <SoPenawaranCard info={soPenawaranInfo} />}
             </div>
             {/* === Update #004: No DO — tarik data DO seperti No SO; baris DO
                 masuk ke table invoice (link deliveryDetailId). === */}
@@ -1840,14 +1801,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               )}
             </div>
           </div>
-          <div className="space-y-1.5">
-            {/* Update #004: Ekspedisi & Tanggal Pengiriman dihapus; Alamat
-                Pengiriman jadi baris penuh. */}
-            <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-            {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
-            <Textarea className="text-xs min-h-[48px]" value={fAlamatPengiriman} onChange={(e) => setFAlamatPengiriman(e.target.value)} />
-            <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
-          </div>
+          {/* === Update #045 — field "Alamat Pengiriman" DIHAPUS dari form
+              Invoice (permintaan user). Nilai tetap ditarik otomatis dari
+              master Pelanggan & ikut tersimpan (state dipertahankan). === */}
           <Separator />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">
@@ -1863,6 +1819,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               barangOptions={barangOptions}
               hideDiskon
               allowBebas
+              /* Update #045 — baris terkunci saat menarik data dari SO / No DO. */
+              locked={!!fSalesOrderId || !!fPengirimanId}
               onBarangCreated={(b) => {
                 setBarangOptions((prev) => (prev.some((row) => row.id === b.id) ? prev : [...prev, toBarangDropdown(b)]));
                 // Satuan barang baru (mungkin hasil nested quick-add) didaftarkan ke daftar satuan host.
@@ -2017,19 +1975,16 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   const [soSisaInfo, setSoSisaInfo] = useState<{ noPesanan: string; sisaNilai: number } | null>(null);
   // === Update #4 (C4): info read-only No SO · No PO customer dari SO terpilih ===
   const [soRefInfo, setSoRefInfo] = useState<{ noPesanan: string; customerPoNumber: string } | null>(null);
-  // === Update #040 — info penawaran sumber SO (kotak Sisa Pembayaran). ===
-  const [soPenawaranInfo, setSoPenawaranInfo] = useState<SoPenawaranInfo | null>(null);
 
   // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}).
-  // Update #040 — sekaligus muat kartu Sisa Pembayaran bila SO berasal dari penawaran. ===
+  // Update #045 — fetch kartu Sisa Pembayaran penawaran dihapus (kartu tidak
+  // lagi ditampilkan; hanya info No SO · No PO yang dimuat). ===
   const loadSoRefInfo = useCallback(async (soId: string) => {
     try {
       const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
       setSoRefInfo({ noPesanan: so.noPesanan || '', customerPoNumber: so.customerPoNumber || '' });
-      setSoPenawaranInfo(so.penawaranId ? await fetchSoPenawaranInfo(so.penawaranId) : null);
     } catch {
       setSoRefInfo(null);
-      setSoPenawaranInfo(null);
     }
   }, []);
 
@@ -2075,12 +2030,10 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         // Sisa Pembayaran dimuat dari situ tanpa fetch SO tambahan.
         if (inv.salesOrder?.noPesanan) {
           setSoRefInfo({ noPesanan: inv.salesOrder.noPesanan, customerPoNumber: inv.salesOrder.customerPoNumber || '' });
-          setSoPenawaranInfo(inv.salesOrder.penawaranId ? await fetchSoPenawaranInfo(inv.salesOrder.penawaranId) : null);
         } else if (inv.salesOrderId) {
           await loadSoRefInfo(inv.salesOrderId);
         } else {
           setSoRefInfo(null);
-          setSoPenawaranInfo(null);
         }
         // Update #042 — info sisa tagihan SO (validasi DP/Pelunasan edit).
         if (inv.salesOrderId) await loadSoSisaInfo(inv.salesOrderId);
@@ -2109,7 +2062,6 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
       setEditSalesOrderId(soId);
       if (!soId) {
         setSoRefInfo(null);
-        setSoPenawaranInfo(null);
         // Update #042 — SO dilepas → standalone: info sisa disembunyikan & DP
         // dikosongkan (tagih penuh).
         setSoSisaInfo(null);
@@ -2268,23 +2220,15 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                       No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
                     </div>
                   )}
-                  {/* === Update #040 — kotak SISA PEMBAYARAN penawaran sumber SO
-                      (tracking alur DP bertahap; sisa = cikal bakal SO baru). === */}
-                  {soPenawaranInfo && <SoPenawaranCard info={soPenawaranInfo} />}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Mata Uang</Label>
                   <Input className="h-9 text-xs" value={editMataUang} onChange={(e) => setEditMataUang(e.target.value)} placeholder="e.g. IDR" />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                {/* Update #004: Ekspedisi & Tanggal Pengiriman dihapus; Alamat
-                    Pengiriman jadi baris penuh. */}
-                <Label className="text-xs font-medium">Alamat Pengiriman</Label>
-                {/* Update #4: auto-fill dari master Pelanggan saat dipilih */}
-                <Textarea className="text-xs min-h-[48px]" value={editAlamatPengiriman} onChange={(e) => setEditAlamatPengiriman(e.target.value)} />
-                <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.pelanggan}</p>
-              </div>
+              {/* === Update #045 — field "Alamat Pengiriman" DIHAPUS dari form
+                  Invoice (permintaan user); nilai tersimpan tetap dikirim apa
+                  adahlanya saat update (state dipertahankan). === */}
               <Separator />
               {/* === Update #042 — field DP/Pelunasan (nilai yang ditagih
                   invoice ini): prefill dari dpPelunasan tersimpan (0 → kosong

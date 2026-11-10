@@ -14,7 +14,10 @@ export const ORDER_CURRENCY_OPTIONS = [
   { id: 'SGD', label: 'SGD — Singapore Dollar' }
 ];
 export const orderEndpoint = (kind: OrderKind) => (kind === 'sales' ? '/penjualan/sales-order' : '/pembelian/purchase-order');
-export const canEditOrder = (status?: string | null) => status === 'DRAFT';
+// Update #045 — DIPROSES ikut bisa diedit: SO/PO hasil form langsung
+// difinalisasi backend (status DRAFT → DIPROSES saat approve); edit tetap
+// diizinkan selama belum SELESAI/DIBATALKAN (guard sama dengan backend).
+export const canEditOrder = (status?: string | null) => status === 'DRAFT' || status === 'DIPROSES';
 export function formatOrderMoney(value: number | string, currency?: string | null) {
   const amount = formatNumberIDR(value);
   // IDR adalah mata uang dasar — tanpa prefix, cukup angka terformat.

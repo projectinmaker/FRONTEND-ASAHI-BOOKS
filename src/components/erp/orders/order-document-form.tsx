@@ -92,6 +92,13 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
   const [penawaranDetail, setPenawaranDetail] = useState<PenawaranResponse | null>(null);
   const [penawaranLoading, setPenawaranLoading] = useState(false);
   const penawaranLocked = !!penawaranId;
+  // === Update #045 — LOCK DETAIL hasil tarikan data: saat SO dibuat dari
+  // penawaran (penawaranLocked), seluruh baris item + biaya tambahan hasil
+  // tarikan DIKUNCI (tidak bisa diedit/dihapus) dan tombol tambah baris
+  // disembunyikan — data mengikuti dokumen sumber (pelanggan & item sudah
+  // terkunci; mirror perilaku pelanggan yang sudah disabled). Lepas pilihan
+  // penawaran (tombol "Lepas") untuk kembali mengedit manual. ===
+  const lockDetail = isSales && penawaranLocked;
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -663,7 +670,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         Pilih Penawaran <span className="text-[11px] font-normal text-muted-foreground">(opsional)</span>
                       </Label>
                       <div className="flex items-center gap-1.5">
-                        <SearchableDropdown className="min-w-0 flex-1" value={penawaranId} onValueChange={handlePilihPenawaran} options={penawaranDropdownOptions} allOption={{ id: '', label: 'Tanpa penawaran (SO manual)' }} placeholder={penawaranLoading ? 'Memuat daftar penawaran…' : penawaranDropdownOptions.length ? 'Pilih penawaran untuk menarik item…' : 'Belum ada penawaran yang bisa dipilih'} disabled={disabled || penawaranLoading || penawaranDropdownOptions.length === 0} />
+                        <SearchableDropdown className="min-w-0 flex-1" value={penawaranId} onValueChange={handlePilihPenawaran} options={penawaranDropdownOptions} allOption={{ id: '', label: 'Tanpa penawaran' }} placeholder={penawaranLoading ? 'Memuat daftar penawaran…' : penawaranDropdownOptions.length ? 'Pilih penawaran untuk menarik item…' : 'Belum ada penawaran yang bisa dipilih'} disabled={disabled || penawaranLoading || penawaranDropdownOptions.length === 0} />
                         {penawaranLocked && (
                           <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={lepasPenawaran} title="Lepas pilihan penawaran (data yang sudah ditarik tetap ada)">
                             <Unlink className="mr-1.5 h-3.5 w-3.5" /> Lepas
@@ -674,34 +681,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                   </div>
                   {penawaranDetail && (
                     <div className="space-y-1.5">
-                      <p className="text-[11px] leading-relaxed text-amber-800">
-                        Sumber:{' '}
-                        <span className="font-mono font-medium">
-                          {penawaranDetail.noPenawaran}
-                          {penawaranDetail.revisiKe > 1 ? ` · Rev. ${penawaranDetail.revisiKe}` : ''}
-                        </span>{' '}
-                        · pelanggan <span className="font-medium">{penawaranDetail.pelanggan?.nama || '-'}</span> (terkunci) · Grand Total penawaran <span className="font-mono font-medium">{formatOrderMoney(penawaranDetail.grandTotal, penawaranDetail.mataUang)}</span>
-                        {penawaranDetail.digunakanCount > 0 ? ` · sudah dipakai ${penawaranDetail.digunakanCount}× SO (repeat order)` : ''} · item bebas ditarik apa adanya (tidak masuk master barang/gudang — bisa difakturkan, bisa dikirim sebagai baris surat jalan tanpa stok).
-                      </p>
-                      {/* === Update #039 — SISA PENAWARAN (Update #042: SO selalu
-                          nilai penuh; DP bertahap & pelunasan lewat Invoice
-                          ber-ulang atas SO dari penawaran yang sama). === */}
-                      <p className="text-[11px] leading-relaxed">
-                        <span className="text-muted-foreground">Sisa penawaran:</span>{' '}
-                        {Number(penawaranDetail.sisaPenawaran) < 0 ? (
-                          <span className="font-mono font-semibold text-amber-700" title="SO-SO turunan melebihi nilai penawaran">
-                            {formatOrderMoney(Number(penawaranDetail.sisaPenawaran), penawaranDetail.mataUang)}
-                          </span>
-                        ) : (
-                          <span className="font-mono font-semibold text-emerald-700">{formatOrderMoney(Number(penawaranDetail.sisaPenawaran), penawaranDetail.mataUang)}</span>
-                        )}
-                        <span className="text-muted-foreground">
-                          {' '}
-                          (nilai {formatOrderMoney(penawaranDetail.grandTotal, penawaranDetail.mataUang)} − sudah jadi SO {formatOrderMoney(penawaranDetail.dipakaiSoTotal, penawaranDetail.mataUang)}) — buat SO dengan nilai penuh; DP bertahap & pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) atas SO turunan penawaran ini dengan field DP/Pelunasan.
-                        </span>
-                      </p>
+                      {/* === Update #045 — keterangan "Sumber: …" & "Sisa penawaran: …"
+                          DIHAPUS (permintaan user): info panjang tidak perlu
+                          ditampilkan; cukup warning bila nilai SO melebihi sisa. === */}
                       {/* Update #039 — WARNING melebihi sisa (NON-BLOKING:
-                      repeat order / nambah scope tetap diperbolehkan). */}
+                          repeat order / nambah scope tetap diperbolehkan). */}
                       {liveGrandTotal > 0 && Number(penawaranDetail.sisaPenawaran) < liveGrandTotal && (
                         <p className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-900" role="alert">
                           Nilai SO ini ({formatOrderMoney(liveGrandTotal, header.currency)}) melebihi sisa penawaran sebesar {formatOrderMoney(liveGrandTotal - Number(penawaranDetail.sisaPenawaran), header.currency)} — tetap bisa disimpan (repeat order / penambahan scope), pastikan disengaja.
@@ -792,8 +776,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         (immutable setelah dokumen dibuat). ── */}
                     <div className="space-y-1.5" key="customerCode">
                       <Label htmlFor="order-customerCode">Singkatan Customer</Label>
-                      <Input id="order-customerCode" value={header.customerCode} onChange={(event) => setField('customerCode', event.target.value)} disabled={disabled || !!original} placeholder="mis. TBI" maxLength={20} />
-                      <p className="text-xs text-muted-foreground">{original ? 'Singkatan terkunci — bagian dari nomor dokumen dan tidak dapat diubah setelah pesanan dibuat.' : 'Singkatan nama perusahaan customer untuk nomor SO (contoh: TBI → SO ASI/TBI/2026/001). Kosongkan untuk tanda "-", tanpa karakter "/".'}</p>
+                      <Input id="order-customerCode" value={header.customerCode} readOnly disabled={disabled || !!original} placeholder="otomatis dari master Pelanggan" className="bg-muted" />
+                      <p className="text-xs text-muted-foreground">Otomatis ditarik dari master data Pelanggan (field Singkatan) saat pelanggan dipilih — kelola di Pengaturan → Pelanggan. Singkatan tidak dapat diubah di sini.</p>
                     </div>
                     {/* Update ASAHI (revisi SO): label "Tanggal Pengiriman" → "Target Pengiriman". */}
                     {input('tanggalPengiriman', 'Target Pengiriman', 'date')}
@@ -906,13 +890,13 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                                 Ikon toggle di kiri kolom. PO tetap master saja. === */}
                             <div className="flex items-center gap-1">
                               {isSales && (
-                                <Button variant="ghost" size="icon" className={line.bebas ? 'h-7 w-7 shrink-0 text-amber-600' : 'h-7 w-7 shrink-0 text-muted-foreground'} onClick={() => toggleLineMode(line.key)} disabled={disabled} title={line.bebas ? 'Item bebas (ketik manual — tidak di master barang, tidak menyentuh gudang; bisa difakturkan). Klik untuk pilih dari master barang.' : 'Pilih dari master barang. Klik untuk ketik item bebas (jasa/custom).'} aria-label={line.bebas ? 'Ganti ke mode master barang' : 'Ganti ke mode item bebas'}>
+                                <Button variant="ghost" size="icon" className={line.bebas ? 'h-7 w-7 shrink-0 text-amber-600' : 'h-7 w-7 shrink-0 text-muted-foreground'} onClick={() => toggleLineMode(line.key)} disabled={disabled || lockDetail} title={line.bebas ? 'Item bebas (ketik manual — tidak di master barang, tidak menyentuh gudang; bisa difakturkan). Klik untuk pilih dari master barang.' : 'Pilih dari master barang. Klik untuk ketik item bebas (jasa/custom).'} aria-label={line.bebas ? 'Ganti ke mode master barang' : 'Ganti ke mode item bebas'}>
                                   {line.bebas ? <Type className="h-3.5 w-3.5" /> : <Package className="h-3.5 w-3.5" />}
                                 </Button>
                               )}
-                              {isSales && line.bebas ? <Input aria-label={`Nama item bebas baris ${index + 1}`} placeholder="Nama item / jasa (bebas)" value={line.itemNama} onChange={(event) => updateLine(line.key, 'itemNama', event.target.value)} disabled={disabled} maxLength={200} /> : <SearchableDropdown className="min-w-0 flex-1" value={line.barangId} onValueChange={(value) => updateLine(line.key, 'barangId', value)} options={barangOptions} disabled={disabled} compact />}
+                              {isSales && line.bebas ? <Input aria-label={`Nama item bebas baris ${index + 1}`} placeholder="Nama item / jasa (bebas)" value={line.itemNama} onChange={(event) => updateLine(line.key, 'itemNama', event.target.value)} disabled={disabled || lockDetail} maxLength={200} /> : <SearchableDropdown className="min-w-0 flex-1" value={line.barangId} onValueChange={(value) => updateLine(line.key, 'barangId', value)} options={barangOptions} disabled={disabled || lockDetail} compact />}
                               {/* Update #007: quick add barang langsung di baris (mode master saja — bebas tidak perlu master) */}
-                              {!(isSales && line.bebas) && (
+                              {!(isSales && line.bebas) && !lockDetail && (
                                 <QuickAddBarangButton
                                   compact
                                   disabled={disabled}
@@ -940,30 +924,32 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                           <TableCell>
                             {/* Update #032 — baris bebas: satuan teks bebas (bukan dropdown master). */}
                             {isSales && line.bebas ? (
-                              <Input aria-label={`Satuan item bebas baris ${index + 1}`} placeholder="mis. JOB / LOT" value={line.itemSatuan} onChange={(event) => updateLine(line.key, 'itemSatuan', event.target.value)} disabled={disabled} maxLength={50} />
+                              <Input aria-label={`Satuan item bebas baris ${index + 1}`} placeholder="mis. JOB / LOT" value={line.itemSatuan} onChange={(event) => updateLine(line.key, 'itemSatuan', event.target.value)} disabled={disabled || lockDetail} maxLength={50} />
                             ) : (
                               <div className="flex items-center gap-1">
-                                <SearchableDropdown className="min-w-0 flex-1" value={line.satuanId} onValueChange={(value) => updateLine(line.key, 'satuanId', value)} options={unitOptions} allOption={{ id: '', label: 'Tidak dipilih' }} disabled={disabled} compact />
+                                <SearchableDropdown className="min-w-0 flex-1" value={line.satuanId} onValueChange={(value) => updateLine(line.key, 'satuanId', value)} options={unitOptions} allOption={{ id: '', label: 'Tidak dipilih' }} disabled={disabled || lockDetail} compact />
                                 {/* Update #007: quick add satuan langsung di baris */}
-                                <QuickAddSatuanButton
-                                  compact
-                                  disabled={disabled}
-                                  onCreated={(s) => {
-                                    setUnits((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, s]));
-                                    updateLine(line.key, 'satuanId', s.id);
-                                  }}
-                                />
+                                {!lockDetail && (
+                                  <QuickAddSatuanButton
+                                    compact
+                                    disabled={disabled}
+                                    onCreated={(s) => {
+                                      setUnits((prev) => (prev.some((row) => row.id === s.id) ? prev : [...prev, s]));
+                                      updateLine(line.key, 'satuanId', s.id);
+                                    }}
+                                  />
+                                )}
                               </div>
                             )}
                           </TableCell>
                           <TableCell>
-                            <Input aria-label={`qty baris ${index + 1}`} type="number" step="any" value={line.qty} onChange={(event) => updateLine(line.key, 'qty', event.target.value)} disabled={disabled} />
+                            <Input aria-label={`qty baris ${index + 1}`} type="number" step="any" value={line.qty} onChange={(event) => updateLine(line.key, 'qty', event.target.value)} disabled={disabled || lockDetail} />
                           </TableCell>
                           <TableCell>
-                            <CurrencyInput aria-label={`harga baris ${index + 1}`} allowDecimal value={line.harga} onValueChange={(value) => updateLine(line.key, 'harga', value)} disabled={disabled} />
+                            <CurrencyInput aria-label={`harga baris ${index + 1}`} allowDecimal value={line.harga} onValueChange={(value) => updateLine(line.key, 'harga', value)} disabled={disabled || lockDetail} />
                           </TableCell>
                           <TableCell>
-                            <Input aria-label={`diskon baris ${index + 1}`} type="number" step="any" value={line.diskon} onChange={(event) => updateLine(line.key, 'diskon', event.target.value)} disabled={disabled} />
+                            <Input aria-label={`diskon baris ${index + 1}`} type="number" step="any" value={line.diskon} onChange={(event) => updateLine(line.key, 'diskon', event.target.value)} disabled={disabled || lockDetail} />
                           </TableCell>
                           {/* === Update #042 — input DP per baris DIHAPUS
                               (baris SO selalu nilai penuh; DP/Pelunasan kini
@@ -982,16 +968,22 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                             </TableCell>
                           )}
                           <TableCell>
-                            <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setLines((prev) => prev.filter((item) => item.key !== line.key))} aria-label={`Hapus baris ${index + 1}`}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {/* Update #045 — tombol hapus baris disembunyikan saat
+                                baris hasil tarikan penawaran (data terkunci). */}
+                            {!lockDetail && (
+                              <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setLines((prev) => prev.filter((item) => item.key !== line.key))} aria-label={`Hapus baris ${index + 1}`}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </div>
-                {!readOnly && (
+                {/* === Update #045 — tombol tambah baris TIDAK DITAMPILKAN saat
+                    menarik data dari penawaran (baris mengikuti dokumen sumber). === */}
+                {!readOnly && !lockDetail && (
                   <Button variant="outline" size="sm" disabled={disabled} onClick={() => setLines((prev) => [...prev, newOrderLine()])}>
                     <Plus className="mr-2 h-4 w-4" />
                     {isSales ? 'Tambah Barang / Item' : 'Tambah Barang'}
@@ -1026,18 +1018,24 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                   </div>
                 ) : (
                   <>
+                    {/* Update #045 — biaya tambahan hasil tarikan penawaran ikut
+                        terkunci (input disabled, tombol hapus & tambah hilang). */}
                     {costs.map((cost, index) => (
                       <div className="flex gap-2" key={cost.key}>
-                        <Input aria-label={`Nama biaya ${index + 1}`} placeholder="Nama biaya" value={cost.nama} disabled={disabled} onChange={(event) => setCosts((prev) => prev.map((item) => (item.key === cost.key ? { ...item, nama: event.target.value } : item)))} />
-                        <CurrencyInput aria-label={`Jumlah biaya ${index + 1}`} allowDecimal value={cost.jumlah} disabled={disabled} onValueChange={(value) => setCosts((prev) => prev.map((item) => (item.key === cost.key ? { ...item, jumlah: value } : item)))} />
-                        <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setCosts((prev) => prev.filter((item) => item.key !== cost.key))} aria-label={`Hapus biaya ${index + 1}`}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <Input aria-label={`Nama biaya ${index + 1}`} placeholder="Nama biaya" value={cost.nama} disabled={disabled || lockDetail} onChange={(event) => setCosts((prev) => prev.map((item) => (item.key === cost.key ? { ...item, nama: event.target.value } : item)))} />
+                        <CurrencyInput aria-label={`Jumlah biaya ${index + 1}`} allowDecimal value={cost.jumlah} disabled={disabled || lockDetail} onValueChange={(value) => setCosts((prev) => prev.map((item) => (item.key === cost.key ? { ...item, jumlah: value } : item)))} />
+                        {!lockDetail && (
+                          <Button variant="ghost" size="icon" disabled={disabled} onClick={() => setCosts((prev) => prev.filter((item) => item.key !== cost.key))} aria-label={`Hapus biaya ${index + 1}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     ))}
-                    <Button variant="outline" size="sm" disabled={disabled} onClick={() => setCosts((prev) => [...prev, { key: crypto.randomUUID(), nama: '', jumlah: '' }])}>
-                      Tambah Biaya
-                    </Button>
+                    {!lockDetail && (
+                      <Button variant="outline" size="sm" disabled={disabled} onClick={() => setCosts((prev) => [...prev, { key: crypto.randomUUID(), nama: '', jumlah: '' }])}>
+                        Tambah Biaya
+                      </Button>
+                    )}
                   </>
                 )}
               </div>
