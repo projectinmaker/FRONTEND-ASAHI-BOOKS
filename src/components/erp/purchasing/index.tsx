@@ -708,10 +708,174 @@ function usePostedInvoiceOptions(supplierId: string | null) {
   return { options: current?.options || [], loading: !!supplierId && !current, error: current?.error || '', retry: () => setAttempt((value) => value + 1) };
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// === Update #048 — GRNI: daftar Penerimaan Barang per PO + link otomatis ke
+// Invoice Pembelian. Dengan GRNI aktif, invoice pembelian harus terhubung ke
+// penerimaan yang sudah selesai (link disimpan di penerimaan.purchaseInvoiceId).
+// Alur lama memaksa user memahami istilah teknis ("hubungkan via
+// purchase_invoice_id"); alur baru: penerimaan tampil di form Invoice, yang
+// dicentang otomatis di-link saat invoice disimpan (bila backend sudah
+// auto-link, dideteksi & dilaporkan saja).
+// ═════════════════════════════════════════════════════════════════════════════
+function usePoPenerimaanLink() {
+  const [list, setList] = useState<PenerimaanBarangResponse[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [checkedIds, setCheckedIds] = useState<string[]>([]);
+
+  const fetchForPo = useCallback(async (poId: string, supplierId?: string, opts?: { preserveChecks?: boolean }) => {
+    if (!poId) {
+      setList([]);
+      setCheckedIds([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: '200' });
+      if (supplierId) params.set('supplier_id', supplierId);
+      // Best-effort: sebagian versi backend mendukung filter langsung
+      // purchase_order_id; selalu difilter ulang sisi klien via field
+      // purchaseOrderId supaya hasilnya benar di semua versi.
+      params.set('purchase_order_id', poId);
+      const res = await api.get<PaginatedResponse<PenerimaanBarangResponse>>(`/pembelian/penerimaan?${params}`);
+      const rows = (res.data || []).filter((pb) => pb.purchaseOrderId === poId && pb.status !== 'DIBATALKAN');
+      setList(rows);
+      const linkable = rows.filter((pb) => !pb.purchaseInvoiceId).map((pb) => pb.id);
+      setCheckedIds((prev) => (opts?.preserveChecks ? Array.from(new Set([...prev.filter((id) => linkable.includes(id)), ...linkable])) : linkable));
+    } catch {
+      setList([]);
+      setCheckedIds([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const toggleChecked = useCallback((id: string) => {
+    setCheckedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, []);
+
+  // Setelah invoice tersimpan: pastikan penerimaan terpilih ter-link ke
+  // invoice tsb. Daftar diambil FRESH (bukan dari state panel) — penerimaan
+  // yang sudah di-link backend tidak di-PUT lagi; yang masih kosong &
+  // tercentang di-link via PUT purchaseInvoiceId.
+  const linkToInvoice = useCallback(
+    async (invoiceId: string, poId: string, supplierId?: string): Promise<{ linked: string[]; failed: string[] }> => {
+      if (!poId) return { linked: [], failed: [] };
+      try {
+        const params = new URLSearchParams({ limit: '200' });
+        if (supplierId) params.set('supplier_id', supplierId);
+        params.set('purchase_order_id', poId);
+        const res = await api.get<PaginatedResponse<PenerimaanBarangResponse>>(`/pembelian/penerimaan?${params}`);
+        const rows = (res.data || []).filter((pb) => pb.purchaseOrderId === poId && pb.status !== 'DIBATALKAN');
+        const linked: string[] = [];
+        const failed: string[] = [];
+        for (const pb of rows) {
+          if (pb.purchaseInvoiceId === invoiceId) {
+            linked.push(pb.noForm); // sudah ter-link (auto oleh backend)
+            continue;
+          }
+          if (!pb.purchaseInvoiceId && checkedIds.includes(pb.id)) {
+            try {
+              await api.put<PenerimaanBarangResponse>(`/pembelian/penerimaan/${pb.id}`, { purchaseInvoiceId: invoiceId } as PenerimaanBarangUpdate);
+              linked.push(pb.noForm);
+            } catch {
+              failed.push(pb.noForm);
+            }
+          }
+        }
+        return { linked, failed };
+      } catch {
+        return { linked: [], failed: [] };
+      }
+    },
+    [checkedIds]
+  );
+
+  return { list, loading, checkedIds, toggleChecked, fetchForPo, linkToInvoice };
+}
+
+// Panel UI bersama (dipakai form Invoice create & edit): daftar penerimaan PO,
+// status link, centang "hubungkan ke invoice ini", tombol buat penerimaan.
+function PoPenerimaanPanel({ list, loading, checkedIds, onToggle, onRefresh, onBuatPenerimaan, currentInvoiceId }: { list: PenerimaanBarangResponse[]; loading: boolean; checkedIds: string[]; onToggle: (id: string) => void; onRefresh: () => void; onBuatPenerimaan: () => void; currentInvoiceId?: string }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-3 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <Package className="h-3.5 w-3.5 text-muted-foreground" />
+        <p className="text-xs font-medium">Penerimaan Barang untuk PO ini</p>
+        <span className="text-[11px] text-muted-foreground">(yang dicentang otomatis dihubungkan ke invoice ini saat disimpan)</span>
+        <Button type="button" variant="ghost" size="sm" className="ml-auto h-6 w-6 p-0 text-muted-foreground" onClick={onRefresh} title="Muat ulang daftar penerimaan" aria-label="Muat ulang daftar penerimaan">
+          <RotateCcw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {loading ? (
+        <div className="space-y-1.5">
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-full" />
+        </div>
+      ) : list.length === 0 ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+          <p className="text-xs font-medium text-amber-800">PO ini belum ada Penerimaan Barang.</p>
+          <p className="text-[11px] leading-relaxed text-amber-700">Bila barang sudah/sedang diterima, buat Penerimaan dulu — invoice akan otomatis terhubung ke penerimaannya (wajib saat mode GRNI aktif: invoice bisa diposting setelah penerimaan selesai &amp; terhubung).</p>
+          <Button type="button" size="sm" variant="outline" className="h-7 border-amber-300 text-amber-800 hover:bg-amber-100" onClick={onBuatPenerimaan}>
+            <Plus className="mr-1 h-3.5 w-3.5" /> Buat Penerimaan dari PO Ini
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="overflow-x-auto rounded-md border bg-background">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="text-xs whitespace-nowrap">No Penerimaan</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap">Tanggal</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap text-center">Jml Item</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap text-center">Status</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap text-center">Invoice</TableHead>
+                  <TableHead className="text-xs whitespace-nowrap text-center">Hubungkan</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.map((pb) => (
+                  <TableRow key={pb.id}>
+                    <TableCell className="font-mono text-xs font-medium">{pb.noForm}</TableCell>
+                    <TableCell className="text-xs">{formatDate(pb.tanggal)}</TableCell>
+                    <TableCell className="text-center text-xs">{pb.details?.length || 0}</TableCell>
+                    <TableCell className="text-center">
+                      <StatusBadge status={pb.status} />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {pb.purchaseInvoiceId ? (
+                        pb.purchaseInvoiceId === currentInvoiceId ? (
+                          <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 text-xs gap-1">
+                            <Link2 className="h-3 w-3" /> Invoice ini
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-50 text-xs gap-1">
+                            <Link2 className="h-3 w-3" /> Linked
+                          </Badge>
+                        )
+                      ) : (
+                        <Badge variant="outline" className="bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-50 text-xs gap-1">
+                          <Unlink className="h-3 w-3" /> Belum
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">{pb.purchaseInvoiceId ? <span className="text-[11px] text-muted-foreground">—</span> : <input type="checkbox" className="h-4 w-4 accent-emerald-600" checked={checkedIds.includes(pb.id)} onChange={() => onToggle(pb.id)} aria-label={`Hubungkan penerimaan ${pb.noForm} ke invoice ini`} />}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Mode GRNI: invoice bisa diposting setelah ada penerimaan yang selesai &amp; terhubung ke invoice ini.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // FORM: Penerimaan Barang — Create
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PenerimaanCreateForm() {
+function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrderId?: string }) {
   const { error: stockError, clearError: clearStockError, handleError: handleStockError } = useStockOperationError('penerimaan_barang');
   const { supplierOptions, setSupplierOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, purchaseOrderOptions, gudangOptions, setGudangOptions, loading: dropdownsLoading } = usePurchasingDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
@@ -761,6 +925,10 @@ function PenerimaanCreateForm() {
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
+    // === Update #048 — dibuka dari form Invoice (tombol "Buat Penerimaan
+    // dari PO Ini"): PO ditarik otomatis di bawah; draft lama diabaikan
+    // (pola sama dengan "Buat SO" dari daftar penawaran). ===
+    if (initialPurchaseOrderId) return;
     const d = draft.draft;
     if (!d) return;
     setFPurchaseOrderId(d.purchaseOrderId || '');
@@ -866,6 +1034,17 @@ function PenerimaanCreateForm() {
     },
     [fSupplierId, supplierOptions]
   );
+
+  // === Update #048 — prefill PO (form dibuka lewat tombol "Buat Penerimaan
+  // dari PO Ini" di form Invoice Pembelian): tarik sisa PO setelah master
+  // termuat; barang & qty + supplier + alamat terisi otomatis. ===
+  const prefillPoRef = useRef(false);
+  useEffect(() => {
+    if (prefillPoRef.current || dropdownsLoading || !initialPurchaseOrderId) return;
+    prefillPoRef.current = true;
+    handlePurchaseOrderChange(initialPurchaseOrderId);
+    toast.info('PO ditarik otomatis ke form ini', { description: 'Barang & qty mengikuti sisa PO — pilih gudang tujuan sebelum menyimpan.' });
+  }, [dropdownsLoading, initialPurchaseOrderId, handlePurchaseOrderChange]);
 
   const handleSubmit = async () => {
     const errs: Record<string, string> = {};
@@ -1355,6 +1534,9 @@ function InvoiceCreateForm() {
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
+  // === Update #048 — buka tab form lain dari sini (tombol "Buat Penerimaan
+  // dari PO Ini" di panel Penerimaan). ===
+  const openFormTab = useTabStore((s) => s.openFormTab);
 
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -1382,6 +1564,9 @@ function InvoiceCreateForm() {
   }, [defaultRates]);
   // === Update #4 (Q2): snapshot sisa PO terpilih — info barang belum diterima ===
   const [poSisaInfo, setPoSisaInfo] = useState<PurchaseOrderSisaResponse | null>(null);
+  // === Update #048 — daftar Penerimaan Barang untuk PO terpilih (alur GRNI):
+  // penerimaan yang dicentang otomatis di-link ke invoice ini saat disimpan. ===
+  const penerimaanLink = usePoPenerimaanLink();
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -1405,6 +1590,15 @@ function InvoiceCreateForm() {
     setFKeterangan(d.keterangan || '');
     setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
     setFBiayaTambahan(Array.isArray(d.biayaTambahan) ? d.biayaTambahan : []);
+    // === Update #048 — konteks PO dipulihkan juga (panel sisa & penerimaan)
+    // TANPA mengubah baris/supplier/alamat hasil restore. ===
+    if (d.purchaseOrderId) {
+      api
+        .get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${d.purchaseOrderId}/sisa`)
+        .then((s) => setPoSisaInfo(s))
+        .catch(() => setPoSisaInfo(null));
+      penerimaanLink.fetchForPo(d.purchaseOrderId, d.supplierId || undefined);
+    }
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Invoice Pembelian dimuat kembali otomatis.' });
   }, []);
 
@@ -1468,12 +1662,15 @@ function InvoiceCreateForm() {
       setFPurchaseOrderId(poId);
       if (!poId) {
         setPoSisaInfo(null);
+        penerimaanLink.fetchForPo('');
         return;
       }
       setPoLoading(true);
       try {
         const sisa = await api.get<PurchaseOrderSisaResponse>(`/pembelian/purchase-order/${poId}/sisa`);
         setPoSisaInfo(sisa);
+        // === Update #048 — muat daftar penerimaan PO ini (panel link GRNI). ===
+        penerimaanLink.fetchForPo(poId, sisa.supplierId || undefined);
         if (sisa.supplierId) setFSupplierId(sisa.supplierId);
         // Update #4: alamat ditarik otomatis — dari PO, atau master supplier
         // bila PO tidak menyimpan alamat.
@@ -1508,12 +1705,26 @@ function InvoiceCreateForm() {
       } catch {
         // Gagal memuat sisa PO — biarkan user isi baris manual
         setPoSisaInfo(null);
+        penerimaanLink.fetchForPo('');
       } finally {
         setPoLoading(false);
       }
     },
-    [supplierOptions]
+    [supplierOptions, penerimaanLink.fetchForPo]
   );
+
+  // === Update #048 — kembali ke tab form ini (mis. setelah membuat Penerimaan
+  // di tab lain lewat tombol "Buat Penerimaan dari PO Ini"): muat ulang daftar
+  // penerimaan PO secara diam-diam (centangan user dipertahankan;
+  // penerimaan baru otomatis tercentang). ===
+  const lastTabIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = lastTabIdRef.current;
+    lastTabIdRef.current = activeTabId;
+    if (prev === null || prev === activeTabId) return;
+    if (fPurchaseOrderId && fSupplierId) penerimaanLink.fetchForPo(fPurchaseOrderId, fSupplierId, { preserveChecks: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTabId]);
 
   const formSubtotal = useMemo(
     () =>
@@ -1579,17 +1790,41 @@ function InvoiceCreateForm() {
         refreshListTab('purchasing', 'invoice');
       });
       draft.clearDraft();
+      // === Update #048 — link penerimaan terpilih ke invoice baru (alur GRNI):
+      // backend mungkin sudah auto-link — dideteksi & dilaporkan; sisanya
+      // di-link lewat PUT penerimaan (purchaseInvoiceId). ===
+      let linkedPenerimaan: string[] = [];
+      let failedPenerimaan: string[] = [];
+      if (fPurchaseOrderId) {
+        const linkResult = await penerimaanLink.linkToInvoice(result.saved.id, fPurchaseOrderId, fSupplierId || undefined);
+        linkedPenerimaan = linkResult.linked;
+        failedPenerimaan = linkResult.failed;
+      }
       if (result.mismatches.length) {
-        setSaveWarning('Invoice ' + result.saved.noForm + ' sudah dibuat, tetapi backend belum menyimpan: ' + result.mismatches.join(', ') + '. Buka invoice tersebut dari daftar untuk meninjau. Jangan membuat ulang.');
+        setSaveWarning('Invoice ' + result.saved.noForm + ' sudah dibuat, tetapi backend belum menyimpan: ' + result.mismatches.join(', ') + (linkedPenerimaan.length ? '. Terhubung ke penerimaan: ' + linkedPenerimaan.join(', ') : '') + '. Buka invoice tersebut dari daftar untuk meninjau. Jangan membuat ulang.');
         return;
       }
-      toast.success('Invoice pembelian berhasil dibuat');
+      toast.success('Invoice pembelian berhasil dibuat', linkedPenerimaan.length ? { description: 'Terhubung otomatis ke penerimaan: ' + linkedPenerimaan.join(', ') + '.' } : undefined);
+      if (failedPenerimaan.length) {
+        toast.warning('Invoice tersimpan, tetapi beberapa penerimaan gagal dihubungkan', { description: 'Gagal: ' + failedPenerimaan.join(', ') + ' — hubungkan manual lewat Edit Penerimaan (pilih invoice ini).', duration: 8000 });
+      }
       refreshListTab('purchasing', 'invoice');
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
       const duplicate = duplicateInvoiceMessage(err);
       if (duplicate) setFormErrors((prev) => ({ ...prev, noFaktur: duplicate }));
-      toast.error(err instanceof ApiError ? err.detail : 'Gagal menyimpan invoice');
+      // === Update #048 — pesan GRNI diterjemahkan ke petunjuk yang jelas
+      // (sebelumnya: kalimat teknis "hubungkan ... via purchase_invoice_id"
+      // yang membingungkan). ===
+      const grniDetail = err instanceof ApiError ? err.detail : '';
+      if (grniDetail.includes('GRNI')) {
+        toast.error('Belum bisa simpan — barang PO ini belum diterima', {
+          description: 'Mode GRNI aktif: buat & selesaikan Penerimaan Barang dari PO ini terlebih dahulu (tombol "Buat Penerimaan dari PO Ini" di panel Penerimaan di atas), lalu simpan invoice lagi — penerimaan otomatis terhubung ke invoice ini.',
+          duration: 10000
+        });
+      } else {
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal menyimpan invoice');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -1677,6 +1912,27 @@ function InvoiceCreateForm() {
                 </Table>
               </div>
             </div>
+          )}
+          {/* === Update #048 — panel Penerimaan Barang PO ini (alur GRNI):
+              daftar penerimaan + pilih mana yang di-link otomatis ke invoice
+              ini saat disimpan; bila belum ada, tombol buat penerimaan. === */}
+          {fPurchaseOrderId && (
+            <PoPenerimaanPanel
+              list={penerimaanLink.list}
+              loading={penerimaanLink.loading}
+              checkedIds={penerimaanLink.checkedIds}
+              onToggle={penerimaanLink.toggleChecked}
+              onRefresh={() => penerimaanLink.fetchForPo(fPurchaseOrderId, fSupplierId || undefined, { preserveChecks: true })}
+              onBuatPenerimaan={() =>
+                openFormTab({
+                  title: 'Buat Penerimaan Barang',
+                  module: 'purchasing',
+                  subPage: 'penerimaan',
+                  formKey: 'penerimaan-pembelian-create',
+                  formProps: { purchaseOrderId: fPurchaseOrderId }
+                })
+              }
+            />
           )}
           <p className="text-sm text-muted-foreground">Isi data invoice pembelian baru</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1792,14 +2048,14 @@ function InvoiceCreateForm() {
               </div>
             </div>
             <div className="space-y-1.5">
-              {/* === Update #046 — tarif PPh 23 DIKUNCI (readOnly): nilai dari
-                  Referensi → Perpajakan (RATE_PPH23); centang pakai/tidak tetap
+              {/* === Update #048 — tarif PPh 23 DIBUKA (bisa diedit): tarif PPh 23
+                  bergantung jenis jasa supplier (mis. 2% / 4% / 6%), jadi nilai
+                  default tetap diambil dari Referensi → Perpajakan (RATE_PPH23)
+                  tetapi boleh disesuaikan per invoice; centang pakai/tidak tetap
                   bisa diubah. === */}
-              <Label className="text-xs font-medium">
-                PPh 23 (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
-              </Label>
-              <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPph23} min={0} max={100} disabled={!fPph23Applicable} readOnly aria-readonly="true" title="Tarif PPh 23 terkunci — atur di Referensi → Perpajakan" />
-              <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
+              <Label className="text-xs font-medium">PPh 23 (%)</Label>
+              <Input type="number" className="h-9 text-xs" value={fPph23} min={0} max={100} disabled={!fPph23Applicable} onChange={(e) => setFPph23(e.target.value)} title="Default dari Referensi → Perpajakan — sesuaikan bila jenis jasa supplier berbeda" />
+              <p className="text-[11px] text-muted-foreground">Default dari Referensi → Perpajakan — dapat disesuaikan per jenis jasa (mis. 2%, 4%, 6%).</p>
             </div>
           </div>
           <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} pph23Pct={fPph23Applicable ? parseFloat(fPph23) || 0 : 0} />
@@ -1838,6 +2094,9 @@ function InvoiceEditForm({ editId }: { editId: string }) {
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
+  // === Update #048 — panel Penerimaan (link GRNI) + tombol buat penerimaan. ===
+  const openFormTab = useTabStore((s) => s.openFormTab);
+  const penerimaanLink = usePoPenerimaanLink();
 
   const [recordLoading, setRecordLoading] = useState(true);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -1884,6 +2143,14 @@ function InvoiceEditForm({ editId }: { editId: string }) {
     };
   }, [editId]);
 
+  // === Update #048 — daftar penerimaan PO invoice ini (panel link GRNI):
+  // dimuat ulang saat PO / supplier berubah (termasuk saat record termuat). ===
+  useEffect(() => {
+    if (recordLoading) return;
+    if (editPurchaseOrderId) penerimaanLink.fetchForPo(editPurchaseOrderId, editSupplierId || undefined);
+    else penerimaanLink.fetchForPo('');
+  }, [recordLoading, editPurchaseOrderId, editSupplierId, penerimaanLink.fetchForPo]);
+
   const handleEditSubmit = async () => {
     if (!savedInvoice) return;
     if (!editNoFaktur.trim()) {
@@ -1914,6 +2181,13 @@ function InvoiceEditForm({ editId }: { editId: string }) {
       const saved = await api.put<PurchaseInvoiceResponse>(`/pembelian/purchase-invoice/${editId}`, body);
       setSavedInvoice(saved);
       refreshListTab('purchasing', 'invoice');
+      // === Update #048 — link penerimaan terpilih (panel Penerimaan) ke
+      // invoice ini setelah header tersimpan (alur GRNI). ===
+      if (editPurchaseOrderId) {
+        const linkResult = await penerimaanLink.linkToInvoice(editId, editPurchaseOrderId, editSupplierId || undefined);
+        if (linkResult.linked.length) toast.success('Penerimaan terhubung ke invoice', { description: linkResult.linked.join(', ') });
+        if (linkResult.failed.length) toast.warning('Beberapa penerimaan gagal dihubungkan', { description: 'Gagal: ' + linkResult.failed.join(', ') + ' — hubungkan manual lewat Edit Penerimaan (pilih invoice ini).', duration: 8000 });
+      }
       const mismatches = invoiceSaveMismatches(body, saved);
       if (mismatches.length) {
         setSaveWarning('Backend belum menyimpan: ' + mismatches.join(', ') + '. Data form dipertahankan.');
@@ -1924,7 +2198,16 @@ function InvoiceEditForm({ editId }: { editId: string }) {
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
       setSaveWarning(err instanceof Error ? err.message : 'Gagal memperbarui invoice');
-      toast.error(err instanceof ApiError ? err.detail : 'Gagal memperbarui invoice');
+      // === Update #048 — pesan GRNI diterjemahkan ke petunjuk yang jelas. ===
+      const grniDetail = err instanceof ApiError ? err.detail : '';
+      if (grniDetail.includes('GRNI')) {
+        toast.error('Belum bisa simpan — barang PO ini belum diterima', {
+          description: 'Mode GRNI aktif: buat & selesaikan Penerimaan Barang dari PO ini terlebih dahulu (panel Penerimaan di atas), lalu simpan lagi — penerimaan otomatis terhubung ke invoice ini.',
+          duration: 10000
+        });
+      } else {
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal memperbarui invoice');
+      }
     } finally {
       setEditSubmitting(false);
     }
@@ -1976,6 +2259,28 @@ function InvoiceEditForm({ editId }: { editId: string }) {
               <span className="font-mono font-semibold text-foreground">{formatRp(editGrandTotal)}</span>
             </div>
           </div>
+          {/* === Update #048 — panel Penerimaan Barang PO ini (alur GRNI):
+              penerimaan yang dicentang di-link otomatis ke invoice ini saat
+              disimpan; bila belum ada, tombol buat penerimaan dari PO. === */}
+          {editPurchaseOrderId && (
+            <PoPenerimaanPanel
+              list={penerimaanLink.list}
+              loading={penerimaanLink.loading}
+              checkedIds={penerimaanLink.checkedIds}
+              onToggle={penerimaanLink.toggleChecked}
+              onRefresh={() => penerimaanLink.fetchForPo(editPurchaseOrderId, editSupplierId || undefined, { preserveChecks: true })}
+              onBuatPenerimaan={() =>
+                openFormTab({
+                  title: 'Buat Penerimaan Barang',
+                  module: 'purchasing',
+                  subPage: 'penerimaan',
+                  formKey: 'penerimaan-pembelian-create',
+                  formProps: { purchaseOrderId: editPurchaseOrderId }
+                })
+              }
+              currentInvoiceId={editId}
+            />
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">
@@ -2030,8 +2335,14 @@ function InvoiceEditForm({ editId }: { editId: string }) {
               <Input type="number" className="h-9 text-xs" value={editDiskonGlobal} min={0} max={100} onChange={(e) => setEditDiskonGlobal(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">PPN (%)</Label>
-              <Input type="number" className="h-9 text-xs" value={editPpn} min={0} max={100} onChange={(e) => setEditPpn(e.target.value)} />
+              {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
+                  Referensi → Perpajakan (RATE_PPN); menampilkan nilai yang
+                  tersimpan pada invoice (paritas perilaku form create). === */}
+              <Label className="text-xs font-medium">
+                PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
+              </Label>
+              <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={editPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+              <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -2123,7 +2434,8 @@ function ReturCreateForm() {
     setFGudangId(d.gudangId || '');
     setFTanggal(d.tanggal || todayStr());
     setFAlamat(d.alamat || '');
-    setFPpn(d.ppn ?? '11');
+    // === Update #048 — tarif PPN tidak dipulihkan dari draft lagi: nilainya
+    // terkunci & selalu mengikuti Referensi → Perpajakan (RATE_PPN). ===
     setFKeterangan(d.keterangan || '');
     setFPurchaseInvoiceId(d.purchaseInvoiceId || '');
     setQuantities(d.quantities || {});
@@ -2161,13 +2473,14 @@ function ReturCreateForm() {
     setFGudangId('');
     setFTanggal(todayStr());
     setFAlamat('');
-    setFPpn('11');
+    // === Update #048 — reset tarif mengikuti Referensi → Perpajakan. ===
+    setFPpn(defaultRatesRetur?.ppn ?? '11');
     setFKeterangan('');
     setFPurchaseInvoiceId('');
     setQuantities({});
     appliedSourceRef.current = '';
     setFormErrors({});
-  }, []);
+  }, [defaultRatesRetur]);
 
   const handleSubmit = async () => {
     const errs: Record<string, string> = {};
@@ -2318,8 +2631,14 @@ function ReturCreateForm() {
               <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">PPN (%)</Label>
-              <Input type="number" className="h-9 text-xs" value={fPpn} min={0} max={100} onChange={(e) => setFPpn(e.target.value)} />
+              {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
+                  Referensi → Perpajakan (RATE_PPN); nilai mengikuti setting
+                  global (form create), bukan input manual. === */}
+              <Label className="text-xs font-medium">
+                PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
+              </Label>
+              <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+              <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -2586,8 +2905,14 @@ function ReturEditForm({ editId }: { editId: string }) {
               <p className="text-[11px] text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">PPN (%)</Label>
-              <Input type="number" className="h-9 text-xs" value={editPpn} min={0} max={100} onChange={(e) => setEditPpn(e.target.value)} />
+              {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
+                  Referensi → Perpajakan; menampilkan nilai yang tersimpan
+                  pada retur. === */}
+              <Label className="text-xs font-medium">
+                PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
+              </Label>
+              <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={editPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+              <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -3942,7 +4267,7 @@ export default function Purchasing(props: PurchasingPageProps) {
       case 'pesanan':
         return editId ? <PesananEditForm editId={editId} /> : <PesananCreateForm />;
       case 'penerimaan':
-        return editId ? <PenerimaanEditForm editId={editId} /> : <PenerimaanCreateForm />;
+        return editId ? <PenerimaanEditForm editId={editId} /> : <PenerimaanCreateForm initialPurchaseOrderId={props.formProps?.purchaseOrderId as string | undefined} />;
       case 'invoice':
         return editId ? <InvoiceEditForm editId={editId} /> : <InvoiceCreateForm />;
       case 'retur':

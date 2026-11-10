@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { FileText, Loader2, Package, Plus, Trash2, Type, Unlink } from 'lucide-react';
+import { FileText, Loader2, Lock, Package, Plus, Trash2, Type, Unlink } from 'lucide-react';
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
@@ -131,7 +131,16 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
         setTerms(termData);
         if (order) {
           setOriginal(order);
-          setHeader(orderHeaderFromResponse(order));
+          const nextHeader = orderHeaderFromResponse(order);
+          // === Update #048 — PO hasil alur Detail ROP → PO draft: alamat
+          // supplier tidak tersimpan saat draft dibuat (masih kosong). Saat
+          // PO dibuka/diedit, alamat ditarik otomatis dari master supplier
+          // bila masih kosong — ikut tersimpan permanen saat PO disimpan. ===
+          if (!isSales && !nextHeader.alamat && nextHeader.supplierId) {
+            const master = findPartyMaster(partyData, nextHeader.supplierId);
+            if (master?.alamat) nextHeader.alamat = master.alamat;
+          }
+          setHeader(nextHeader);
           setLines(orderLinesFromResponse(order));
         }
       })
@@ -1057,7 +1066,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                 <div className="space-y-3 rounded-md border p-4">
                   <div>
                     <Label>Pajak (PPN / PPh23)</Label>
-                    <p className="text-xs text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan saat dibayar).</p>
+                    {/* === Update #048 — tarif PPN PO DIKUNCI (readOnly): terpusat
+                        di Referensi → Perpajakan (RATE_PPN); tarif PPh23 tetap
+                        bisa disesuaikan (default dari RATE_PPH23) karena
+                        bergantung jenis jasa supplier. === */}
+                    <p className="text-xs text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan saat dibayar). Tarif PPN terkunci (Referensi → Perpajakan); tarif PPh23 ber-default dari Perpajakan — dapat disesuaikan per jenis jasa (mis. 2%, 4%, 6%).</p>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${header.ppnApplicable === 'true' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'} ${disabled ? 'cursor-not-allowed opacity-70' : ''}`}>
@@ -1066,8 +1079,12 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         <span className="block font-medium">PPN</span>
                         {header.ppnApplicable === 'true' && (
                           <span className="flex items-center gap-2">
-                            <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs" value={header.ppn} onChange={(event) => setField('ppn', event.target.value)} disabled={disabled} />
-                            <span className="text-xs text-muted-foreground">%</span>
+                            {/* === Update #048 — tarif PPN readOnly: terpusat di
+                                Referensi → Perpajakan (RATE_PPN). === */}
+                            <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={header.ppn} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" disabled={disabled} />
+                            <span className="text-xs text-muted-foreground">
+                              % <Lock className="inline h-3 w-3" aria-hidden />
+                            </span>
                           </span>
                         )}
                       </span>
@@ -1078,7 +1095,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         <span className="block font-medium">PPh23</span>
                         {header.pph23Applicable === 'true' && (
                           <span className="flex items-center gap-2">
-                            <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={header.pph23} onChange={(event) => setField('pph23', event.target.value)} disabled={disabled} />
+                            <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={header.pph23} onChange={(event) => setField('pph23', event.target.value)} disabled={disabled} title="Default dari Referensi → Perpajakan — sesuaikan bila jenis jasa supplier berbeda" />
                             <span className="text-xs text-muted-foreground">%</span>
                           </span>
                         )}

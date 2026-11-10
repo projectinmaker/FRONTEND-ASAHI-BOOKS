@@ -2383,7 +2383,14 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
               <div className="space-y-3 rounded-md border p-4">
                 <div>
                   <Label className="text-xs font-medium">Pajak (PPN / PPh23)</Label>
-                  <p className="text-[11px] text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar). Grand total dihitung ulang saat disimpan.</p>
+                  {/* === Update #048 — keterangan tarif terkunci ditambahkan
+                      (paritas form create Update #046). === */}
+                  <p className="text-[11px] text-muted-foreground">
+                    Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar). Grand total dihitung ulang saat disimpan.{' '}
+                    <span className="inline-flex items-center gap-1 font-medium">
+                      <Lock className="h-3 w-3" /> Tarif terkunci — diatur di Referensi → Perpajakan.
+                    </span>
+                  </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${editPpnApplicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
@@ -2392,7 +2399,9 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                       <span className="block font-medium">PPN</span>
                       {editPpnApplicable && (
                         <span className="flex items-center gap-2">
-                          <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs" value={editPpn} onChange={(e) => setEditPpn(e.target.value)} />
+                          {/* === Update #048 — tarif PPN readOnly (nilai tersimpan;
+                              terpusat di Referensi → Perpajakan). === */}
+                          <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={editPpn} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                           <span className="text-xs text-muted-foreground">%</span>
                         </span>
                       )}
@@ -2404,7 +2413,9 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                       <span className="block font-medium">PPh23</span>
                       {editPph23Applicable && (
                         <span className="flex items-center gap-2">
-                          <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={editPph23} onChange={(e) => setEditPph23(e.target.value)} />
+                          {/* === Update #048 — tarif PPh23 readOnly (nilai
+                              tersimpan; paritas form create Update #046). === */}
+                          <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={editPph23} readOnly aria-readonly="true" title="Tarif PPh23 terkunci — atur di Referensi → Perpajakan" />
                           <span className="text-xs text-muted-foreground">%</span>
                         </span>
                       )}
@@ -2498,7 +2509,8 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
     setFAlamatPengembalian(d.alamatPengembalian || '');
     setFNoPengembalian(d.noPengembalian || '');
     setFDiskonGlobal(d.diskonGlobal ?? '0');
-    setFPpn(d.ppn ?? '11');
+    // === Update #048 — tarif PPN tidak dipulihkan dari draft lagi: nilainya
+    // terkunci & selalu mengikuti Referensi → Perpajakan (RATE_PPN). ===
     setFKeterangan(d.keterangan || '');
     setQuantities(d.quantities || {});
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Retur Penjualan dimuat kembali otomatis.' });
@@ -2541,10 +2553,11 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
     setFAlamatPengembalian('');
     setFNoPengembalian('');
     setFDiskonGlobal('0');
-    setFPpn('11');
+    // === Update #048 — reset tarif mengikuti Referensi → Perpajakan. ===
+    setFPpn(defaultRatesRetur?.ppn ?? '11');
     setFKeterangan('');
     setFormErrors({});
-  }, []);
+  }, [defaultRatesRetur]);
 
   const filteredPengirimanOptions = useMemo(() => (fPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === fPelangganId) : pengirimanOptions), [pengirimanOptions, fPelangganId]);
 
@@ -2709,8 +2722,14 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
               <Input type="number" className="h-9 text-xs" value={fDiskonGlobal} min={0} max={100} onChange={(e) => setFDiskonGlobal(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">PPN (%)</Label>
-              <Input type="number" className="h-9 text-xs" value={fPpn} min={0} max={100} onChange={(e) => setFPpn(e.target.value)} />
+              {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
+                  Referensi → Perpajakan (RATE_PPN); nilai mengikuti setting
+                  global, bukan input manual. === */}
+              <Label className="text-xs font-medium">
+                PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
+              </Label>
+              <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+              <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
             </div>
           </div>
           {/* AUD-12 (update #05) — info PPh23 derived dari invoice sumber (bukan input user).
@@ -2937,8 +2956,14 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
                   <Input type="number" className="h-9 text-xs" value={editDiskonGlobal} min={0} max={100} onChange={(e) => setEditDiskonGlobal(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">PPN (%)</Label>
-                  <Input type="number" className="h-9 text-xs" value={editPpn} min={0} max={100} onChange={(e) => setEditPpn(e.target.value)} />
+                  {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
+                      Referensi → Perpajakan; menampilkan nilai yang tersimpan
+                      pada retur. === */}
+                  <Label className="text-xs font-medium">
+                    PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
+                  </Label>
+                  <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={editPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+                  <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
                 </div>
               </div>
               <div className="space-y-1.5">
