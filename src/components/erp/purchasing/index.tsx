@@ -37,7 +37,7 @@ import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FileText, Package, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, TrendingDown, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, CheckCircle2, Link2, Unlink, Undo2, Lock } from 'lucide-react';
-import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
+import { formatRp, formatDate } from '@/lib/pdf-utils';
 // Update #4 — auto-fill alamat & field terkait dari master saat supplier dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 // Update #007 — quick add master data langsung dari form transaksi
@@ -926,7 +926,7 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
   const [fPurchaseOrderId, setFPurchaseOrderId] = useState('');
   const [fSupplierId, setFSupplierId] = useState('');
   const [fGudangId, setFGudangId] = useState('');
-  const [fTanggal, setFTanggal] = useState(todayStr());
+  const [fTanggal, setFTanggal] = useState('');
   const [fAlamat, setFAlamat] = useState('');
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
@@ -978,7 +978,7 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
     setFPurchaseOrderId(d.purchaseOrderId || '');
     setFSupplierId(d.supplierId || '');
     setFGudangId(d.gudangId || '');
-    setFTanggal(d.tanggal || todayStr());
+    setFTanggal(d.tanggal || '');
     setFAlamat(d.alamat || '');
     setFKeterangan(d.keterangan || '');
     setFPurchaseInvoiceId(d.purchaseInvoiceId || '');
@@ -1014,7 +1014,7 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
     setFPurchaseOrderId('');
     setFSupplierId('');
     setFGudangId('');
-    setFTanggal(todayStr());
+    setFTanggal('');
     setFAlamat('');
     setFKeterangan('');
     setFPurchaseInvoiceId('');
@@ -1218,7 +1218,11 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5" id="field-tanggal">
-                <Label className="text-xs font-medium">Tanggal</Label>
+                {/* === Update #050 — tanda * ditambahkan (field wajib, kini
+                  default kosong — user harus memilih tanggal). === */}
+                <Label className="text-xs font-medium">
+                  Tanggal <span className="text-destructive">*</span>
+                </Label>
                 <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} />
                 {formErrors.tanggal && <p className="text-xs text-destructive">{formErrors.tanggal}</p>}
               </div>
@@ -1435,7 +1439,19 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
       refreshListTab('purchasing', 'penerimaan');
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
-      handleStockError(err, 'Gagal memperbarui penerimaan');
+      // === Update #050 — pesan "Dokumen sudah diposting…" dari server
+      // diterjemahkan jadi penjelasan yang tidak membingungkan. Mengubah link
+      // invoice BUKAN koreksi jurnal — saran "batalkan dengan jurnal pembalik"
+      // pada pesan asli menyesatkan dan sudah dihapus dari tampilan. ===
+      const postedMsg = err instanceof ApiError ? err.detail : err instanceof Error ? err.message : '';
+      if (postedMsg.toLowerCase().includes('diposting')) {
+        toast.error('Link tidak tersimpan — penerimaan sudah final', {
+          description: 'Server masih menolak perubahan pada penerimaan final, termasuk link invoice (pembatasan backend — sedang ditangani, lihat catatan Update #050). Data kamu tidak rusak: penerimaan & invoice tetap tersimpan, hanya hubungannya yang belum tercatat.',
+          duration: 12000
+        });
+      } else {
+        handleStockError(err, 'Gagal memperbarui penerimaan');
+      }
     } finally {
       setEditSubmitting(false);
     }
@@ -1522,7 +1538,9 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5" id="field-tanggal">
-                <Label className="text-xs font-medium">Tanggal {selesaiLocked && <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />}</Label>
+                <Label className="text-xs font-medium">
+                  Tanggal <span className="text-destructive">*</span> {selesaiLocked && <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />}
+                </Label>
                 <Input type="date" className={`h-9 text-xs ${selesaiLocked ? 'bg-muted/60' : ''}`} value={editTanggal} onChange={(e) => setEditTanggal(e.target.value)} readOnly={selesaiLocked} aria-readonly={selesaiLocked} />
               </div>
               <div className="space-y-1.5" id="field-gudangId">
@@ -1633,7 +1651,7 @@ function InvoiceCreateForm() {
   const [submitting, setSubmitting] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [fSupplierId, setFSupplierId] = useState('');
-  const [fTanggal, setFTanggal] = useState(todayStr());
+  const [fTanggal, setFTanggal] = useState('');
   const [fNoFaktur, setFNoFaktur] = useState('');
   const [fAlamat, setFAlamat] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
@@ -1674,7 +1692,7 @@ function InvoiceCreateForm() {
     if (!d) return;
     setFPurchaseOrderId(d.purchaseOrderId || '');
     setFSupplierId(d.supplierId || '');
-    setFTanggal(d.tanggal || todayStr());
+    setFTanggal(d.tanggal || '');
     setFNoFaktur(d.noFaktur || '');
     setFAlamat(d.alamat || '');
     setFDiskonGlobal(d.diskonGlobal ?? '0');
@@ -1726,7 +1744,7 @@ function InvoiceCreateForm() {
     draft.clearDraft();
     setFPurchaseOrderId('');
     setFSupplierId('');
-    setFTanggal(todayStr());
+    setFTanggal('');
     setFNoFaktur('');
     setFAlamat('');
     setFDiskonGlobal('0');
@@ -1896,14 +1914,20 @@ function InvoiceCreateForm() {
         failedPenerimaan = linkResult.failed;
       }
       if (result.mismatches.length) {
-        setSaveWarning('Invoice ' + result.saved.noForm + ' sudah dibuat, tetapi backend belum menyimpan: ' + result.mismatches.join(', ') + (linkedPenerimaan.length ? '. Terhubung ke penerimaan: ' + linkedPenerimaan.join(', ') : '') + '. Buka invoice tersebut dari daftar untuk meninjau. Jangan membuat ulang.');
+        setSaveWarning('Invoice ' + result.saved.noForm + ' sudah dibuat, tetapi beberapa isian belum terkonfirmasi tersimpan: ' + result.mismatches.join(', ') + (linkedPenerimaan.length ? '. Terhubung ke penerimaan: ' + linkedPenerimaan.join(', ') : '') + '. Buka invoice tersebut dari daftar untuk meninjau. Jangan membuat ulang.');
         return;
       }
       toast.success('Invoice pembelian berhasil dibuat', linkedPenerimaan.length ? { description: 'Terhubung otomatis ke penerimaan: ' + linkedPenerimaan.join(', ') + '.' } : undefined);
       if (failedPenerimaan.length) {
-        // === Update #049 — panduan diperbarui: tombol Edit kini tersedia juga
-        // untuk penerimaan berstatus Selesai (alasan error backend ikut tampil). ===
-        toast.warning('Invoice tersimpan, tetapi beberapa penerimaan gagal dihubungkan', { description: 'Gagal: ' + failedPenerimaan.join(' ; ') + '. Buka Daftar Penerimaan Barang → tombol pensil pada penerimaan tersebut → pilih invoice ini di "Link ke Invoice Pembelian" → Simpan.', duration: 10000 });
+        // === Update #050 — pesan dipilah: bila kegagalan disebabkan dokumen
+        // "sudah diposting" (server menolak perubahan link pada penerimaan
+        // final), user TIDAK disuruh edit manual (pasti gagal juga) — dijelaskan
+        // apa adanya. Kegagalan lain tetap diberi panduan manual. ===
+        const postedBlocked = failedPenerimaan.some((f) => f.toLowerCase().includes('diposting'));
+        toast.warning('Invoice tersimpan, tetapi beberapa penerimaan gagal dihubungkan', {
+          description: postedBlocked ? 'Gagal: ' + failedPenerimaan.join(' ; ') + '. Penerimaan sudah final dan server masih menolak perubahan link pada dokumen final (pembatasan backend — sedang ditangani, lihat catatan Update #050). Data tidak rusak: invoice & penerimaan tetap tersimpan, hanya hubungannya yang belum tercatat.' : 'Gagal: ' + failedPenerimaan.join(' ; ') + '. Buka Daftar Penerimaan Barang → tombol pensil pada penerimaan tersebut → pilih invoice ini di "Link ke Invoice Pembelian" → Simpan.',
+          duration: 12000
+        });
       }
       refreshListTab('purchasing', 'invoice');
       if (activeTabId) closeTab(activeTabId);
@@ -2291,11 +2315,19 @@ function InvoiceEditForm({ editId }: { editId: string }) {
         const linkResult = await penerimaanLink.linkToInvoice(editId, editPurchaseOrderId, editSupplierId || undefined);
         if (linkResult.linked.length) toast.success('Penerimaan terhubung ke invoice', { description: linkResult.linked.join(', ') });
         // === Update #049 — panduan diperbarui + alasan error backend ditampilkan. ===
-        if (linkResult.failed.length) toast.warning('Beberapa penerimaan gagal dihubungkan', { description: 'Gagal: ' + linkResult.failed.join(' ; ') + '. Buka Daftar Penerimaan Barang → tombol pensil pada penerimaan tersebut → pilih invoice ini di "Link ke Invoice Pembelian" → Simpan.', duration: 10000 });
+        if (linkResult.failed.length) {
+          // === Update #050 — paritas form buat: kegagalan "sudah diposting"
+          // dijelaskan apa adanya (jangan disuruh edit manual — pasti gagal). ===
+          const postedBlocked = linkResult.failed.some((f) => f.toLowerCase().includes('diposting'));
+          toast.warning('Beberapa penerimaan gagal dihubungkan', {
+            description: postedBlocked ? 'Gagal: ' + linkResult.failed.join(' ; ') + '. Penerimaan sudah final dan server masih menolak perubahan link pada dokumen final (pembatasan backend — sedang ditangani, lihat catatan Update #050). Data tidak rusak, hanya hubungannya yang belum tercatat.' : 'Gagal: ' + linkResult.failed.join(' ; ') + '. Buka Daftar Penerimaan Barang → tombol pensil pada penerimaan tersebut → pilih invoice ini di "Link ke Invoice Pembelian" → Simpan.',
+            duration: 12000
+          });
+        }
       }
       const mismatches = invoiceSaveMismatches(body, saved);
       if (mismatches.length) {
-        setSaveWarning('Backend belum menyimpan: ' + mismatches.join(', ') + '. Data form dipertahankan.');
+        setSaveWarning('Beberapa isian belum terkonfirmasi tersimpan: ' + mismatches.join(', ') + '. Data form dipertahankan.');
         return;
       }
       toast.success('Invoice pembelian berhasil diperbarui');
@@ -2487,7 +2519,7 @@ function ReturCreateForm() {
   const [fPurchaseOrderId, setFPurchaseOrderId] = useState('');
   const [fSupplierId, setFSupplierId] = useState('');
   const [fGudangId, setFGudangId] = useState('');
-  const [fTanggal, setFTanggal] = useState(todayStr());
+  const [fTanggal, setFTanggal] = useState('');
   const [fAlamat, setFAlamat] = useState('');
   const [fPpn, setFPpn] = useState('11');
   const [fKeterangan, setFKeterangan] = useState('');
@@ -2541,7 +2573,7 @@ function ReturCreateForm() {
     setFPurchaseOrderId(d.purchaseOrderId || '');
     setFSupplierId(d.supplierId || '');
     setFGudangId(d.gudangId || '');
-    setFTanggal(d.tanggal || todayStr());
+    setFTanggal(d.tanggal || '');
     setFAlamat(d.alamat || '');
     // === Update #048 — tarif PPN tidak dipulihkan dari draft lagi: nilainya
     // terkunci & selalu mengikuti Referensi → Perpajakan (RATE_PPN). ===
@@ -2580,7 +2612,7 @@ function ReturCreateForm() {
     setFPurchaseOrderId('');
     setFSupplierId('');
     setFGudangId('');
-    setFTanggal(todayStr());
+    setFTanggal('');
     setFAlamat('');
     // === Update #048 — reset tarif mengikuti Referensi → Perpajakan. ===
     setFPpn(defaultRatesRetur?.ppn ?? '11');
@@ -2596,6 +2628,9 @@ function ReturCreateForm() {
     if (!fPurchaseOrderId) errs.purchaseOrderId = 'Purchase Order wajib diisi';
     if (!fSupplierId) errs.supplierId = 'Supplier wajib diisi';
     if (!fPurchaseInvoiceId) errs.purchaseInvoiceId = 'Pilih invoice sumber agar baris retur bisa ditarik otomatis';
+    // === Update #050 — tanggal retur kini wajib dipilih manual (default
+    // kosong, tidak lagi otomatis terisi hari ini). ===
+    if (!fTanggal) errs.tanggal = 'Tanggal wajib diisi';
     // === Task 16-c2: baris retur dibangun dari baris invoice sumber —
     // hanya baris dengan qty retur > 0 yang dikirim; harga mengikuti invoice;
     // tiap baris ter-link purchaseInvoiceDetailId (+purchaseOrderDetailId bila ada).
@@ -2720,9 +2755,22 @@ function ReturCreateForm() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium">Tanggal</Label>
-                <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} />
+              <div className="space-y-1.5" id="field-tanggal">
+                {/* === Update #050 — tanggal wajib dipilih manual (default
+                  kosong) + anchor navigasi otomatis ke field terlewat. === */}
+                <Label className="text-xs font-medium">
+                  Tanggal <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  className="h-9 text-xs"
+                  value={fTanggal}
+                  onChange={(e) => {
+                    setFTanggal(e.target.value);
+                    setFormErrors((p) => ({ ...p, tanggal: '' }));
+                  }}
+                />
+                {formErrors.tanggal && <p className="text-xs text-destructive mt-1">{formErrors.tanggal}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium">Gudang</Label>
@@ -3672,8 +3720,8 @@ function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchase
                                   setReverseTarget(d);
                                   setReverseReason('');
                                 }}
-                                title="Reverse penerimaan (kurangi stok & reverse GRNI journal)"
-                                aria-label="Reverse penerimaan">
+                                title="Batalkan penerimaan (kembalikan stok)"
+                                aria-label="Batalkan penerimaan">
                                 <Undo2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
@@ -3707,19 +3755,20 @@ function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchase
         }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reverse Penerimaan {reverseTarget?.noForm}?</AlertDialogTitle>
+            <AlertDialogTitle>Batalkan Penerimaan {reverseTarget?.noForm}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Penerimaan ini sudah finish (status: SELESAI). Reverse akan:
-              <br />• Reverse GRNI journal (pembalik dari saat finish)
-              <br />• Hapus layer FIFO/FEFO di gudang (stok dikurangi)
-              <br />• Mengubah status penerimaan menjadi DIBATALKAN
+              {/* === Update #050 — teks dialog ditulis ulang tanpa istilah
+                  teknis (dulu: "Reverse GRNI journal", "layer FIFO/FEFO"). === */}
+              Penerimaan ini sudah selesai dan stoknya sudah masuk gudang. Pembatalan akan:
+              <br />• Mengembalikan stok persis seperti sebelum penerimaan (pencatatan jurnal otomatis dibalik)
+              <br />• Mengubah status penerimaan menjadi Dibatalkan
               <br />
               <br />
-              <span className="text-amber-600">Catatan: Tidak bisa reverse kalau sudah ada invoice/retur yang memakai receipt ini. Batalkan/reverse invoice/retur terlebih dahulu.</span>
+              <span className="text-amber-600">Catatan: penerimaan tidak bisa dibatalkan bila sudah dipakai invoice atau retur — batalkan dokumen itu terlebih dahulu.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2 px-6">
-            <Label htmlFor="reverse-reason-penerimaan">Alasan Reversal (opsional)</Label>
+            <Label htmlFor="reverse-reason-penerimaan">Alasan Pembatalan (opsional)</Label>
             <Textarea id="reverse-reason-penerimaan" placeholder="Contoh: Salah input qty / barang rusak / supplier salah kirim / dll" rows={3} maxLength={200} value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} disabled={reversing} />
           </div>
           <AlertDialogFooter>
@@ -3732,7 +3781,7 @@ function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchase
               disabled={reversing}
               className="bg-amber-600 text-white hover:bg-amber-700 gap-2">
               {reversing && <Loader2 className="h-4 w-4 animate-spin" />}
-              Ya, Reverse Penerimaan
+              Ya, Batalkan Penerimaan
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -3835,7 +3884,9 @@ function InvoiceTab({ supplierOptions, barangOptions, purchaseOrderOptions, refr
     refreshKey
   );
 
-  const summaryTotal = data.reduce((s, d) => s + Number(d.grandTotal), 0);
+  // === Update #050 — invoice DIBATALKAN tidak dihitung dalam Total Nilai
+  // (dulu tetap terjumlah meski sudah dibatalkan — membingungkan). ===
+  const summaryTotal = data.filter((d) => d.status !== 'DIBATALKAN').reduce((s, d) => s + Number(d.grandTotal), 0);
 
   return (
     <div className="space-y-6">

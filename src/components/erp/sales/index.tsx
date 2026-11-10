@@ -25,7 +25,9 @@ import { SearchableDropdown, type SearchableDropdownOption } from '@/components/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2, Package, Type, Lock } from 'lucide-react';
-import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
+import { formatRp, formatDate } from '@/lib/pdf-utils';
+// === Update #050 — navigasi otomatis ke field wajib yang terlewat. ===
+import { focusFormError } from '@/lib/form-error-focus';
 // Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 // Update #007 — quick add master data langsung dari form transaksi
@@ -825,7 +827,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
   const [fSalesOrderId, setFSalesOrderId] = useState('');
   const [fPelangganId, setFPelangganId] = useState('');
   const [fGudangId, setFGudangId] = useState('');
-  const [fTanggal, setFTanggal] = useState(todayStr());
+  const [fTanggal, setFTanggal] = useState('');
   // Update #004: field Ekspedisi dihapus dari form DO.
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
   const [fKeterangan, setFKeterangan] = useState('');
@@ -846,7 +848,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     setFSalesOrderId(d.salesOrderId || '');
     setFPelangganId(d.pelangganId || '');
     setFGudangId(d.gudangId || '');
-    setFTanggal(d.tanggal || todayStr());
+    setFTanggal(d.tanggal || '');
     setFAlamatPengiriman(d.alamatPengiriman || '');
     setFKeterangan(d.keterangan || '');
     setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
@@ -880,7 +882,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     setFSalesOrderId('');
     setFPelangganId('');
     setFGudangId('');
-    setFTanggal(todayStr());
+    setFTanggal('');
     setFAlamatPengiriman('');
     setFKeterangan('');
     setFDetail([newDetailRow()]);
@@ -961,6 +963,11 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     if (detailError) errs.detail = detailError;
     if (Object.keys(errs).length) {
       setFormErrors(errs);
+      // === Update #050 — navigasi otomatis ke field wajib yang terlewat
+      // (paritas #049 modul Pembelian). Prefix "dof-" unik untuk form ini
+      // supaya tidak salah sasaran saat beberapa tab form terbuka bersamaan. ===
+      focusFormError(Object.keys(errs), { prefix: 'dof-' });
+      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
       return;
     }
     setFormErrors({});
@@ -1015,7 +1022,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
         <CardContent className="p-6 space-y-4">
           <p className="text-sm text-muted-foreground">Isi data surat jalan / pengiriman barang baru</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" id="dof-salesOrderId">
               <Label className="text-xs font-medium">
                 Sales Order <span className="text-destructive">*</span>
               </Label>
@@ -1023,7 +1030,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat detail SO...</p>}
               {formErrors.salesOrderId && <p className="text-xs text-destructive mt-1">{formErrors.salesOrderId}</p>}
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" id="dof-pelangganId">
               <Label className="text-xs font-medium">
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
@@ -1054,7 +1061,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} />
               {formErrors.tanggal && <p className="text-xs text-destructive">{formErrors.tanggal}</p>}
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" id="dof-gudangId">
               <Label className="text-xs font-medium">
                 Gudang <span className="text-destructive">*</span>
               </Label>
@@ -1397,7 +1404,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // === Update #004: pilihan No DO — tarik data DO ke table invoice
   //     (mirror pola Link ke Sales Order; link per baris via deliveryDetailId). ===
   const [fPengirimanId, setFPengirimanId] = useState('');
-  const [fTanggal, setFTanggal] = useState(todayStr());
+  const [fTanggal, setFTanggal] = useState('');
   // Update #004: Syarat Pembayaran / Ekspedisi / Tanggal Pengiriman / Diskon
   // Global dihapus dari form invoice (sesuai catatan user).
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
@@ -1501,7 +1508,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFPelangganId(d.pelangganId || '');
     setFSalesOrderId(d.salesOrderId || '');
     setFPengirimanId(d.pengirimanId || '');
-    setFTanggal(d.tanggal || todayStr());
+    setFTanggal(d.tanggal || '');
     setFAlamatPengiriman(d.alamatPengiriman || '');
     // === Update #046 — tarif PPN/PPh23 TIDAK dipulihkan dari draft lagi:
     // nilainya terkunci & selalu mengikuti Referensi → Perpajakan
@@ -1561,7 +1568,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     // Update #042 — reset info sisa SO & DP/Pelunasan.
     setSoSisaInfo(null);
     setFDpPelunasan('');
-    setFTanggal(todayStr());
+    setFTanggal('');
     setFAlamatPengiriman('');
     // === Update #046 — reset tarif mengikuti Referensi → Perpajakan (bukan
     // hardcoded 11/2 — nilai terkunci dari settings global). ===
@@ -1761,6 +1768,10 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     }
     if (Object.keys(errs).length) {
       setFormErrors(errs);
+      // === Update #050 — navigasi otomatis ke field wajib yang terlewat
+      // (prefix "sif-" unik untuk form Invoice Penjualan). ===
+      focusFormError(Object.keys(errs), { prefix: 'sif-' });
+      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
       return;
     }
     setSubmitting(true);
@@ -1879,7 +1890,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" id="sif-pelangganId">
               <Label className="text-xs font-medium">
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
@@ -1902,12 +1913,15 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
               </div>
               {formErrors.pelangganId && <p className="text-xs text-destructive mt-1">{formErrors.pelangganId}</p>}
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" id="sif-tanggal">
               {/* Update #004: label "Tanggal" → "Tanggal Invoice". */}
               <Label className="text-xs font-medium">
                 Tanggal Invoice <span className="text-destructive">*</span>
               </Label>
               <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} />
+              {/* === Update #050 — pesan error tanggal kini tampil inline
+                  (dulu divalidasi tapi tidak pernah ditampilkan). === */}
+              {formErrors.tanggal && <p className="text-xs text-destructive mt-1">{formErrors.tanggal}</p>}
             </div>
           </div>
           {/* === Update #045 — field "Alamat Pengiriman" DIHAPUS dari form
@@ -2466,7 +2480,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
   const [saveWarning, setSaveWarning] = useState('');
   const [fPengirimanId, setFPengirimanId] = useState('');
   const [fGudangId, setFGudangId] = useState('');
-  const [fTanggal, setFTanggal] = useState(todayStr());
+  const [fTanggal, setFTanggal] = useState('');
   const [fAlamatPengembalian, setFAlamatPengembalian] = useState('');
   const [fNoPengembalian, setFNoPengembalian] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
@@ -2505,7 +2519,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
     setFInvoiceId(d.invoiceId || '');
     setFPengirimanId(d.pengirimanId || '');
     setFGudangId(d.gudangId || '');
-    setFTanggal(d.tanggal || todayStr());
+    setFTanggal(d.tanggal || '');
     setFAlamatPengembalian(d.alamatPengembalian || '');
     setFNoPengembalian(d.noPengembalian || '');
     setFDiskonGlobal(d.diskonGlobal ?? '0');
@@ -2549,7 +2563,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
     setQuantities({});
     setFPengirimanId('');
     setFGudangId('');
-    setFTanggal(todayStr());
+    setFTanggal('');
     setFAlamatPengembalian('');
     setFNoPengembalian('');
     setFDiskonGlobal('0');
@@ -2571,6 +2585,9 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
     const errs: Record<string, string> = {};
     if (!fInvoiceId) errs.invoiceId = 'Invoice wajib diisi';
     if (!fPelangganId) errs.pelangganId = 'Pelanggan wajib diisi';
+    // === Update #050 — tanggal retur wajib dipilih manual (default kosong,
+    // tidak lagi otomatis terisi hari ini). ===
+    if (!fTanggal) errs.tanggal = 'Tanggal wajib diisi';
     let details: SalesReturDetailCreate[] = [];
     try {
       details = salesReturnDetails(source.invoice, quantities);
@@ -2579,6 +2596,10 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
     }
     if (Object.keys(errs).length) {
       setFormErrors(errs);
+      // === Update #050 — navigasi otomatis ke field wajib yang terlewat
+      // (prefix "srf-" unik untuk form Retur Penjualan). ===
+      focusFormError(Object.keys(errs), { prefix: 'srf-' });
+      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
       return;
     }
     setFormErrors({});
@@ -2604,7 +2625,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
       });
       draft.clearDraft();
       if (result.mismatches.length) {
-        setSaveWarning('Retur ' + result.saved.noRetur + ' sudah dibuat, tetapi respons backend belum mengonfirmasi referensi detail invoice / harga / qty. Tinjau dokumen dari daftar sebelum posting; jangan membuat ulang.');
+        setSaveWarning('Retur ' + result.saved.noRetur + ' sudah dibuat, tetapi beberapa isian (detail/harga/qty) belum terkonfirmasi tersimpan. Buka dokumen dari daftar untuk meninjau. Jangan membuat ulang.');
         return;
       }
       toast.success('Retur penjualan berhasil dibuat');
@@ -2638,7 +2659,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
           )}
           <p className="text-sm text-muted-foreground">Isi data retur / pengembalian barang</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" id="srf-invoiceId">
               <Label className="text-xs font-medium">
                 Invoice <span className="text-destructive">*</span>
               </Label>
@@ -2655,7 +2676,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
               />
               {formErrors.invoiceId && <p className="text-xs text-destructive mt-1">{formErrors.invoiceId}</p>}
             </div>
-            <div className="space-y-1.5">
+            <div className="space-y-1.5" id="srf-pelangganId">
               <Label className="text-xs font-medium">
                 Pelanggan <span className="text-destructive">*</span>
               </Label>
@@ -2664,9 +2685,22 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Tanggal</Label>
-              <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} />
+            <div className="space-y-1.5" id="srf-tanggal">
+              {/* === Update #050 — tanggal wajib dipilih manual (default
+                  kosong) + tanda * + pesan error + anchor navigasi. === */}
+              <Label className="text-xs font-medium">
+                Tanggal <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="date"
+                className="h-9 text-xs"
+                value={fTanggal}
+                onChange={(e) => {
+                  setFTanggal(e.target.value);
+                  setFormErrors((p) => ({ ...p, tanggal: '' }));
+                }}
+              />
+              {formErrors.tanggal && <p className="text-xs text-destructive mt-1">{formErrors.tanggal}</p>}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Gudang</Label>
@@ -3416,20 +3450,21 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
     try {
       const reasonParam = reverseReason.trim() ? `?reason=${encodeURIComponent(reverseReason.trim())}` : '';
       await api.post(`/penjualan/pengiriman/${reverseTarget.id}/reverse${reasonParam}`);
-      toast.success(`Pengiriman ${reverseTarget.noSuratJalan} berhasil di-reverse`);
+      toast.success(`Pengiriman ${reverseTarget.noSuratJalan} berhasil dibatalkan (stok dikembalikan)`);
       setReverseTarget(null);
       setReverseReason('');
       fetchData();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.detail : 'Gagal reverse pengiriman';
+      const msg = e instanceof ApiError ? e.detail : 'Gagal membatalkan pengiriman';
       // Phase 4 — handle specific error cases with longer duration for actionable errors
+      // === Update #050 — teks tanpa istilah "reverse" (pakai "batalkan"). ===
       if (msg.includes('sudah ada invoice') || msg.includes('Batalkan/reverse invoice terlebih dahulu')) {
-        toast.error('Tidak bisa reverse — sudah ada invoice', {
-          description: 'Batalkan/reverse invoice yang memakai delivery ini terlebih dahulu, lalu reverse pengiriman.',
+        toast.error('Tidak bisa membatalkan — sudah ada invoice', {
+          description: 'Batalkan dulu invoice yang memakai pengiriman ini, lalu batalkan pengirimannya.',
           duration: 8000
         });
       } else if (msg.includes('stok') && msg.includes('tidak mencukupi')) {
-        toast.error('Stok tidak mencukupi untuk reverse', { description: msg, duration: 8000 });
+        toast.error('Stok tidak mencukupi untuk pembatalan', { description: msg, duration: 8000 });
       } else {
         toast.error(msg, { duration: 6000 });
       }
@@ -3610,8 +3645,8 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
                                   setReverseTarget(d);
                                   setReverseReason('');
                                 }}
-                                title="Reverse pengiriman (kembalikan stok & reverse HPP journal)"
-                                aria-label="Reverse pengiriman">
+                                title="Batalkan pengiriman (kembalikan stok)"
+                                aria-label="Batalkan pengiriman">
                                 <Undo2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
@@ -3645,19 +3680,20 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
         }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reverse Pengiriman {reverseTarget?.noSuratJalan}?</AlertDialogTitle>
+            <AlertDialogTitle>Batalkan Pengiriman {reverseTarget?.noSuratJalan}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Pengiriman ini sudah finish (status: SELESAI). Reverse akan:
-              <br />• Reverse HPP journal (Dr Persediaan / Cr HPP — pembalik)
-              <br />• Restore layer FIFO/FEFO di gudang (stok dikembalikan)
-              <br />• Mengubah status pengiriman menjadi DIBATALKAN
+              {/* === Update #050 — teks dialog ditulis ulang tanpa istilah
+                  teknis (dulu: "Reverse HPP journal", "layer FIFO/FEFO"). === */}
+              Pengiriman ini sudah selesai dan stoknya sudah keluar gudang. Pembatalan akan:
+              <br />• Mengembalikan stok persis seperti sebelum pengiriman (pencatatan jurnal otomatis dibalik)
+              <br />• Mengubah status pengiriman menjadi Dibatalkan
               <br />
               <br />
-              <span className="text-amber-600">Catatan: Tidak bisa reverse kalau sudah ada invoice yang memakai delivery ini. Batalkan/reverse invoice terlebih dahulu.</span>
+              <span className="text-amber-600">Catatan: pengiriman tidak bisa dibatalkan bila sudah difakturkan — batalkan invoice-nya terlebih dahulu.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2 px-6">
-            <Label htmlFor="reverse-reason-pengiriman">Alasan Reversal (opsional)</Label>
+            <Label htmlFor="reverse-reason-pengiriman">Alasan Pembatalan (opsional)</Label>
             <Textarea id="reverse-reason-pengiriman" placeholder="Contoh: Salah input qty / barang rusak / salah gudang / dll" rows={3} maxLength={200} value={reverseReason} onChange={(e) => setReverseReason(e.target.value)} disabled={reversing} />
           </div>
           <AlertDialogFooter>
@@ -3670,7 +3706,7 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
               disabled={reversing}
               className="bg-amber-600 text-white hover:bg-amber-700 gap-2">
               {reversing && <Loader2 className="h-4 w-4 animate-spin" />}
-              Ya, Reverse Pengiriman
+              Ya, Batalkan Pengiriman
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

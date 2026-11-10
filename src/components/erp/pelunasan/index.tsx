@@ -21,6 +21,8 @@ import { StatusPembayaranBadge } from '@/components/erp/pelunasan/status-badge';
 import { HandCoins, Loader2, Search, AlertCircle, CheckCircle2, Info, Save, X, History, FileSpreadsheet, CircleCheck, Split, BookX } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
+// === Update #050 — navigasi otomatis ke field wajib yang terlewat. ===
+import { focusFormError } from '@/lib/form-error-focus';
 import { api, ApiError } from '@/lib/api';
 import { pelunasanApi } from '@/lib/pelunasan-api';
 // === Update #044 — cabang Gagal Tagih → Voucher Memorial (penghapusan piutang) ===
@@ -247,7 +249,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   const [selected, setSelected] = useState<Record<string, AllocationRow>>({});
 
   // ── Payment form state ──
-  const [tanggal, setTanggal] = useState(todayStr());
+  const [tanggal, setTanggal] = useState('');
   const [kasBankId, setKasBankId] = useState('');
   const [noNukti, setNoNukti] = useState('');
   const [catatan, setCatatan] = useState('');
@@ -650,7 +652,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     setPihakFilter('');
     setNoNukti('');
     setCatatan('');
-    setTanggal(todayStr());
+    setTanggal('');
     setKasBankId('');
     setPenaltiDisplay('');
     setAkunPenaltiId('');
@@ -729,6 +731,13 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     // Update cetak "Bayar Pemasok" — nilai tukar
     if (!isPiutang && !(parseFloat(nilaiTukar.replace(',', '.')) > 0)) e.nilaiTukar = 'Nilai tukar harus lebih dari 0';
     setErrors(e);
+    // === Update #050 — navigasi otomatis ke field wajib yang terlewat
+    // (prefix "pay-" unik untuk halaman pelunasan; validate() hanya
+    // dipanggil saat Simpan — aman dari spam toast). ===
+    if (Object.keys(e).length) {
+      focusFormError(Object.keys(e), { prefix: 'pay-' });
+      toast.error('Ada field wajib yang belum lengkap', { description: 'Diarahkan ke kolom pertama yang belum diisi — kolom wajib ditandai *.' });
+    }
     return Object.keys(e).length === 0;
   }, [pihakFilter, tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId, isPiutang, nilaiTukar, isGagalTagih, nominalTerKunci]);
 
@@ -764,7 +773,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         setModePenerimaan('penuh');
         setRiwayatInvoiceId(null);
         setRiwayatData(null);
-        setTanggal(todayStr());
+        setTanggal('');
         void fetchTagihan();
         // Refresh daftar Voucher Memorial (Kas & Bank) + Penerimaan.
         useTabStore.getState().refreshListTab('cash-bank', 'voucher-memorial');
@@ -827,7 +836,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       setNilaiTukar('1');
       setRiwayatInvoiceId(null);
       setRiwayatData(null);
-      setTanggal(todayStr());
+      setTanggal('');
       setKasBankId('');
       void fetchTagihan();
       // Update #01 — integrasi Kas & Bank: refresh juga daftar Penerimaan/
@@ -1267,7 +1276,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
 
             {/* Form fields */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1.5">
+              <div className="space-y-1.5" id="pay-tanggal">
                 <Label className="text-xs font-medium">
                   Tanggal <span className="text-destructive">*</span>
                 </Label>
@@ -1277,7 +1286,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
               {/* === Update #044 — Kas/Bank hanya untuk mode Penuh/Sebagian
                   (dan hutang); Gagal Tagih non-kas → diganti Akun Beban. === */}
               {!isGagalTagih && (
-                <div className="space-y-1.5 sm:col-span-1">
+                <div className="space-y-1.5 sm:col-span-1" id="pay-kasBank">
                   <Label className="text-xs font-medium">
                     Kas/Bank <span className="text-destructive">*</span>
                   </Label>
@@ -1286,7 +1295,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                 </div>
               )}
               {!isGagalTagih && (
-                <div className="space-y-1.5">
+                <div className="space-y-1.5" id="pay-noNukti">
                   <Label className="text-xs font-medium">
                     No. Referensi <span className="text-destructive">*</span>
                   </Label>
@@ -1368,7 +1377,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
             )}
 
             {errors.pihak && (
-              <div className="text-xs text-destructive flex items-center gap-1">
+              <div className="text-xs text-destructive flex items-center gap-1" id="pay-pihak">
                 <AlertCircle className="h-3.5 w-3.5" /> {errors.pihak}
               </div>
             )}
@@ -1376,7 +1385,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
             <Separator />
 
             {/* Allocation table */}
-            <div className="space-y-2">
+            <div className="space-y-2" id="pay-alokasi">
               <Label className="text-sm font-medium">{isGagalTagih ? 'Rincian Penghapusan Piutang' : 'Rincian Alokasi Pembayaran'}</Label>
               {/* === Update #044 — nominal per invoice: mode Penuh (dan hutang)
                   TERKUNCI = sisa tagihan (#042); mode Sebagian / Gagal Tagih
