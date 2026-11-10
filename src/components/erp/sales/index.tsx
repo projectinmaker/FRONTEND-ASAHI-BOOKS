@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2, Package, Type } from 'lucide-react';
+import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2, Package, Type, Lock } from 'lucide-react';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 // Update #4 — auto-fill alamat & syarat bayar dari master saat pelanggan dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
@@ -1186,15 +1186,20 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                     Pelanggan <span className="text-destructive">*</span>
                   </Label>
                   <div className="flex items-start gap-1.5">
-                    <SearchableDropdown className="min-w-0 flex-1" value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
-                    {/* Update #007: quick add pelanggan */}
-                    <QuickAddPelangganButton
-                      onCreated={(p) => {
-                        const drop = toPelangganDropdown(p);
-                        setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
-                        handleEditPelangganChange(p.id, drop);
-                      }}
-                    />
+                    {/* === Update #046 — pelanggan DIKUNCI saat SO terpilih
+                        (mengikuti dokumen sumber — paritas form create). === */}
+                    <SearchableDropdown className="min-w-0 flex-1" value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder={editSalesOrderId ? 'Mengikuti Sales Order terpilih' : 'Pilih pelanggan...'} disabled={!!editSalesOrderId} />
+                    {/* Update #007: quick add pelanggan.
+                        === Update #046 — DISEMBUNYIKAN saat SO terpilih (narik data). === */}
+                    {!editSalesOrderId && (
+                      <QuickAddPelangganButton
+                        onCreated={(p) => {
+                          const drop = toPelangganDropdown(p);
+                          setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                          handleEditPelangganChange(p.id, drop);
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
               </div>
@@ -1408,10 +1413,11 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFPengirimanId(d.pengirimanId || '');
     setFTanggal(d.tanggal || todayStr());
     setFAlamatPengiriman(d.alamatPengiriman || '');
-    setFPpn(d.ppn ?? '11');
+    // === Update #046 — tarif PPN/PPh23 TIDAK dipulihkan dari draft lagi:
+    // nilainya terkunci & selalu mengikuti Referensi → Perpajakan
+    // (RATE_PPN / RATE_PPH23). Pilihan pakai/tidak tetap dipulihkan. ===
     setFPpnApplicable(d.ppnApplicable ?? true);
     setFPph23Applicable(d.pph23Applicable ?? false);
-    setFPph23(d.pph23 ?? '2');
     setFKeterangan(d.keterangan || '');
     // Update #042 — pulihkan DP/Pelunasan dari draft (isian user dipertahankan).
     setFDpPelunasan(d.dpPelunasan || '');
@@ -1467,15 +1473,17 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
     setFDpPelunasan('');
     setFTanggal(todayStr());
     setFAlamatPengiriman('');
-    setFPpn('11');
+    // === Update #046 — reset tarif mengikuti Referensi → Perpajakan (bukan
+    // hardcoded 11/2 — nilai terkunci dari settings global). ===
+    setFPpn(defaultRates?.ppn ?? '11');
     setFPpnApplicable(true);
     setFPph23Applicable(false);
-    setFPph23('2');
+    setFPph23(defaultRates?.pph23 ?? '2');
     setFKeterangan('');
     setFDetail([newDetailRow()]);
     setFBiayaTambahan([]);
     setFormErrors({});
-  }, []);
+  }, [defaultRates]);
 
   // === Tarik data otomatis SO → Invoice Penjualan (Task 16-c2): saat SO
   // dipilih, ambil SISA qty per baris (endpoint /sisa), auto-set pelanggan,
@@ -1742,6 +1750,37 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       <Card className="max-w-5xl">
         <CardContent className="p-6 space-y-4">
           <p className="text-sm text-muted-foreground">Isi data invoice penjualan baru</p>
+          {/* === Update #046 — field pilih SO dipindah ke PALING PERTAMA (sebelum
+              Pelanggan/Tanggal): pilih dokumen sumber duluan → pelanggan, baris
+              item & nilai ditagih otomatis ditarik. Label "Link ke Sales Order"
+              diganti "Sales Order" (permintaan user). === */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Sales Order</Label>
+              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
+              {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
+              {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
+              {soRefInfo && (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  No SO: <span className="font-mono font-medium text-foreground">{soRefInfo.noPesanan}</span>
+                  <span className="mx-1.5">·</span>
+                  No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
+                </div>
+              )}
+            </div>
+            {/* === Update #004: No DO — tarik data DO seperti No SO; baris DO
+                masuk ke table invoice (link deliveryDetailId). === */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">No DO</Label>
+              <SearchableDropdown value={fPengirimanId} onValueChange={handlePengirimanChange} options={doOptions.map((p) => ({ id: p.id, label: p.noSuratJalan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder={fPelangganId ? 'Pilih No DO...' : 'Pilih pelanggan dulu (atau pilih bebas)...'} disabled={doLoading} />
+              {doLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa DO...</p>}
+              {fPengirimanId && (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  No DO: <span className="font-mono font-medium text-foreground">{doOptions.find((p) => p.id === fPengirimanId)?.noSuratJalan || fPengirimanId}</span>
+                </div>
+              )}
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">
@@ -1772,33 +1811,6 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
                 Tanggal Invoice <span className="text-destructive">*</span>
               </Label>
               <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">Link ke Sales Order</Label>
-              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." disabled={soLoading} />
-              {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
-              {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
-              {soRefInfo && (
-                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  No SO: <span className="font-mono font-medium text-foreground">{soRefInfo.noPesanan}</span>
-                  <span className="mx-1.5">·</span>
-                  No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
-                </div>
-              )}
-            </div>
-            {/* === Update #004: No DO — tarik data DO seperti No SO; baris DO
-                masuk ke table invoice (link deliveryDetailId). === */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium">No DO</Label>
-              <SearchableDropdown value={fPengirimanId} onValueChange={handlePengirimanChange} options={doOptions.map((p) => ({ id: p.id, label: p.noSuratJalan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder={fPelangganId ? 'Pilih No DO...' : 'Pilih pelanggan dulu (atau pilih bebas)...'} disabled={doLoading} />
-              {doLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa DO...</p>}
-              {fPengirimanId && (
-                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  No DO: <span className="font-mono font-medium text-foreground">{doOptions.find((p) => p.id === fPengirimanId)?.noSuratJalan || fPengirimanId}</span>
-                </div>
-              )}
             </div>
           </div>
           {/* === Update #045 — field "Alamat Pengiriman" DIHAPUS dari form
@@ -1839,11 +1851,20 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
           {/* Update #004: blok Diskon Global % dihapus dari form invoice. */}
           {/* ── Update ASAHI (PPh23/PPN opsional) — pilih pajak saat input:
               boleh dua-duanya, salah satu, atau tidak sama sekali.
-              PPh23 (jika dipilih) memotong grand total. ── */}
+              PPh23 (jika dipilih) memotong grand total.
+              === Update #046 — TARIF PPN & PPh23 DIKUNCI: nilainya diatur
+              terpusat di Referensi → Perpajakan (RATE_PPN / RATE_PPH23) dan
+              otomatis ditarik ke form; hanya pilihan pakai/tidak yang bisa
+              diubah per invoice. === */}
           <div className="space-y-3 rounded-md border p-4">
             <div>
               <Label className="text-xs font-medium">Pajak (PPN / PPh23)</Label>
-              <p className="text-[11px] text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar).</p>
+              <p className="text-[11px] text-muted-foreground">
+                Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar).{' '}
+                <span className="inline-flex items-center gap-1 font-medium">
+                  <Lock className="h-3 w-3" /> Tarif terkunci — diatur di Referensi → Perpajakan.
+                </span>
+              </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${fPpnApplicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
@@ -1852,7 +1873,8 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
                   <span className="block font-medium">PPN</span>
                   {fPpnApplicable && (
                     <span className="flex items-center gap-2">
-                      <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs" value={fPpn} onChange={(e) => setFPpn(e.target.value)} />
+                      {/* === Update #046 — tarif PPN readOnly (dari Perpajakan). === */}
+                      <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={fPpn} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                       <span className="text-xs text-muted-foreground">%</span>
                     </span>
                   )}
@@ -1864,7 +1886,9 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
                   <span className="block font-medium">PPh23</span>
                   {fPph23Applicable && (
                     <span className="flex items-center gap-2">
-                      <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={fPph23} onChange={(e) => setFPph23(e.target.value)} />
+                      {/* === Update #046 — tarif PPh23 readOnly (dari Perpajakan);
+                          centang pakai/tidak tetap bisa diubah. === */}
+                      <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={fPph23} readOnly aria-readonly="true" title="Tarif PPh23 terkunci — atur di Referensi → Perpajakan" />
                       <span className="text-xs text-muted-foreground">%</span>
                     </span>
                   )}
@@ -2188,15 +2212,20 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                     Pelanggan <span className="text-destructive">*</span>
                   </Label>
                   <div className="flex items-start gap-1.5">
-                    <SearchableDropdown className="min-w-0 flex-1" value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder="Pilih pelanggan..." />
-                    {/* Update #007: quick add pelanggan */}
-                    <QuickAddPelangganButton
-                      onCreated={(p) => {
-                        const drop = toPelangganDropdown(p);
-                        setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
-                        handleEditPelangganChange(p.id, drop);
-                      }}
-                    />
+                    {/* === Update #046 — pelanggan DIKUNCI saat SO terpilih
+                        (mengikuti dokumen sumber — paritas form create). === */}
+                    <SearchableDropdown className="min-w-0 flex-1" value={editPelangganId} onValueChange={handleEditPelangganChange} options={pelangganOptions.map((p) => ({ id: p.id, label: p.nama }))} placeholder={editSalesOrderId ? 'Mengikuti Sales Order terpilih' : 'Pilih pelanggan...'} disabled={!!editSalesOrderId} />
+                    {/* Update #007: quick add pelanggan.
+                        === Update #046 — DISEMBUNYIKAN saat SO terpilih (narik data). === */}
+                    {!editSalesOrderId && (
+                      <QuickAddPelangganButton
+                        onCreated={(p) => {
+                          const drop = toPelangganDropdown(p);
+                          setPelangganOptions((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                          handleEditPelangganChange(p.id, drop);
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="space-y-1.5">
@@ -2209,8 +2238,10 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">Link ke Sales Order</Label>
-                  <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Opsional..." disabled={soLoading} />
+                  {/* === Update #046 — label "Link ke Sales Order" → "Sales Order"
+                      (paritas form create; permintaan user). === */}
+                  <Label className="text-xs font-medium">Sales Order</Label>
+                  <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
                   {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
                   {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
                   {soRefInfo && (

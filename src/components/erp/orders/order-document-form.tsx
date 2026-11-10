@@ -702,17 +702,22 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                   {/* Update #4: pilih party → alamat/syarat bayar/currency ditarik otomatis dari master */}
                   <div className="flex items-start gap-1.5">
                     <SearchableDropdown className="min-w-0 flex-1" value={header[partyKey]} onValueChange={handlePartyChange} options={includeCurrent(parties, currentPartyId, currentParty?.nama)} disabled={disabled || (isSales && penawaranLocked)} placeholder={isSales ? (penawaranLocked ? 'Mengikuti penawaran terpilih' : 'Pilih pelanggan') : 'Pilih supplier'} />
-                    {/* Update #007: quick add pelanggan/supplier tanpa keluar dari form */}
+                    {/* Update #007: quick add pelanggan/supplier tanpa keluar dari form.
+                        === Update #046 — tombol quick add DISEMBUNYIKAN saat mode
+                        narik data (SO dari penawaran — pelanggan terkunci mengikuti
+                        dokumen sumber); muncul lagi saat SO manual (tanpa penawaran). === */}
                     {isSales ? (
-                      <QuickAddPelangganButton
-                        disabled={disabled}
-                        onCreated={(p) => {
-                          const drop = toPelangganDropdown(p);
-                          setPartyRows((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
-                          setParties((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, { id: p.id, label: p.nama }]));
-                          handlePartyChange(p.id, drop);
-                        }}
-                      />
+                      !penawaranLocked && (
+                        <QuickAddPelangganButton
+                          disabled={disabled}
+                          onCreated={(p) => {
+                            const drop = toPelangganDropdown(p);
+                            setPartyRows((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, drop]));
+                            setParties((prev) => (prev.some((row) => row.id === p.id) ? prev : [...prev, { id: p.id, label: p.nama }]));
+                            handlePartyChange(p.id, drop);
+                          }}
+                        />
+                      )
                     ) : (
                       <QuickAddSupplierButton
                         disabled={disabled}

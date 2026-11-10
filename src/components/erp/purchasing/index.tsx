@@ -33,7 +33,7 @@ import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { FileText, Package, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, TrendingDown, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, CheckCircle2, Link2, Unlink, Undo2 } from 'lucide-react';
+import { FileText, Package, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, TrendingDown, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, CheckCircle2, Link2, Unlink, Undo2, Lock } from 'lucide-react';
 import { formatRp, formatDate, todayStr } from '@/lib/pdf-utils';
 // Update #4 — auto-fill alamat & field terkait dari master saat supplier dipilih
 import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
@@ -952,6 +952,8 @@ function PenerimaanCreateForm() {
                 Supplier <span className="text-destructive">*</span>
               </Label>
               <div className="flex items-start gap-1.5">
+                {/* === Update #046 — supplier DIKUNCI saat PO terpilih (menarik
+                    data dari PO; supplier mengikuti dokumen sumber). === */}
                 <SearchableDropdown
                   className="min-w-0 flex-1"
                   value={fSupplierId}
@@ -963,19 +965,24 @@ function PenerimaanCreateForm() {
                     setFAlamat(master?.alamat || '');
                   }}
                   options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
-                  placeholder="Pilih supplier..."
+                  placeholder={fPurchaseOrderId ? 'Mengikuti PO terpilih' : 'Pilih supplier...'}
+                  disabled={!!fPurchaseOrderId}
                 />
-                {/* Update #007: quick add supplier */}
-                <QuickAddSupplierButton
-                  onCreated={(sup) => {
-                    const drop = toSupplierDropdown(sup);
-                    setSupplierOptions((prev) => (prev.some((row) => row.id === sup.id) ? prev : [...prev, drop]));
-                    setFSupplierId(sup.id);
-                    setFPurchaseInvoiceId('');
-                    setFAlamat(sup.alamat || '');
-                    setFormErrors((prev) => (prev.supplierId ? { ...prev, supplierId: '' } : prev));
-                  }}
-                />
+                {/* Update #007: quick add supplier.
+                    === Update #046 — tombol DISEMBUNYIKAN saat mode narik data
+                    (PO terpilih — supplier terkunci); muncul saat manual. === */}
+                {!fPurchaseOrderId && (
+                  <QuickAddSupplierButton
+                    onCreated={(sup) => {
+                      const drop = toSupplierDropdown(sup);
+                      setSupplierOptions((prev) => (prev.some((row) => row.id === sup.id) ? prev : [...prev, drop]));
+                      setFSupplierId(sup.id);
+                      setFPurchaseInvoiceId('');
+                      setFAlamat(sup.alamat || '');
+                      setFormErrors((prev) => (prev.supplierId ? { ...prev, supplierId: '' } : prev));
+                    }}
+                  />
+                )}
               </div>
               {formErrors.supplierId && <p className="text-xs text-destructive mt-1">{formErrors.supplierId}</p>}
             </div>
@@ -1393,7 +1400,8 @@ function InvoiceCreateForm() {
     setFNoFaktur(d.noFaktur || '');
     setFAlamat(d.alamat || '');
     setFDiskonGlobal(d.diskonGlobal ?? '0');
-    setFPpn(d.ppn ?? '11');
+    // === Update #046 — tarif PPN TIDAK dipulihkan dari draft lagi: nilainya
+    // terkunci & selalu mengikuti Referensi → Perpajakan (RATE_PPN). ===
     setFKeterangan(d.keterangan || '');
     setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newDetailRow()]);
     setFBiayaTambahan(Array.isArray(d.biayaTambahan) ? d.biayaTambahan : []);
@@ -1437,13 +1445,15 @@ function InvoiceCreateForm() {
     setFNoFaktur('');
     setFAlamat('');
     setFDiskonGlobal('0');
-    setFPpn('11');
+    // === Update #046 — reset tarif mengikuti Referensi → Perpajakan (bukan
+    // hardcoded 11 — nilai terkunci dari settings global). ===
+    setFPpn(defaultRates?.ppn ?? '11');
     setFKeterangan('');
     setFDetail([newDetailRow()]);
     setFBiayaTambahan([]);
     setPoSisaInfo(null);
     setFormErrors({});
-  }, []);
+  }, [defaultRates]);
 
   // === Tarik data otomatis PO → Invoice Pembelian (Task 16-c2): saat PO
   // dipilih, ambil SISA qty per baris (endpoint /sisa), auto-set supplier,
@@ -1675,6 +1685,8 @@ function InvoiceCreateForm() {
                 Supplier <span className="text-destructive">*</span>
               </Label>
               <div className="flex items-start gap-1.5">
+                {/* === Update #046 — supplier DIKUNCI saat PO terpilih (menarik
+                    data dari PO; supplier mengikuti dokumen sumber). === */}
                 <SearchableDropdown
                   className="min-w-0 flex-1"
                   value={fSupplierId}
@@ -1685,18 +1697,23 @@ function InvoiceCreateForm() {
                     setFAlamat(master?.alamat || '');
                   }}
                   options={supplierOptions.map((s) => ({ id: s.id, label: s.nama }))}
-                  placeholder="Pilih supplier..."
+                  placeholder={fPurchaseOrderId ? 'Mengikuti PO terpilih' : 'Pilih supplier...'}
+                  disabled={!!fPurchaseOrderId}
                 />
-                {/* Update #007: quick add supplier */}
-                <QuickAddSupplierButton
-                  onCreated={(sup) => {
-                    const drop = toSupplierDropdown(sup);
-                    setSupplierOptions((prev) => (prev.some((row) => row.id === sup.id) ? prev : [...prev, drop]));
-                    setFSupplierId(sup.id);
-                    setFAlamat(sup.alamat || '');
-                    setFormErrors((prev) => (prev.supplierId ? { ...prev, supplierId: '' } : prev));
-                  }}
-                />
+                {/* Update #007: quick add supplier.
+                    === Update #046 — tombol DISEMBUNYIKAN saat mode narik data
+                    (PO terpilih — supplier terkunci); muncul saat manual. === */}
+                {!fPurchaseOrderId && (
+                  <QuickAddSupplierButton
+                    onCreated={(sup) => {
+                      const drop = toSupplierDropdown(sup);
+                      setSupplierOptions((prev) => (prev.some((row) => row.id === sup.id) ? prev : [...prev, drop]));
+                      setFSupplierId(sup.id);
+                      setFAlamat(sup.alamat || '');
+                      setFormErrors((prev) => (prev.supplierId ? { ...prev, supplierId: '' } : prev));
+                    }}
+                  />
+                )}
               </div>
               {formErrors.supplierId && <p className="text-xs text-destructive mt-1">{formErrors.supplierId}</p>}
             </div>
@@ -1754,8 +1771,13 @@ function InvoiceCreateForm() {
               <Input type="number" className="h-9 text-xs" value={fDiskonGlobal} min={0} max={100} onChange={(e) => setFDiskonGlobal(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">PPN (%)</Label>
-              <Input type="number" className="h-9 text-xs" value={fPpn} min={0} max={100} onChange={(e) => setFPpn(e.target.value)} />
+              {/* === Update #046 — tarif PPN DIKUNCI (readOnly): nilainya diatur
+                  terpusat di Referensi → Perpajakan (RATE_PPN). === */}
+              <Label className="text-xs font-medium">
+                PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
+              </Label>
+              <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+              <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
             </div>
           </div>
           {/* AUD-09 (update #04) — PPh 23 pada Purchase Invoice */}
@@ -1770,8 +1792,14 @@ function InvoiceCreateForm() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium">PPh 23 (%)</Label>
-              <Input type="number" className="h-9 text-xs" value={fPph23} min={0} max={100} disabled={!fPph23Applicable} onChange={(e) => setFPph23(e.target.value)} />
+              {/* === Update #046 — tarif PPh 23 DIKUNCI (readOnly): nilai dari
+                  Referensi → Perpajakan (RATE_PPH23); centang pakai/tidak tetap
+                  bisa diubah. === */}
+              <Label className="text-xs font-medium">
+                PPh 23 (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
+              </Label>
+              <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPph23} min={0} max={100} disabled={!fPph23Applicable} readOnly aria-readonly="true" title="Tarif PPh 23 terkunci — atur di Referensi → Perpajakan" />
+              <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
             </div>
           </div>
           <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} pph23Pct={fPph23Applicable ? parseFloat(fPph23) || 0 : 0} />
