@@ -13,15 +13,22 @@ interface AuthState {
   isLoading: boolean;
   // === Update #043 — sesi login 2 jam ===
   /** Batas waktu sesi (epoch ms) — persist di localStorage bersama token.
-   *  null = tanpa batas (legacy token sebelum #043). */
+   *  null = tanpa batas (legacy token sebelum #043).
+   *  === Update #051 — batas ini kini DIGESER mengikuti aktivitas user
+   *  (idle-timeout): hook useSessionWatch memperpanjangnya setiap kali user
+   *  aktif, jadi sesi hanya berakhir bila TIDAK ada aktivitas 2 jam penuh. === */
   expiresAt: number | null;
-  /** true setelah sesi berakhir (timer 2 jam ATAU 401 dari api.ts) —
+  /** true setelah sesi berakhir (idle 2 jam ATAU 401 dari api.ts) —
    *  memunculkan AlertDialog "Sesi Berakhir"; tab TIDAK direset. */
   sessionExpired: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   /** Update #043 — tandai sesi berakhir (idempotent; tidak reset tab). */
   markSessionExpired: () => void;
+  /** Update #051 — sesi geser: tukar token masih-sah dengan token baru
+   *  berumur penuh + perpanjang expiresAt. Dipanggil useSessionWatch saat
+   *  user aktif & token sudah berumur > 30 menit. */
+  refreshSession: () => Promise<void>;
   initAdmin: () => Promise<void>;
   setUser: (user: UserResponse) => void;
 }
@@ -29,6 +36,11 @@ interface AuthState {
 // === Update #043 — durasi sesi login: 2 jam ===
 const SESSION_DURATION_MS = 2 * 60 * 60 * 1000;
 const EXPIRES_AT_KEY = 'asahi_erp_expires_at';
+// === Update #051 — waktu terakhir token digeser (POST /auth/refresh).
+// Dipakai useSessionWatch untuk throttle: token hanya ditukar bila sudah
+// berumur > 30 menit, bukan di setiap aktivitas. ===
+const LAST_REFRESH_KEY = 'asahi_erp_last_refresh';
+const LAST_ACTIVITY_KEY = 'asahi_erp_last_activity';
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: getUser(),
@@ -47,6 +59,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       // berlaku setelah refresh halaman; mirror pola token di localStorage). ===
       const expiresAt = Date.now() + SESSION_DURATION_MS;
       setExpiresAt(expiresAt);
+      setLastRefresh(Date.now());
+      setLastActivity(Date.now());
       set({ user: res.user, isAuthenticated: true, isLoading: false, expiresAt, sessionExpired: false });
       // Muat permission efektif (RBAC v2) — fire-and-forget, jangan di-await.
       void useAccessStore.getState().fetchPermissions();
@@ -62,6 +76,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     // === Update #043 — bersihkan state sesi (logout manual TIDAK memunculkan
     // popup "Sesi Berakhir" — sessionExpired direset). ===
     setExpiresAt(null);
+    // === Update #051 — bersihkan jejak idle-timeout juga. ===
+    setLastRefresh(null);
+    setLastActivity(null);
     set({ user: null, isAuthenticated: false, expiresAt: null, sessionExpired: false });
     // Reset permission RBAC (event `auth:logout` untuk listener lain sudah
     // ditangani api.ts pada kasus 401; di sini cukup reset langsung agar
@@ -84,6 +101,31 @@ export const useAuthStore = create<AuthState>((set) => ({
   // membersihkan token/user. ===
   markSessionExpired: () => {
     set((s) => (s.sessionExpired ? s : { sessionExpired: true }));
+  },
+
+  // === Update #051 — sesi geser (idle-timeout). Tukar token lama yang masih
+  // sah dengan token baru berumur penuh lewat POST /auth/refresh, lalu
+  // perpanjang expiresAt. Dipanggil useSessionWatch saat user AKTIF — jadi
+  // selama user bekerja, token selalu segar dan sesi tidak pernah berakhir;
+  // sesi hanya berakhir bila user tidak ada aktivitas 2 jam penuh. ===
+  refreshSession: async () => {
+    const s = useAuthStore.getState();
+    if (!s.isAuthenticated || s.sessionExpired) return;
+    try {
+      const res = await api.post<LoginResponse>('/auth/refresh');
+      setToken(res.accessToken);
+      setUserStorage(res.user);
+      const expiresAt = Date.now() + SESSION_DURATION_MS;
+      setExpiresAt(expiresAt);
+      setLastRefresh(Date.now());
+      // Data user ikut disinkronkan (role/nama bisa diubah admin sejak login).
+      set({ user: res.user, expiresAt, sessionExpired: false });
+    } catch {
+      // 401 → token sudah kadaluarsa (user idle terlalu lama): api.ts sudah
+      // membersihkan token + memicu 'auth:expired' (popup Sesi Berakhir).
+      // Error lain (server sebentar tidak terjangkau): dicoba lagi pada tick
+      // berikutnya — selama token lama masih sah, tidak ada gangguan.
+    }
   },
 
   initAdmin: async () => {
@@ -149,6 +191,41 @@ function setExpiresAt(expiresAt: number | null) {
   }
 }
 
+// === Update #051 — waktu terakhir token digeser / aktivitas terakhir user
+// (persist di localStorage; dibaca lintas tab oleh useSessionWatch). ===
+export function readLastRefresh(): number {
+  if (typeof window === 'undefined') return 0;
+  const raw = localStorage.getItem(LAST_REFRESH_KEY);
+  const parsed = raw ? Number(raw) : 0;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function setLastRefresh(ts: number | null) {
+  if (typeof window === 'undefined') return;
+  if (ts != null) {
+    localStorage.setItem(LAST_REFRESH_KEY, String(ts));
+  } else {
+    localStorage.removeItem(LAST_REFRESH_KEY);
+  }
+}
+
+export function readExpiresAt(): number | null {
+  if (typeof window === 'undefined') return null;
+  const raw = localStorage.getItem(EXPIRES_AT_KEY);
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function setLastActivity(ts: number | null) {
+  if (typeof window === 'undefined') return;
+  if (ts != null) {
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(ts));
+  } else {
+    localStorage.removeItem(LAST_ACTIVITY_KEY);
+  }
+}
+
 // Listener untuk event 401 dari api.ts
 if (typeof window !== 'undefined') {
   window.addEventListener('auth:logout', () => {
@@ -161,6 +238,9 @@ if (typeof window !== 'undefined') {
     setToken(null);
     setUserStorage(null);
     setExpiresAt(null);
+    // === Update #051 — bersihkan jejak idle-timeout juga. ===
+    setLastRefresh(null);
+    setLastActivity(null);
     useAuthStore.getState().markSessionExpired();
   });
 }

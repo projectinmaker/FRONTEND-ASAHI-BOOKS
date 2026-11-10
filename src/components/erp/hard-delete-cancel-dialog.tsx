@@ -3,11 +3,22 @@
 /**
  * Dialog konfirmasi pembatalan dokumen (Update AUD-01 — non-destruktif).
  *
- * Dokumen yang SUDAH diposting dibatalkan dengan JURNAL PEMBALIK:
- * dokumen berstatus BATAL/DIBATALKAN, jurnal asli tetap tersimpan untuk
- * audit, saldo & outstanding dipulihkan otomatis. Dokumen draft (belum
- * posting) dihapus permanen seperti kebijakan lama, dengan snapshot
- * histori ke log dokumen terhapus.
+ * === Update #051 — AUDIT TEKS ===
+ * Istilah teknis yang membingungkan user dihapus/diterjemahkan:
+ * - "jurnal pembalik (non-destruktif)" → "pencatatan pembalikan otomatis"
+ *   (mekanismenya dijelaskan dengan efeknya bagi user: saldo kembali,
+ *   jejak tetap tersimpan — bukan dengan istilah akuntansi/internal).
+ * - "BATAL/DIBATALKAN" (dua ejaan status sekaligus) → "Dibatalkan"
+ *   (satu sebutan, sama seperti badge yang tampil di daftar dokumen).
+ * - "tercatat di jurnal pembalik & workflow" → "tercatat di riwayat
+ *   pembatalan" (workflow = istilah internal sistem).
+ * Makna teknis tetap sama — hanya bahasanya yang dibuat awam.
+ *
+ * Dokumen yang SUDAH diposting dibatalkan dengan pencatatan pembalikan
+ * otomatis: dokumen berstatus Dibatalkan, catatan asli tetap tersimpan
+ * untuk audit, saldo & outstanding dipulihkan otomatis. Dokumen draft
+ * (belum posting) dihapus permanen seperti kebijakan lama, dengan
+ * jejak penghapusan ke log dokumen terhapus.
  */
 
 import { useState } from 'react';
@@ -54,26 +65,26 @@ export function HardDeleteCancelDialog({ open, onOpenChange, title, formLabel, s
               {posted === true && (
                 <>
                   <span className="block">
-                    Dokumen {formLabel} sudah <strong>diposting</strong> — pembatalan dibuatkan <strong className="text-destructive">jurnal pembalik</strong> (non-destruktif). Dokumen berstatus <strong>BATAL/DIBATALKAN</strong>, jurnal asli tetap tersimpan untuk audit, dan saldo piutang/hutang/kas dipulihkan otomatis.
+                    Dokumen {formLabel} sudah tercatat final. Pembatalannya dilakukan lewat <strong className="text-destructive">pencatatan pembalikan otomatis</strong>: saldo &amp; data terkait dikembalikan seperti sebelumnya, dokumen menjadi berstatus <strong>Dibatalkan</strong>, dan catatan aslinya tetap tersimpan untuk audit.
                   </span>
-                  <span className="block text-muted-foreground">Periode yang sudah ditutup tidak bisa dibatalkan — buka periode terlebih dahulu lewat Penutupan Periode.</span>
+                  <span className="block text-muted-foreground">Periode akuntansi yang sudah ditutup tidak bisa dibatalkan — buka dulu periode tersebut lewat menu Penutupan Periode.</span>
                 </>
               )}
               {posted === false && (
                 <>
                   <span className="block">
-                    Dokumen {formLabel} belum diposting (draft) dan akan <strong className="text-destructive">dihapus permanen</strong> beserta datanya. Tindakan ini tidak dapat dibatalkan.
+                    Dokumen {formLabel} masih draft (belum tercatat final) dan akan <strong className="text-destructive">dihapus permanen</strong> beserta datanya. Tindakan ini tidak bisa dibatalkan.
                   </span>
-                  <span className="block text-muted-foreground">Histori dokumen tetap tersimpan di log dokumen terhapus untuk keperluan audit.</span>
+                  <span className="block text-muted-foreground">Jejak dokumen yang dihapus tetap tersimpan di riwayat untuk keperluan audit.</span>
                 </>
               )}
               {posted === undefined && (
                 <>
                   <span className="block">
-                    Bila dokumen {formLabel} <strong>sudah diposting</strong>: dibuatkan <strong className="text-destructive">jurnal pembalik</strong> (non-destruktif) — dokumen berstatus BATAL/DIBATALKAN, jurnal asli tetap tersimpan untuk audit, saldo &amp; outstanding dipulihkan.
+                    Bila dokumen {formLabel} <strong>sudah tercatat final</strong>: dibatalkan lewat pencatatan pembalikan otomatis — saldo &amp; data terkait dikembalikan, dokumen menjadi <strong>Dibatalkan</strong>, catatan asli tetap tersimpan untuk audit.
                   </span>
                   <span className="block">
-                    Bila masih <strong>draft</strong>: dihapus permanen beserta datanya (histori snapshot tetap tersimpan).
+                    Bila masih <strong>draft</strong>: dokumen dihapus permanen beserta datanya (jejaknya tetap tersimpan di riwayat).
                   </span>
                 </>
               )}
@@ -81,7 +92,7 @@ export function HardDeleteCancelDialog({ open, onOpenChange, title, formLabel, s
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-1.5">
-          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder={`Alasan pembatalan (opsional — ${posted ? 'tercatat di jurnal pembalik & workflow' : 'akan tercatat di histori'})`} className="min-h-[70px] text-sm" disabled={submitting} />
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder={posted ? `Alasan pembatalan (opsional — tercatat di riwayat pembatalan)` : `Alasan pembatalan (opsional — tercatat di riwayat)`} className="min-h-[70px] text-sm" disabled={submitting} />
         </div>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={submitting}>Tidak</AlertDialogCancel>
@@ -93,7 +104,7 @@ export function HardDeleteCancelDialog({ open, onOpenChange, title, formLabel, s
               void onConfirm(reason.trim());
             }}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {posted === true ? 'Ya, Batalkan (Jurnal Pembalik)' : posted === false ? 'Ya, Hapus Permanen' : 'Ya, Batalkan Dokumen'}
+            {posted === false ? 'Ya, Hapus Permanen' : 'Ya, Batalkan'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

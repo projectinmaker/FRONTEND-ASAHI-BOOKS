@@ -299,12 +299,14 @@ export default function HomePage() {
       {/* === Update #043 — popup "Sesi Berakhir" (sesi 2 jam / 401): modal
           AlertDialog di atas segalanya (portal z-index default shadcn). OK →
           logout() penuh → isAuthenticated false → LoginPage. Tidak dirender
-          saat sudah di halaman login (sessionExpired direset logout). === */}
+          saat sudah di halaman login (sessionExpired direset logout).
+          === Update #051 — sesi kini idle-timeout: berakhir hanya bila user
+          TIDAK ada aktivitas 2 jam (atau token tidak lagi valid). === */}
       <AlertDialog open={sessionExpired}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Sesi Berakhir</AlertDialogTitle>
-            <AlertDialogDescription>Sesi Anda telah berakhir. Silakan login kembali.</AlertDialogDescription>
+            <AlertDialogDescription>Sesi Anda telah berakhir — karena tidak ada aktivitas. Silakan login kembali.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => logout()}>OK</AlertDialogAction>

@@ -1919,13 +1919,13 @@ function InvoiceCreateForm() {
       }
       toast.success('Invoice pembelian berhasil dibuat', linkedPenerimaan.length ? { description: 'Terhubung otomatis ke penerimaan: ' + linkedPenerimaan.join(', ') + '.' } : undefined);
       if (failedPenerimaan.length) {
-        // === Update #050 — pesan dipilah: bila kegagalan disebabkan dokumen
-        // "sudah diposting" (server menolak perubahan link pada penerimaan
-        // final), user TIDAK disuruh edit manual (pasti gagal juga) — dijelaskan
-        // apa adanya. Kegagalan lain tetap diberi panduan manual. ===
-        const postedBlocked = failedPenerimaan.some((f) => f.toLowerCase().includes('diposting'));
+        // === Update #051 — backend kini MENERIMA perubahan link invoice pada
+        // penerimaan final (fix permanen), jadi kegagalan "diposting" seharusnya
+        // tidak muncul lagi. Bila tetap muncul (mis. backend belum diupdate),
+        // panduan manual di bawah kini BENAR-BENAR bisa dijalankan — jadi
+        // semua jalur kegagalan memberi panduan manual yang sama. ===
         toast.warning('Invoice tersimpan, tetapi beberapa penerimaan gagal dihubungkan', {
-          description: postedBlocked ? 'Gagal: ' + failedPenerimaan.join(' ; ') + '. Penerimaan sudah final dan server masih menolak perubahan link pada dokumen final (pembatasan backend — sedang ditangani, lihat catatan Update #050). Data tidak rusak: invoice & penerimaan tetap tersimpan, hanya hubungannya yang belum tercatat.' : 'Gagal: ' + failedPenerimaan.join(' ; ') + '. Buka Daftar Penerimaan Barang → tombol pensil pada penerimaan tersebut → pilih invoice ini di "Link ke Invoice Pembelian" → Simpan.',
+          description: 'Gagal: ' + failedPenerimaan.join(' ; ') + '. Buka Daftar Penerimaan Barang → tombol pensil pada penerimaan tersebut → pilih invoice ini di "Link ke Invoice Pembelian" → Simpan.',
           duration: 12000
         });
       }
@@ -2316,11 +2316,11 @@ function InvoiceEditForm({ editId }: { editId: string }) {
         if (linkResult.linked.length) toast.success('Penerimaan terhubung ke invoice', { description: linkResult.linked.join(', ') });
         // === Update #049 — panduan diperbarui + alasan error backend ditampilkan. ===
         if (linkResult.failed.length) {
-          // === Update #050 — paritas form buat: kegagalan "sudah diposting"
-          // dijelaskan apa adanya (jangan disuruh edit manual — pasti gagal). ===
-          const postedBlocked = linkResult.failed.some((f) => f.toLowerCase().includes('diposting'));
+          // === Update #051 — paritas form buat: fix backend #051 membuat
+          // kegagalan "diposting" tidak muncul lagi; panduan manual kini valid
+          // untuk semua jalur kegagalan. ===
           toast.warning('Beberapa penerimaan gagal dihubungkan', {
-            description: postedBlocked ? 'Gagal: ' + linkResult.failed.join(' ; ') + '. Penerimaan sudah final dan server masih menolak perubahan link pada dokumen final (pembatasan backend — sedang ditangani, lihat catatan Update #050). Data tidak rusak, hanya hubungannya yang belum tercatat.' : 'Gagal: ' + linkResult.failed.join(' ; ') + '. Buka Daftar Penerimaan Barang → tombol pensil pada penerimaan tersebut → pilih invoice ini di "Link ke Invoice Pembelian" → Simpan.',
+            description: 'Gagal: ' + linkResult.failed.join(' ; ') + '. Buka Daftar Penerimaan Barang → tombol pensil pada penerimaan tersebut → pilih invoice ini di "Link ke Invoice Pembelian" → Simpan.',
             duration: 12000
           });
         }
