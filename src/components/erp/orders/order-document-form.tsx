@@ -380,9 +380,13 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
       setCosts((p.biayaTambahan || []).map((b) => ({ key: crypto.randomUUID(), nama: b.nama || '', jumlah: String(Number(b.jumlah) || 0) })));
       // Update #033 — silent: dipakai auto-tarik dari tombol "Buat SO"
       // (penawaran.tsx sudah menampilkan toast sendiri).
+      // === Update #047 — toast disederhanakan: versi lama menjelaskan
+      // konsep internal ("barang master & item bebas apa adanya", "nilai
+      // penuh tanpa PPN", "Update #042") yang membingungkan user. ===
       if (!opts?.silent) {
-        toast.info(`Item penawaran ${p.noPenawaran}${rev} ditarik ke form`, {
-          description: `${(p.details || []).length} baris — barang master & item bebas apa adanya.${p.digunakanCount ? ` Penawaran sudah dipakai ${p.digunakanCount}× SO (repeat order).` : ''} Simpan SO dengan nilai penuh (tanpa PPN) — DP bertahap & pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) dengan field DP/Pelunasan (Update #042).`
+        const nBaris = (p.details || []).length;
+        toast.success(`Data penawaran ${p.noPenawaran}${rev} berhasil ditarik`, {
+          description: `${nBaris} baris item terisi otomatis. Periksa kembali isian sebelum menyimpan SO.`
         });
       }
     } catch (e) {
@@ -564,10 +568,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
     const options: SearchableDropdownOption[] = penawaranOptions.map((p) => ({
       id: p.id,
       label: `${p.noPenawaran}${p.revisiKe > 1 ? ` (Rev. ${p.revisiKe})` : ''}`,
-      // Update #039 — sisa penawaran langsung di subtitle (Update #042:
-      // SO kini selalu nilai penuh; DP bertahap & pelunasan lewat Invoice
-      // ber-ulang atas SO dari penawaran yang sama).
-      subtitle: `${p.pelangganNama || '-'} · ${p.jumlahItem} item · dipakai ${p.digunakanCount}× SO · sisa ${formatOrderMoney(Number(p.sisaPenawaran) || 0, 'IDR')}${p.status === 'SELESAI' ? ' · repeat order' : ' · draft'}`
+      // === Update #047 — subtitle disederhanakan (versi lama menampilkan
+      // "dipakai N× SO · sisa Rp … · repeat order/draft" yang membingungkan;
+      // penawaran yang sudah terpakai penuh kini tidak ditawarkan lagi oleh
+      // backend — jadi info pemakaian tidak diperlukan). ===
+      subtitle: `${p.pelangganNama || '-'} · ${p.jumlahItem} item`
     }));
     if (penawaranDetail && !options.some((option) => option.id === penawaranDetail.id)) {
       options.unshift({

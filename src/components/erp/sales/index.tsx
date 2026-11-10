@@ -714,6 +714,81 @@ function useDropdowns() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// === Update #047 — opsi dokumen sumber yang MASIH PUNYA SISA ===
+// Dropdown narik data kini hanya menawarkan dokumen yang belum terpakai
+// penuh ("yang sudah terpakai sebelumnya jangan ditampilkan lagi"):
+//   - SO di form Pengiriman  → /penjualan/sales-order/tersedia?untuk=pengiriman
+//   - SO di form Invoice      → /penjualan/sales-order/tersedia?untuk=invoice
+//   - DO di form Invoice      → /penjualan/pengiriman/tersedia
+// Fallback ke daftar penuh bila endpoint belum tersedia (backend lama);
+// dokumen yang sedang dipilih selalu disisipkan supaya labelnya tetap
+// tampil (mis. SO yang kebetulan habis terfaktur oleh invoice yg diedit).
+// ═════════════════════════════════════════════════════════════════════════════
+interface SoTersediaItem {
+  id: string;
+  noPesanan: string;
+  pelangganId?: string | null;
+}
+
+interface DoTersediaItem {
+  id: string;
+  noSuratJalan: string;
+  pelangganId?: string | null;
+}
+
+function useTersediaSoOptions(untuk: 'pengiriman' | 'invoice', fallback: { id: string; noPesanan: string }[], currentId?: string, currentLabel?: string) {
+  const [rows, setRows] = useState<SoTersediaItem[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<SoTersediaItem[]>(`/penjualan/sales-order/tersedia?untuk=${untuk}`)
+      .then((r) => {
+        if (!cancelled && Array.isArray(r)) setRows(r);
+      })
+      .catch(() => {
+        /* endpoint belum ada (backend belum di-update) → pakai daftar penuh */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [untuk]);
+  return useMemo(() => {
+    const base = rows ?? fallback;
+    if (currentId && !base.some((o) => o.id === currentId)) {
+      const label = fallback.find((o) => o.id === currentId)?.noPesanan || currentLabel || currentId;
+      return [{ id: currentId, noPesanan: label }, ...base];
+    }
+    return base;
+  }, [rows, fallback, currentId, currentLabel]);
+}
+
+function useTersediaDoOptions(fallback: { id: string; noSuratJalan: string; pelangganId: string }[], currentId?: string, currentLabel?: string) {
+  const [rows, setRows] = useState<DoTersediaItem[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<DoTersediaItem[]>('/penjualan/pengiriman/tersedia')
+      .then((r) => {
+        if (!cancelled && Array.isArray(r)) setRows(r);
+      })
+      .catch(() => {
+        /* endpoint belum ada (backend belum di-update) → pakai daftar penuh */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return useMemo(() => {
+    const base = rows ?? fallback;
+    if (currentId && !base.some((o) => o.id === currentId)) {
+      const cur = fallback.find((o) => o.id === currentId);
+      return [{ id: currentId, noSuratJalan: cur?.noSuratJalan || currentLabel || currentId, pelangganId: cur?.pelangganId || '' }, ...base];
+    }
+    return base;
+  }, [rows, fallback, currentId, currentLabel]);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // FORM: Pesanan Penjualan Create
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -756,8 +831,9 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDetail, setFDetail] = useState<FormDetailRow[]>([newDetailRow()]);
   const [soLoading, setSoLoading] = useState(false);
-
-  // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
+  // === Update #047 — dropdown SO hanya menawarkan SO yang masih ada sisa
+  // kirimnya; fallback ke daftar penuh bila backend belum punya endpoint. ===
+  const soOptions = useTersediaSoOptions('pengiriman', salesOrderOptions, fSalesOrderId);
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
   const draft = useFormDraft<PengirimanDraftData>(draftKey(userId, 'sales', 'pengiriman', 'create'));
   const skipNextSaveRef = useRef(false);
@@ -943,7 +1019,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
               <Label className="text-xs font-medium">
                 Sales Order <span className="text-destructive">*</span>
               </Label>
-              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} placeholder="Pilih SO..." disabled={soLoading} />
+              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={soOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} placeholder="Pilih SO..." disabled={soLoading} />
               {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat detail SO...</p>}
               {formErrors.salesOrderId && <p className="text-xs text-destructive mt-1">{formErrors.salesOrderId}</p>}
             </div>
@@ -1071,6 +1147,10 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
   const [editStatus, setEditStatus] = useState(initialStatus || '');
 
   const [editSalesOrderId, setEditSalesOrderId] = useState('');
+  // === Update #047 — nomor SO dokumen ini (label bila SO-nya tidak ada di
+  // daftar "tersedia" karena sudah habis terkirim oleh DO yang sedang
+  // diedit ini). ===
+  const [editSoNo, setEditSoNo] = useState('');
   const [editPelangganId, setEditPelangganId] = useState('');
   const [editGudangId, setEditGudangId] = useState('');
   const [editTanggal, setEditTanggal] = useState('');
@@ -1090,6 +1170,7 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
         setEditStatus(p.status);
         setEditDetails(p.details);
         setEditSalesOrderId(p.salesOrderId || '');
+        setEditSoNo(p.salesOrder?.noPesanan || '');
         setEditPelangganId(p.pelangganId || '');
         setEditGudangId(p.gudangId || '');
         setEditTanggal(p.tanggal ? p.tanggal.slice(0, 10) : '');
@@ -1108,6 +1189,10 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
   }, [editId]);
 
   // ── Update #4: pilih pelanggan → alamat ditarik otomatis dari master ──
+  // === Update #047 — dropdown SO hanya menawarkan SO yang masih ada sisa
+  // kirimnya; SO milik DO ini selalu disisipkan (label tetap tampil). ===
+  const soOptions = useTersediaSoOptions('pengiriman', salesOrderOptions, editSalesOrderId, editSoNo);
+
   const handleEditPelangganChange = useCallback(
     (id: string, masterOverride?: PelangganDropdown | null) => {
       setEditPelangganId(id);
@@ -1179,7 +1264,7 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Sales Order</Label>
-                  <SearchableDropdown value={editSalesOrderId} onValueChange={setEditSalesOrderId} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} placeholder="Pilih SO..." />
+                  <SearchableDropdown value={editSalesOrderId} onValueChange={setEditSalesOrderId} options={soOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} placeholder="Pilih SO..." />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">
@@ -1388,6 +1473,11 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // ── Update #4: pilih pelanggan → alamat ditarik otomatis
   // dari master (memilih SO/DO setelahnya tetap menimpa dengan datanya).
   // Update #004: syarat bayar tidak lagi ditarik (field dihapus dari invoice). ──
+  // === Update #047 — dropdown SO & DO hanya menawarkan dokumen yang masih
+  // ada sisanya (endpoint tersedia; fallback daftar penuh bila backend lama). ===
+  const soOptions = useTersediaSoOptions('invoice', salesOrderOptions, fSalesOrderId);
+  const doOptionsTersedia = useTersediaDoOptions(pengirimanOptions, fPengirimanId);
+
   const handlePelangganChange = useCallback(
     (id: string, masterOverride?: PelangganDropdown | null) => {
       setFPelangganId(id);
@@ -1628,7 +1718,14 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   );
 
   // Update #004: opsi No DO difilter per pelanggan terpilih (bila ada).
-  const doOptions = useMemo(() => (fPelangganId ? pengirimanOptions.filter((p) => p.pelangganId === fPelangganId) : pengirimanOptions), [pengirimanOptions, fPelangganId]);
+  const doOptions = useMemo(() => {
+    // === Update #047 — basis daftar DO: hanya yang masih punya sisa faktur
+    // (endpoint /pengiriman/tersedia; fallback daftar penuh bila backend
+    // lama), lalu difilter per pelanggan terpilih. DO terpilih selalu
+    // disisipkan oleh hook agar labelnya tetap tampil. ===
+    const base = doOptionsTersedia;
+    return fPelangganId ? base.filter((p) => p.pelangganId === fPelangganId) : base;
+  }, [doOptionsTersedia, fPelangganId]);
 
   const formSubtotal = useMemo(
     () =>
@@ -1757,7 +1854,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Sales Order</Label>
-              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
+              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={soOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
               {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
               {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
               {soRefInfo && (
@@ -1985,6 +2082,10 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   const [editPph23, setEditPph23] = useState('2');
   const [editKeterangan, setEditKeterangan] = useState('');
   const [soLoading, setSoLoading] = useState(false);
+  // === Update #047 — nomor SO invoice ini (label bila SO-nya tidak ada di
+  // daftar "tersedia" karena kehabisan sisa tagihan justru oleh invoice
+  // yang sedang diedit ini). ===
+  const [editSoNo, setEditSoNo] = useState('');
   // === Update #042 — DP/Pelunasan (field header invoice): nilai yang ditagih
   // invoice ini (canonical string; "" = kosong = tagih penuh). Prefill dari
   // response dpPelunasan (0 → kosong). ===
@@ -2003,6 +2104,9 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
   // === Update #4 (C4): muat info No SO + No PO customer dari SO (GET sales-order/{id}).
   // Update #045 — fetch kartu Sisa Pembayaran penawaran dihapus (kartu tidak
   // lagi ditampilkan; hanya info No SO · No PO yang dimuat). ===
+  // === Update #047 — dropdown SO hanya menawarkan SO yang masih punya sisa
+  // tagihan; SO milik invoice ini selalu disisipkan (label tetap tampil). ===
+  const soOptions = useTersediaSoOptions('invoice', salesOrderOptions, editSalesOrderId, editSoNo);
   const loadSoRefInfo = useCallback(async (soId: string) => {
     try {
       const so = await api.get<SalesOrderResponse>(`/penjualan/sales-order/${soId}`);
@@ -2036,6 +2140,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         setEditPelangganId(inv.pelangganId || '');
         setEditTanggal(inv.tanggal ? inv.tanggal.slice(0, 10) : '');
         setEditSalesOrderId(inv.salesOrderId || '');
+        setEditSoNo(inv.salesOrder?.noPesanan || '');
         setEditAlamatPengiriman(inv.alamatPengiriman || '');
         setEditMataUang(inv.mataUang || 'IDR');
         setEditPpn(String(inv.ppn ?? 0));
@@ -2241,7 +2346,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                   {/* === Update #046 — label "Link ke Sales Order" → "Sales Order"
                       (paritas form create; permintaan user). === */}
                   <Label className="text-xs font-medium">Sales Order</Label>
-                  <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={salesOrderOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
+                  <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={soOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
                   {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
                   {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
                   {soRefInfo && (

@@ -1243,6 +1243,18 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
               </div>
             )}
 
+            {/* === Update #047 — penjelasan fungsi No. Bukti Potong & Masa
+                Pajak (pertanyaan user: "untuk laporannya bagaimana dan
+                acuannya apa?") — tampil untuk Penerimaan & Pembayaran. === */}
+            {!isGagalTagih && (
+              <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-3">
+                <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                <p className="text-xs text-muted-foreground">
+                  <strong>No. Bukti Potong &amp; Masa Pajak (opsional):</strong> {isPiutang ? 'nomor bukti potong PPh 23 yang diterbitkan pelanggan saat membayar Anda (pajak dipotong dari setoran pelanggan, bukan ditambah). Masa pajak = bulan pemotongan (format YYYY-MM). Kedua nilai tersimpan per invoice dan menjadi bukti kredit pajak untuk rekonsiliasi penerimaan & SPT Tahunan.' : 'nomor bukti potong PPh 23 yang Anda terbitkan atas pembayaran ke supplier. Masa pajak = bulan pembayaran (format YYYY-MM) — acuan setor PPh 23 (paling lambat tanggal 10 bulan berikutnya) & pelaporan SPT Masa PPh 23 / e-Bupot 23 (PER-24/PJ/2021). Tersimpan per invoice, siap direkap per masa pajak.'}
+                </p>
+              </div>
+            )}
+
             {/* === Update #044 — info akun jurnal Gagal Tagih (Voucher Memorial) === */}
             {isGagalTagih && (
               <div className="flex items-start gap-2 rounded-md border bg-amber-50 p-3">
