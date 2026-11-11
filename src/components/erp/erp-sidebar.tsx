@@ -414,6 +414,11 @@ export function ERPSidebar() {
   const loaded = useAccessStore((s) => s.loaded);
   const accessError = useAccessStore((s) => s.error);
   const fetchPermissions = useAccessStore((s) => s.fetchPermissions);
+  // === Update #058 — true sejak koneksi terputus sampai izin BERHASIL dimuat
+  // ulang. Selama itu, menu diganti skeleton "Menyambungkan kembali…" (lihat
+  // blok skeleton di SidebarContent) — efek loading tetap terlihat selama
+  // aplikasi otomatis mencoba menyambung kembali ke server. ===
+  const reconnecting = useAccessStore((s) => s.reconnecting);
 
   // Restore sesi / refresh halaman: fetch permission saat sidebar mount.
   React.useEffect(() => {
@@ -542,7 +547,11 @@ export function ERPSidebar() {
             Banner di bawah hanya tampil untuk kegagalan non-jaringan (server
             menjawab tapi endpoint izin error, mis. 500) — kasus ini benar2
             masalah izin, jadi menu tetap disembunyikan demi keamanan. === */}
-        {accessError && (
+        {/* === Update #058 — selama reconnecting (koneksi terputus /
+            penyambungan ulang otomatis berjalan), banner fail-closed ini
+            disembunyikan: sidebar cukup menampilkan skeleton
+            "Menyambungkan kembali…" supaya keadaan visualnya tunggal. === */}
+        {accessError && !reconnecting && (
           <SidebarGroup>
             <SidebarGroupContent>
               <div className="m-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 dark:border-amber-700/60 dark:bg-amber-950/40" role="alert">
@@ -562,12 +571,17 @@ export function ERPSidebar() {
           </SidebarGroup>
         )}
 
-        {/* ── Belum termuat: skeleton (hindari flash menu) ─────────────── */}
-        {!loaded ? (
+        {/* ── Belum termuat ATAU sedang menyambung kembali (#058): skeleton ─────────────── */}
+        {/* === Update #058 — selama reconnecting (koneksi terputus & aplikasi
+            otomatis mencoba menyambung kembali), menu lama diganti skeleton
+            "Menyambungkan kembali…". Refresh normal saat online (focus /
+            interval 5 menit) TIDAK memunculkan skeleton karena reconnecting
+            tetap false — tidak ada kedipan menu saat dipakai normal. === */}
+        {!loaded || reconnecting ? (
           <SidebarGroup>
             <SidebarGroupContent>
-              <div className="space-y-4 px-2 py-2" aria-label="Memuat menu">
-                <p className="text-xs text-sidebar-foreground/60">Memuat menu…</p>
+              <div className="space-y-4 px-2 py-2" aria-label={reconnecting ? 'Menyambungkan kembali ke server' : 'Memuat menu'}>
+                <p className="text-xs text-sidebar-foreground/60">{reconnecting ? 'Menyambungkan kembali ke server…' : 'Memuat menu…'}</p>
                 {Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="space-y-2">
                     <Skeleton className="h-4 w-28" />

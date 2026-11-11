@@ -18,6 +18,14 @@ import type { MePermissionsResponse, RoleBrief } from '@/types/api';
  * Keamanan tetap terjaga: backend memvalidasi permission pada SETIAP request,
  * sehingga menu yang tetap tampil hanyalah pintasan navigasi — aksi tanpa
  * izin tetap ditolak server dengan 403.
+ *
+ * === Update #058 — skeleton sidebar selama koneksi terputus ===
+ * Saat terputus, sidebar TIDAK lagi menampilkan menu lama: state `reconnecting`
+ * (true sejak event NET_DOWN / kegagalan jaringan, kembali false hanya setelah
+ * izin BERHASIL dimuat ulang) membuat sidebar terus menampilkan efek loading
+ * skeleton — sinyal bahwa aplikasi sedang otomatis mencoba menyambung kembali
+ * (banner koneksi #055 + auto-ping 30 detik). Izin terakhir tetap di cache,
+ * sehingga begitu koneksi pulih menu langsung muncul utuh tanpa aksi user.
  */
 
 const TOKEN_KEY = 'asahi_erp_token';
@@ -37,6 +45,12 @@ interface AccessState {
   loaded: boolean;
   loading: boolean;
   error: string | null;
+  /**
+   * === Update #058 — true sejak koneksi terputus (event NET_DOWN atau
+   * ApiError status 0) sampai izin BERHASIL dimuat ulang. Selama true,
+   * sidebar menampilkan skeleton "Menyambungkan kembali…" (bukan menu lama).
+   */
+  reconnecting: boolean;
   fetchPermissions: () => Promise<void>;
   can: (code: string) => boolean;
   canAny: (codes: string[]) => boolean;
@@ -50,11 +64,12 @@ export const useAccessStore = create<AccessState>((set, get) => ({
   loaded: false,
   loading: false,
   error: null,
+  reconnecting: false,
 
   fetchPermissions: async () => {
     // Jangan fetch bila belum login (tidak ada token).
     if (!hasAuthToken()) {
-      set({ permissions: [], isSuperAdmin: false, roles: [], loaded: false, loading: false, error: null });
+      set({ permissions: [], isSuperAdmin: false, roles: [], loaded: false, loading: false, error: null, reconnecting: false });
       return;
     }
     if (get().loading) return; // cegah fetch paralel
@@ -67,20 +82,23 @@ export const useAccessStore = create<AccessState>((set, get) => ({
         roles: res.roles ?? [],
         loaded: true,
         loading: false,
-        error: null
+        error: null,
+        // === Update #058 — izin berhasil dimuat (ulang) → koneksi pasti hidup
+        // → skeleton "Menyambungkan kembali…" diganti menu. ===
+        reconnecting: false
       });
     } catch (err) {
       // === Update #056 — koneksi terputus (status 0): JANGAN wipe izin &
-      // JANGAN set error. Menu sidebar tetap tampil memakai izin terakhir
-      // yang berhasil dimuat; banner global koneksi (#055) sudah menjelaskan
-      // apa yang terjadi + instruksi ke user. loaded dibiarkan apa adanya:
-      // - sebelumnya pernah sukses → menu tampil normal (loaded true)
-      // - belum pernah sukses → skeleton "Memuat menu…" sampai koneksi pulih
-      //   (jarang: login saja sudah butuh server hidup)
+      // JANGAN set error; banner global koneksi (#055) sudah menjelaskan apa
+      // yang terjadi + instruksi ke user. loaded dibiarkan apa adanya.
+      // === Update #058 — selama offline, sidebar menampilkan skeleton
+      // "Menyambungkan kembali…" (reconnecting: true), BUKAN menu lama;
+      // izin terakhir tetap di cache supaya pemulihan instan.
       // Pemulihan: listener NET_UP di bawah otomatis memuat ulang izin begitu
-      // koneksi kembali (plus focus / visibilitychange / interval 5 menit). ===
+      // koneksi kembali (plus focus / visibilitychange / interval 5 menit);
+      // sukses → reconnecting kembali false → menu muncul lagi sendiri. ===
       if (err instanceof ApiError && err.status === 0) {
-        set({ loading: false });
+        set({ loading: false, reconnecting: true });
         return;
       }
       // FAIL-CLOSED (error non-jaringan: server menjawab tapi endpoint izin
@@ -92,7 +110,10 @@ export const useAccessStore = create<AccessState>((set, get) => ({
         roles: [],
         loaded: true,
         loading: false,
-        error: 'Gagal memuat izin akses. Menu disembunyikan demi keamanan.'
+        error: 'Gagal memuat izin akses. Menu disembunyikan demi keamanan.',
+        // === Update #058 — error non-jaringan: keadaan fail-closed (banner
+        // amber + tombol Coba Lagi) yang berlaku, bukan skeleton reconnect. ===
+        reconnecting: false
       });
     }
   },
@@ -109,7 +130,7 @@ export const useAccessStore = create<AccessState>((set, get) => ({
   },
 
   reset: () => {
-    set({ permissions: [], isSuperAdmin: false, roles: [], loaded: false, loading: false, error: null });
+    set({ permissions: [], isSuperAdmin: false, roles: [], loaded: false, loading: false, error: null, reconnecting: false });
   }
 }));
 
@@ -137,6 +158,12 @@ if (typeof window !== 'undefined') {
   let netWasDown = false;
   window.addEventListener(NET_DOWN_EVENT, () => {
     netWasDown = true;
+    // === Update #058 — begitu ADA request gagal karena jaringan, sidebar
+    // langsung beralih ke skeleton "Menyambungkan kembali…" — tanpa menunggu
+    // percobaan muat ulang izin berikutnya (focus / interval / NET_UP).
+    // Selama offline flag ini tetap true; setiap kegagalan jaringan baru
+    // hanya memastikan flag tetap menyala. ===
+    useAccessStore.setState({ reconnecting: true });
   });
   window.addEventListener(NET_UP_EVENT, () => {
     if (!netWasDown) return;
