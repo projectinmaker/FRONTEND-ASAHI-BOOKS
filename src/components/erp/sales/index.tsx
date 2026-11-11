@@ -34,6 +34,7 @@ import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { QuickAddPelangganButton, QuickAddGudangButton, QuickAddBarangButton, QuickAddSatuanButton, toPelangganDropdown, toBarangDropdown, satuanFromBarang } from '@/components/erp/quick-add';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { useDefaultTaxRates } from '@/lib/use-default-rates';
+import { trimDecimalString } from '@/lib/money';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
@@ -2154,10 +2155,10 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
         setEditSoNo(inv.salesOrder?.noPesanan || '');
         setEditAlamatPengiriman(inv.alamatPengiriman || '');
         setEditMataUang(inv.mataUang || 'IDR');
-        setEditPpn(String(inv.ppn ?? 0));
+        setEditPpn(trimDecimalString(inv.ppn ?? 0, '0'));
         setEditPpnApplicable(inv.ppnApplicable ?? true);
         setEditPph23Applicable(inv.pph23Applicable ?? false);
-        setEditPph23(String(inv.pph23 ?? 2));
+        setEditPph23(trimDecimalString(inv.pph23 ?? 2, '2'));
         setEditKeterangan(inv.keterangan || '');
         // === Update #042 — prefill DP/Pelunasan dari response (0 → kosong =
         // tagih penuh) + info sisa tagihan SO (untuk validasi batas atas). ===
@@ -2848,7 +2849,7 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
         setEditAlamatPengembalian(r.alamatPengembalian || '');
         setEditNoPengembalian(r.noPengembalian || '');
         setEditDiskonGlobal(String(r.diskonGlobal ?? 0));
-        setEditPpn(String(r.ppn ?? 0));
+        setEditPpn(trimDecimalString(r.ppn ?? 0, '0'));
         setEditKeterangan(r.keterangan || '');
         // AUD-12 (update #05) — tampilkan PPh23 retur bila ada (grand total sudah net)
         setEditPph23(r.pph23 != null ? Number(r.pph23) : null);

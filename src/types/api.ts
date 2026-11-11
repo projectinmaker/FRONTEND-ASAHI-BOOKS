@@ -1339,6 +1339,13 @@ export interface PurchaseOrderSisaResponse {
   noPesanan: string;
   alamat?: string | null;
   syaratBayarId?: string | null;
+  // === Update #053 — pilihan pajak PO: kartu Pajak form Invoice Pembelian
+  // MEWARISI setting ini saat PO dipilih (runtime bisa string Decimal
+  // "11.00" — form memakai trimDecimalString untuk menampilkannya). ===
+  ppn?: number | string;
+  ppnApplicable?: boolean;
+  pph23?: number | string;
+  pph23Applicable?: boolean;
   details: PurchaseOrderSisaDetail[];
 }
 

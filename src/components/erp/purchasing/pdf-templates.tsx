@@ -91,6 +91,20 @@ export interface InvoicePembelianData {
   keterangan: string;
   diskonGlobal: number;
   ppn: number;
+  // === Update #053 — PPh23 & PPN opsional di cetakan Invoice Pembelian +
+  //     total TERSIMPAN dari backend (subTotal/totalDiskon/totalPpn/
+  //     totalPph23/totalBiayaTambahan/grandTotal) supaya cetakan selalu
+  //     sama persis dengan angka yang tersimpan (hitung ulang hanya
+  //     fallback bila nilai tersimpan tidak tersedia). ===
+  ppnApplicable?: boolean;
+  pph23Applicable?: boolean;
+  pph23?: number;
+  subTotal?: number;
+  totalDiskon?: number;
+  totalPpn?: number;
+  totalPph23?: number;
+  totalBiayaTambahan?: number;
+  grandTotal?: number;
 }
 
 export interface ReturPembelianData {
@@ -255,13 +269,28 @@ function POSummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, currency, pp
 
 // ─── Helper: SummaryTable (used by Invoice) ─────────────────────────────
 
-function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: PembelianDetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[] }) {
-  const subTotal = detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const diskonAmt = diskonGlobal ? (subTotal * diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = ppn ? (afterDiskon * ppn) / 100 : 0;
-  const biayaLain = biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+// === Update #053 — SummaryTable Invoice Pembelian kini memakai nilai
+// TERSIMPAN dari backend (lebih akurat: backend memperhitungkan diskon per
+// baris + pilihan PPN/PPh23 saat invoice dibuat); hitung ulang hanya
+// fallback. Baris PPh23 tampil bila invoice dibuat dengan PPh23 aktif;
+// baris PPN hilang bila PPN dimatikan per invoice (#052). ===
+function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0, subTotalStored, totalDiskonStored, totalPpnStored, totalPph23Stored, totalBiayaStored, grandTotalStored }: { detail: PembelianDetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number; subTotalStored?: number; totalDiskonStored?: number; totalPpnStored?: number; totalPph23Stored?: number; totalBiayaStored?: number; grandTotalStored?: number }) {
+  // Fallback recompute (paritas lama — dipakai hanya bila nilai tersimpan
+  // tidak ikut dikirim oleh mapper).
+  const subTotalCalc = detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmtCalc = diskonGlobal ? (subTotalCalc * diskonGlobal) / 100 : 0;
+  const afterDiskonCalc = subTotalCalc - diskonAmtCalc;
+  const ppnAmtCalc = ppnApplicable && ppn ? (afterDiskonCalc * ppn) / 100 : 0;
+  const pph23AmtCalc = pph23Applicable && pph23 ? (afterDiskonCalc * pph23) / 100 : 0;
+  const biayaLainCalc = biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
+  const grandTotalCalc = afterDiskonCalc + ppnAmtCalc + biayaLainCalc - pph23AmtCalc;
+
+  const subTotal = subTotalStored ?? subTotalCalc;
+  const diskonAmt = totalDiskonStored ?? diskonAmtCalc;
+  const ppnAmt = ppnApplicable ? (totalPpnStored ?? ppnAmtCalc) : 0;
+  const pph23Amt = pph23Applicable ? (totalPph23Stored ?? pph23AmtCalc) : 0;
+  const biayaLain = totalBiayaStored ?? biayaLainCalc;
+  const grandTotal = grandTotalStored ?? grandTotalCalc;
 
   return (
     <table style={tableStyle}>
@@ -270,14 +299,26 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan }: { detail: Pe
           <td style={{ ...cellStyle, width: '160px' }}>Sub Total</td>
           <td style={{ ...cellStyle, textAlign: 'right', width: '140px' }}>{formatNumber(subTotal)}</td>
         </tr>
-        <tr>
-          <td style={cellStyle}>Diskon ({diskonGlobal || 0}%)</td>
-          <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(diskonAmt)}</td>
-        </tr>
-        <tr>
-          <td style={cellStyle}>PPN ({ppn || 0}%)</td>
-          <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(ppnAmt)}</td>
-        </tr>
+        {diskonAmt > 0 && (
+          <tr>
+            <td style={cellStyle}>Diskon</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(diskonAmt)}</td>
+          </tr>
+        )}
+        {ppnApplicable && (
+          <tr>
+            <td style={cellStyle}>PPN ({ppn || 0}%)</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>{formatNumber(ppnAmt)}</td>
+          </tr>
+        )}
+        {/* === Update #053 — baris PPh23 (mirror cetakan PO): tampil bila
+            invoice dibuat dengan PPh23 aktif; memotong grand total. === */}
+        {pph23Applicable && (
+          <tr>
+            <td style={cellStyle}>PPh23 ({pph23 || 0}%)</td>
+            <td style={{ ...cellStyle, textAlign: 'right' }}>- {formatNumber(pph23Amt)}</td>
+          </tr>
+        )}
         {biayaTambahan.length > 0 && (
           <tr>
             <td style={cellStyle}>Biaya Lain-lain</td>
@@ -686,12 +727,19 @@ export function PenerimaanPDFTemplate({ data }: { data: PenerimaanData }) {
 export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianData }) {
   // Update ASAHI #5: posisi terbilang dikembalikan ke blok footer kiri
   // (seperti sebelum update #4) — tetap menyebut TOTAL.
-  const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
-  const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
-  const afterDiskon = subTotal - diskonAmt;
-  const ppnAmt = data.ppn ? (afterDiskon * data.ppn) / 100 : 0;
-  const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + ppnAmt + biayaLain;
+  // === Update #053 — angka ringkasan memakai nilai TERSIMPAN backend
+  // (sama persis dengan yang tercatat di invoice); terbilang menyebut
+  // grand total NET PPh23. Hitung ulang hanya fallback. ===
+  const ppnOn = data.ppnApplicable ?? true;
+  const pph23On = data.pph23Applicable ?? false;
+  const subTotalCalc = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
+  const diskonAmtCalc = data.diskonGlobal ? (subTotalCalc * data.diskonGlobal) / 100 : 0;
+  const afterDiskonCalc = subTotalCalc - diskonAmtCalc;
+  const ppnAmtCalc = ppnOn && data.ppn ? (afterDiskonCalc * data.ppn) / 100 : 0;
+  const pph23AmtCalc = pph23On && data.pph23 ? (afterDiskonCalc * (data.pph23 || 0)) / 100 : 0;
+  const biayaLainCalc = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
+  const grandTotalCalc = afterDiskonCalc + ppnAmtCalc + biayaLainCalc - pph23AmtCalc;
+  const grandTotal = data.grandTotal ?? grandTotalCalc;
 
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
@@ -748,7 +796,7 @@ export function InvoicePembelianPDFTemplate({ data }: { data: InvoicePembelianDa
 
         {/* Right */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} />
+          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn} biayaTambahan={data.biayaTambahan} ppnApplicable={data.ppnApplicable ?? true} pph23Applicable={data.pph23Applicable ?? false} pph23={data.pph23 ?? 0} subTotalStored={data.subTotal} totalDiskonStored={data.totalDiskon} totalPpnStored={data.totalPpn} totalPph23Stored={data.totalPph23} totalBiayaStored={data.totalBiayaTambahan} grandTotalStored={data.grandTotal} />
         </div>
       </div>
 

@@ -45,6 +45,7 @@ import { findPartyMaster, AUTOFILL_HINT } from '@/lib/party-autofill';
 import { QuickAddSupplierButton, QuickAddGudangButton, QuickAddBarangButton, QuickAddSatuanButton, toSupplierDropdown, toBarangDropdown, satuanFromBarang } from '@/components/erp/quick-add';
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { useDefaultTaxRates } from '@/lib/use-default-rates';
+import { trimDecimalString } from '@/lib/money';
 import { toast } from 'sonner';
 import { PesananPembelianCetakTab, PenerimaanCetakTab, InvoicePembelianCetakTab, ReturPembelianCetakTab, LppbCetakTab } from '@/components/erp/purchasing/cetak-tabs';
 // Update ASAHI #005 — modul LPPB (list + form) sebagai file mandiri
@@ -1800,6 +1801,17 @@ function InvoiceCreateForm() {
           const master = findPartyMaster(supplierOptions, sisa.supplierId);
           setFAlamat(master?.alamat || '');
         }
+        // === Update #053 — kartu Pajak invoice MENGIKUTI PO terpilih:
+        // PPN aktif/nonaktif + PPh23 aktif/nonaktif & tarifnya diwarisi dari
+        // PO (pajak cukup diset SATU kali di PO; invoice tinggal mengikuti —
+        // tetap bisa disesuaikan bila faktur aktual berbeda). Tarif PPN
+        // tetap terkunci dari Referensi → Perpajakan. Diletakkan SEBELUM
+        // early-return "semua baris sudah terfaktur" agar tetap berlaku. ===
+        if (typeof sisa.ppnApplicable === 'boolean') setFPpnApplicable(sisa.ppnApplicable);
+        if (typeof sisa.pph23Applicable === 'boolean') {
+          setFPph23Applicable(sisa.pph23Applicable);
+          if (sisa.pph23Applicable && sisa.pph23 != null) setFPph23(trimDecimalString(sisa.pph23, '2'));
+        }
         const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
         if (rows.length === 0) {
           toast.info('Semua baris PO sudah dibuatkan invoice sepenuhnya', { description: 'Tidak ada sisa qty yang perlu dibuatkan invoice untuk PO ini.' });
@@ -2285,10 +2297,12 @@ function InvoiceEditForm({ editId }: { editId: string }) {
         setEditTanggal(inv.tanggal ? inv.tanggal.slice(0, 10) : '');
         setEditAlamat(inv.alamat || '');
         setEditDiskonGlobal(String(inv.diskonGlobal ?? 0));
-        setEditPpn(String(inv.ppn ?? 0));
+        // === Update #053 — tarif dipangkas nol desimalnya ("11.00" → "11")
+        // supaya kolom tarif tampil 11 / 2, bukan 11,00 / 2,00. ===
+        setEditPpn(trimDecimalString(inv.ppn ?? 0, '0'));
         setEditPpnApplicable(inv.ppnApplicable ?? true);
         setEditPph23Applicable(inv.pph23Applicable ?? false);
-        setEditPph23(String(inv.pph23 ?? 2));
+        setEditPph23(trimDecimalString(inv.pph23 ?? 2, '2'));
         setEditKeterangan(inv.keterangan || '');
       } catch (err) {
         toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat data invoice');
@@ -2857,7 +2871,9 @@ function ReturCreateForm() {
                 {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
                   Referensi → Perpajakan (RATE_PPN); nilai mengikuti setting
                   global (form create), bukan input manual. === */}
-                <Label className="text-xs font-medium">PPN (%)</Label>
+                <Label className="text-xs font-medium">
+                  PPN (%)
+                </Label>
                 <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                 <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
               </div>
@@ -2991,7 +3007,7 @@ function ReturEditForm({ editId }: { editId: string }) {
         setEditGudangId(ret.gudangId || '');
         setEditTanggal(ret.tanggal ? ret.tanggal.slice(0, 10) : '');
         setEditAlamat(ret.alamat || '');
-        setEditPpn(String(ret.ppn ?? 0));
+        setEditPpn(trimDecimalString(ret.ppn ?? 0, '0'));
         setEditKeterangan(ret.keterangan || '');
         setEditPurchaseInvoiceId(ret.purchaseInvoiceId || '');
       } catch (err) {
@@ -3136,7 +3152,9 @@ function ReturEditForm({ editId }: { editId: string }) {
                 {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
                   Referensi → Perpajakan; menampilkan nilai yang tersimpan
                   pada retur. Update #052: icon gembok dihapus. === */}
-                <Label className="text-xs font-medium">PPN (%)</Label>
+                <Label className="text-xs font-medium">
+                  PPN (%)
+                </Label>
                 <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={editPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                 <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
               </div>

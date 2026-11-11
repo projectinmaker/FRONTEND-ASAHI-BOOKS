@@ -126,3 +126,22 @@ export function parseInputValue(canonical: string | null | undefined): number {
   const n = parseFloat(String(canonical ?? ''));
   return Number.isFinite(n) ? n : 0;
 }
+
+// ─── Format Tarif / Persentase (Update #053) ─────────────────────────────────
+
+/**
+ * === Update #053 — normalisasi tampilan tarif/persentase. ===
+ * Backend (Pydantic) menserialisasi Decimal sebagai string, mis. "11.00" /
+ * "2.00" — bila langsung dipakai sebagai nilai kolom tarif, form tampil
+ * "11,00" / "2,00". Helper ini memangkas nol desimal berlebih:
+ * "11.00" → "11", "2.50" → "2.5", "11,00" → "11", 11 → "11".
+ * Nilai kosong → fallback; nilai non-numerik dikembalikan apa adanya.
+ */
+export function trimDecimalString(val: string | number | null | undefined, fallback = ''): string {
+  if (val === null || val === undefined) return fallback;
+  const s = String(val).trim();
+  if (s === '') return fallback;
+  const n = Number(s.replace(',', '.'));
+  if (!Number.isFinite(n)) return s;
+  return String(n);
+}

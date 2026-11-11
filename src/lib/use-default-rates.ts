@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { trimDecimalString } from '@/lib/money';
 
 export interface DefaultTaxRates {
   ppn: string;
@@ -21,7 +22,9 @@ async function fetchRates(): Promise<DefaultTaxRates> {
   if (!inflight) {
     inflight = Promise.all([api.get<{ key: string; value: string }>('/master/app-setting/RATE_PPN').catch(() => null), api.get<{ key: string; value: string }>('/master/app-setting/RATE_PPH23').catch(() => null)])
       .then(([ppn, pph23]) => {
-        cache = { ppn: ppn?.value ?? '11', pph23: pph23?.value ?? '2' };
+        // === Update #053 — pangkas nol desimal berlebih ("11.00" → "11")
+        // supaya kolom tarif di semua form tampil "11" / "2", bukan "11,00". ===
+        cache = { ppn: trimDecimalString(ppn?.value, '11'), pph23: trimDecimalString(pph23?.value, '2') };
         return cache;
       })
       .finally(() => {

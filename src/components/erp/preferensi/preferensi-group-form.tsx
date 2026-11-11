@@ -25,6 +25,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { AlertCircle, Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
+import { trimDecimalString } from '@/lib/money';
 import { usePreferensiStore } from '@/store/preferensi-store';
 import type { PreferensiGroup, PreferensiItem, PreferensiResponse, PreferensiUpdatePayload } from '@/types/api';
 
@@ -63,7 +64,12 @@ export default function PreferensiGroupForm({ groupId, title, description, refre
       const g = (res.groups ?? []).find((x) => x.id === groupId) ?? null;
       setGroup(g);
       const vals: Record<string, PrefValue> = {};
-      for (const item of g?.items ?? []) vals[item.key] = item.value;
+      for (const item of g?.items ?? []) {
+        // === Update #053 — item number: pangkas nol desimal berlebih
+        // ("11.00" → "11") agar kolom tarif di Preferensi → Perpajakan
+        // tampil rapi, konsisten dengan kolom tarif di semua form. ===
+        vals[item.key] = item.type === 'number' && item.value !== null && item.value !== undefined && String(item.value).trim() !== '' ? trimDecimalString(item.value as string | number) : item.value;
+      }
       setValues(vals);
       setInitial(vals);
       onLoaded?.(g ?? { id: groupId, label: groupId, items: [] });
@@ -298,9 +304,7 @@ function FieldItem({ item, value, onChange }: { item: PreferensiItem; value: Pre
       <div className="space-y-2">
         <Label htmlFor={id}>{item.label}</Label>
         <Input id={id} type="number" inputMode="numeric" min={item.min} max={item.max} value={raw} onChange={(e) => onChange(e.target.value)} />
-        {(item.help ?? (item.min !== undefined && item.max !== undefined ? `Rentang ${item.min}–${item.max}` : null)) && (
-          <p className="text-xs text-muted-foreground">{item.help ?? `Rentang ${item.min}–${item.max}`}</p>
-        )}
+        {(item.help ?? (item.min !== undefined && item.max !== undefined ? `Rentang ${item.min}–${item.max}` : null)) && <p className="text-xs text-muted-foreground">{item.help ?? `Rentang ${item.min}–${item.max}`}</p>}
       </div>
     );
   }

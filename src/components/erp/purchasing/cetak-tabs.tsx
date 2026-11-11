@@ -279,7 +279,20 @@ function mapInvoicePembelianData(d: PurchaseInvoiceResponse): InvoicePembelianDa
     })),
     keterangan: d.keterangan || '',
     diskonGlobal: Number(d.diskonGlobal) || 0,
-    ppn: Number(d.ppn) || 0
+    ppn: Number(d.ppn) || 0,
+    // === Update #053 — PPh23 + total TERSIMPAN ikut dikirim ke template
+    // cetak: baris PPh23 tampil bila invoice dibuat dengan PPh23 aktif,
+    // baris PPN hilang bila PPN dimatikan, dan semua angka ringkasan
+    // (termasuk terbilang) memakai nilai yang tersimpan di backend. ===
+    ppnApplicable: d.ppnApplicable ?? true,
+    pph23Applicable: d.pph23Applicable ?? false,
+    pph23: Number(d.pph23) || 0,
+    subTotal: Number(d.subTotal) || 0,
+    totalDiskon: Number(d.totalDiskon) || 0,
+    totalPpn: Number(d.totalPpn) || 0,
+    totalPph23: Number(d.totalPph23) || 0,
+    totalBiayaTambahan: Number(d.totalBiayaTambahan) || 0,
+    grandTotal: Number(d.grandTotal) || 0
   };
 }
 

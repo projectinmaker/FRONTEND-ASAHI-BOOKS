@@ -184,8 +184,8 @@ interface PelunasanDraftData {
   jumlahCek?: string;
   mataUang?: string;
   nilaiTukar?: string;
-  /** Update #01 — pph23Display per baris (potongan PPh 23 saat pelunasan) */
-  alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string; pph23Display?: string; noBuktiPotong?: string; masaPajak?: string }[];
+  /** Update #01 — alokasi per baris (Update #053: pph23Display dihapus — PPh23 kini direkam di Invoice Pembelian, bukan saat bayar) */
+  alokasi: { invoiceId: string; nilaiDisplay: string; diskonDisplay?: string; noBuktiPotong?: string; masaPajak?: string }[];
   /** === Update #044 — mode Penerimaan Piutang + akun beban Gagal Tagih === */
   modePenerimaan?: ModePenerimaan;
   akunBebanId?: string;
@@ -240,8 +240,6 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     nilaiDisplay: string; // formatted display
     /** Update cetak "Bayar Pemasok" — diskon pelunasan per faktur (hutang) */
     diskonDisplay?: string;
-    /** Update #01 — PPh 23 per faktur: piutang (dipotong pelanggan) / hutang (ditahan dari supplier) */
-    pph23Display?: string;
     /** AUD-08 (update #04) — bukti potong (BUPTI) + masa pajak per faktur */
     noBuktiPotong?: string;
     masaPajak?: string;
@@ -358,7 +356,6 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
           invoice: inv,
           nilaiDisplay: initial > 0 ? sanitizeRupiahInput(String(initial)) : '',
           diskonDisplay: '',
-          pph23Display: '',
           // AUD-08 (update #04) — bukti potong & masa pajak per faktur
           noBuktiPotong: '',
           masaPajak: ''
@@ -370,7 +367,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
 
   // === Update #044 — nominal alokasi: terkunci HANYA pada mode Penerimaan
   // Penuh (dan hutang — kebijakan #042). Mode Sebagian / Gagal Tagih:
-  // nominal dapat diedit (0 < nilai <= sisa tagihan; PPh23/diskon tetap
+  // nominal dapat diedit (0 < nilai <= sisa tagihan; diskon tetap
   // bisa diisi pada mode Sebagian). ===
   const updateAllocation = useCallback(
     (invoiceId: string, val: string) => {
@@ -398,19 +395,10 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     });
   }, []);
 
-  // Update #01 — input PPh 23 per faktur (piutang & hutang): potongan pajak
-  // atas pembayaran. Piutang: dipotong pelanggan dari setoran tunai.
-  // Hutang: ditahan perusahaan dari pembayaran ke supplier.
-  const updatePph23 = useCallback((invoiceId: string, val: string) => {
-    setSelected((prev) => {
-      const row = prev[invoiceId];
-      if (!row) return prev;
-      return { ...prev, [invoiceId]: { ...row, pph23Display: sanitizeRupiahInput(val) } };
-    });
-  }, []);
-
-  // Update #01 — shortcut isi PPh 23 = 2% dari nilai pembayaran faktur
-  // (tarif umum PPh 23 atas jasa; dapat dikoreksi manual setelahnya).
+  // === Update #053 — input PPh 23 per faktur DIHAPUS dari alur pembayaran:
+  // sejak #052, Invoice Pembelian sudah merekam PPh23 sejak dibuat (hutang
+  // net + Cr Hutang PPh 23 saat posting invoice), jadi kolom potongan saat
+  // bayar redundan & membingungkan. Payload selalu mengirim 0. ===
   // === AUD-08 (update #04) — bukti potong (BUPTI) + masa pajak per faktur ===
   const updateBuktiPotong = useCallback((invoiceId: string, val: string) => {
     setSelected((prev) => {
@@ -425,16 +413,6 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       const row = prev[invoiceId];
       if (!row) return prev;
       return { ...prev, [invoiceId]: { ...row, masaPajak: val } };
-    });
-  }, []);
-
-  const setPph23DuaPersen = useCallback((invoiceId: string) => {
-    setSelected((prev) => {
-      const row = prev[invoiceId];
-      if (!row) return prev;
-      const n = parseNum(parseRupiahInput(row.nilaiDisplay));
-      const pph = Math.round(n * 0.02);
-      return { ...prev, [invoiceId]: { ...row, pph23Display: pph > 0 ? sanitizeRupiahInput(String(pph)) : '' } };
     });
   }, []);
 
@@ -484,21 +462,19 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   const totalAllocation = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.nilaiDisplay)), 0), [selectedList]);
   // Update cetak "Bayar Pemasok" — Σ diskon pelunasan; kas keluar = Σ nilai − Σ diskon
   const totalDiskon = useMemo(() => selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.diskonDisplay || '')), 0), [selectedList]);
-  // Update #01 — Σ PPh 23 pelunasan; kas = Σ nilai − Σ pph23 (piutang) /
-  // Σ nilai − Σ diskon − Σ pph23 (hutang).
+  // Update #01 — Σ PPh 23 pelunasan.
   // === Update #046 — PPh 23 di Penerimaan (piutang) DIHAPUS: SI ber-PPh23
-  // sudah mencatat potongan sejak posting invoice (piutang net, AUD-12),
-  // jadi input potongan saat pelunasan redundan (malah ditolak backend
-  // anti-pencatatan-ganda). Piutang selalu kirim 0; hutang tetap dukung
-  // (legacy PI bayar-potong). ===
-  const totalPPh23 = useMemo(() => (isPiutang ? 0 : selectedList.reduce((s, r) => s + parseNum(parseRupiahInput(r.pph23Display || '')), 0)), [isPiutang, selectedList]);
+  // sudah mencatat potongan sejak posting invoice (piutang net, AUD-12).
+  // === Update #053 — PPh 23 di Pembayaran (hutang) DIHAPUS JUGA: PI
+  // ber-PPh23 (#052) sudah merekam potongannya sejak invoice — total kas
+  // kini = Σ nilai − Σ diskon + penalti (tanpa komponen PPh23). ===
 
   // ── Penalti (Update #5): subtotal alokasi + penalti = total pembayaran ──
   const penaltiNum = useMemo(() => parseNum(parseRupiahInput(penaltiDisplay)), [penaltiDisplay]);
   const penaltiMissingAkun = penaltiNum > 0 && !akunPenaltiId;
-  // Update #01 — total kas = Σ nilai − Σ diskon − Σ PPh 23 + penalti
+  // Update #01 — total kas = Σ nilai − Σ diskon + penalti
   // (diskon hanya muncul di hutang; untuk piutang Σ diskon = 0).
-  const totalPembayaran = totalAllocation - totalDiskon - totalPPh23 + penaltiNum;
+  const totalPembayaran = totalAllocation - totalDiskon + penaltiNum;
 
   // ── Update #13 (Kas & Bank) — laporkan status "isian terisi" (dirty) ke parent
   // (form Penerimaan/Pembayaran). Dipakai tombol "Ganti Jenis Transaksi" untuk
@@ -603,7 +579,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         const modeDraft = (d.modePenerimaan || 'penuh') as ModePenerimaan;
         const pakaiTersimpan = isPiutang && (modeDraft === 'sebagian' || modeDraft === 'gagal') && savedNilai > 0 && savedNilai <= sisaNow;
         const nilaiRestore = pakaiTersimpan ? sanitizeRupiahInput(String(savedNilai)) : sisaNow > 0 ? sanitizeRupiahInput(String(sisaNow)) : '';
-        restored[a.invoiceId] = { invoice: inv, nilaiDisplay: nilaiRestore, diskonDisplay: a.diskonDisplay || '', pph23Display: isPiutang ? '' : a.pph23Display || '', noBuktiPotong: a.noBuktiPotong || '', masaPajak: a.masaPajak || '' };
+        restored[a.invoiceId] = { invoice: inv, nilaiDisplay: nilaiRestore, diskonDisplay: a.diskonDisplay || '', noBuktiPotong: a.noBuktiPotong || '', masaPajak: a.masaPajak || '' };
       }
     }
     if (Object.keys(restored).length > 0) {
@@ -641,7 +617,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       // === Update #044 — mode Penerimaan Piutang + akun beban Gagal Tagih ===
       modePenerimaan: isPiutang ? modePenerimaan : undefined,
       akunBebanId,
-      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '', pph23Display: r.pph23Display || '', noBuktiPotong: r.noBuktiPotong || '', masaPajak: r.masaPajak || '' }))
+      alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '', noBuktiPotong: r.noBuktiPotong || '', masaPajak: r.masaPajak || '' }))
     });
   }, [pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, selected, modePenerimaan, akunBebanId, isPiutang]);
 
@@ -692,7 +668,6 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     let hasInvalid = false;
     let hasOver = false;
     let hasDiskonOver = false;
-    let hasPph23Over = false;
     for (const row of selectedList) {
       const n = parseNum(parseRupiahInput(row.nilaiDisplay));
       if (n <= 0) {
@@ -712,19 +687,11 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         hasDiskonOver = true;
         break;
       }
-      // Update #01 — diskon + PPh 23 tidak boleh melebihi nilai pembayaran
-      // (keduanya memotong kas; sinkron dengan validasi backend).
-      const pph = parseNum(parseRupiahInput(row.pph23Display || ''));
-      if (disk + pph > n + 0.01) {
-        hasPph23Over = true;
-        break;
-      }
     }
     const nilaiLabel = isGagalTagih ? 'penghapusan' : 'pembayaran';
     if (hasInvalid) e.alokasi = `Semua nilai ${nilaiLabel} harus lebih dari 0`;
     if (!e.alokasi && hasOver) e.alokasi = nominalTerKunci ? `Nilai ${nilaiLabel} terkunci dan harus sama dengan sisa tagihan invoice terkait (mode Penerimaan Penuh)` : `Nilai ${nilaiLabel} tidak boleh melebihi sisa tagihan invoice terkait`;
     if (!e.alokasi && hasDiskonOver) e.alokasi = 'Diskon tidak boleh melebihi nilai pembayaran invoice terkait';
-    if (!e.alokasi && hasPph23Over) e.alokasi = 'Diskon + PPh 23 tidak boleh melebihi nilai pembayaran invoice terkait';
     // Update #5 — penalti (tidak relevan untuk Gagal Tagih — non-kas)
     if (!isGagalTagih && penaltiNum < 0) e.penalti = 'Penalti tidak boleh negatif';
     if (!isGagalTagih && penaltiNum > 0 && !akunPenaltiId) e.penalti = 'Akun penalti wajib dipilih bila penalti > 0';
@@ -792,11 +759,10 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
           nilai: parseRupiahInput(r.nilaiDisplay),
           // Update cetak "Bayar Pemasok" — diskon pelunasan per faktur
           diskon: parseRupiahInput(r.diskonDisplay || ''),
-          // Update #01 — PPh 23 per faktur: piutang (dipotong pelanggan) /
-          // hutang (ditahan dari pembayaran supplier). Kas = nilai − diskon − pph23.
-          // === Update #046 — piutang selalu 0 (potongan PPh23 sudah tercatat
-          // sejak posting invoice — input dihapus dari alur Penerimaan). ===
-          pph23: isPiutang ? '0.00' : parseRupiahInput(r.pph23Display || ''),
+          // === Update #053 — PPh 23 per faktur DIHAPUS dari input: PI ber-PPh23
+          // (#052) sudah merekam potongannya sejak invoice — selalu kirim 0
+          // (kontrak payload backend tidak berubah). ===
+          pph23: '0.00',
           // AUD-08 (update #04) — bukti potong + masa pajak per faktur
           noBuktiPotong: r.noBuktiPotong?.trim() || undefined,
           masaPajak: r.masaPajak?.trim() || undefined
@@ -1238,19 +1204,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
               </p>
             </div>
 
-            {/* Update #01 — info PPh 23 & akun yang dipakai saat posting
-                (Update #044 — disembunyikan pada mode Gagal Tagih: non-kas).
-                === Update #046 — hanya HUTANG: potongan PPh 23 di alur
-                PENERIMAAN (piutang) dihapus — SI ber-PPh23 sudah mencatat
-                 potongannya sejak posting invoice (piutang net). === */}
-            {!isGagalTagih && !isPiutang && (
-              <div className="flex items-start gap-2 rounded-md border bg-muted/30 p-3">
-                <Info className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                <p className="text-xs text-muted-foreground">
-                  <strong>PPh 23 per faktur (opsional):</strong> PPh 23 yang ditahan dari pembayaran supplier — kas keluar berkurang, selisihnya dikredit ke akun Hutang PPh 23. Tombol <strong>2%</strong> mengisi otomatis 2% dari nilai pembayaran. Sisa tagihan tetap berkurang sebesar nilai penuh (tidak ada pencatatan ganda). Setelah diposting, dokumen otomatis muncul di daftar Pembayaran Kas &amp; Bank.
-                </p>
-              </div>
-            )}
+            {/* === Update #053 — info "PPh 23 per faktur" DIHAPUS: potongan
+                PPh23 kini direkam di Invoice Pembelian sejak dibuat (#052);
+                saat bayar cukup bayar sebesar sisa tagihan (sudah net). === */}
 
             {/* === Update #047 — penjelasan fungsi No. Bukti Potong & Masa
                 Pajak (pertanyaan user: "untuk laporannya bagaimana dan
@@ -1391,7 +1347,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                   TERKUNCI = sisa tagihan (#042); mode Sebagian / Gagal Tagih
                   dapat diedit (≤ sisa). Gagal Tagih: tanpa PPh 23 / bukti
                   potong / diskon (non-kas). === */}
-              <p className="text-xs text-muted-foreground">{nominalTerKunci ? `Nilai ${isGagalTagih ? 'penghapusan' : 'pembayaran'} per invoice terkunci otomatis sebesar sisa tagihan (tidak dapat diedit).${!isPiutang ? ' PPh 23, bukti potong, masa pajak dan diskon tetap dapat diisi.' : ' Bukti potong dan masa pajak tetap dapat diisi.'}` : `Nilai ${isGagalTagih ? 'penghapusan' : 'penerimaan'} per invoice dapat diedit — maksimal sebesar sisa tagihan (mode ${isGagalTagih ? 'Gagal Tagih' : 'Penerimaan Sebagian'}).`}</p>
+              <p className="text-xs text-muted-foreground">{nominalTerKunci ? `Nilai ${isGagalTagih ? 'penghapusan' : 'pembayaran'} per invoice terkunci otomatis sebesar sisa tagihan (tidak dapat diedit).${!isPiutang ? ' Bukti potong, masa pajak dan diskon tetap dapat diisi.' : ' Bukti potong dan masa pajak tetap dapat diisi.'}` : `Nilai ${isGagalTagih ? 'penghapusan' : 'penerimaan'} per invoice dapat diedit — maksimal sebesar sisa tagihan (mode ${isGagalTagih ? 'Gagal Tagih' : 'Penerimaan Sebagian'}).`}</p>
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -1400,11 +1356,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                       <TableHead>No Invoice</TableHead>
                       <TableHead className="text-right w-[140px]">Sisa Tagihan</TableHead>
                       <TableHead className="text-right w-[180px]">{isGagalTagih ? 'Nilai Penghapusan' : 'Nilai Pembayaran'}</TableHead>
-                      {/* Update #01 — PPh 23 per faktur (Update #044: disembunyikan
-                          pada mode Gagal Tagih — non-kas; Update #046: disembunyikan
-                          juga untuk PENERIMAAN/piutang — potongan PPh23 SI sudah
-                          tercatat sejak posting invoice). */}
-                      {!isGagalTagih && !isPiutang && <TableHead className="text-right w-[160px]">PPh 23</TableHead>}
+                      {/* === Update #053 — kolom PPh 23 DIHAPUS (input potongan
+                          per faktur): PI ber-PPh23 (#052) sudah mencatat
+                          potongannya sejak invoice — bayar sebesar sisa tagihan. === */}
                       {/* AUD-08 (update #04) — bukti potong + masa pajak per faktur
                           (Update #044: disembunyikan pada mode Gagal Tagih) */}
                       {!isGagalTagih && <TableHead className="w-[200px]">Bukti Potong / Masa Pajak</TableHead>}
@@ -1423,10 +1377,6 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                       const sisaSetelah = sisa - n;
                       const disk = parseNum(parseRupiahInput(row.diskonDisplay || ''));
                       const diskonOver = disk > n + 0.01;
-                      // Update #01 — PPh 23 per faktur: diskon + pph23 ≤ nilai
-                      const pph = parseNum(parseRupiahInput(row.pph23Display || ''));
-                      const pph23Over = disk + pph > n + 0.01;
-                      const netTunai = n - disk - pph;
                       return (
                         <TableRow key={row.invoice.invoiceId}>
                           <TableCell className="text-center text-xs text-muted-foreground">{idx + 1}</TableCell>
@@ -1439,26 +1389,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                             {nominalTerKunci ? <Input type="text" inputMode="numeric" value={row.nilaiDisplay} readOnly aria-readonly="true" title="Nilai terkunci — otomatis sebesar sisa tagihan invoice (mode Penerimaan Penuh)" onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className="text-right font-mono h-8 text-sm bg-muted/50 text-muted-foreground cursor-not-allowed focus-visible:ring-0" /> : <Input type="text" inputMode="numeric" value={row.nilaiDisplay} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${over ? 'border-destructive' : ''}`} aria-label={`Nilai ${isGagalTagih ? 'penghapusan' : 'penerimaan'} ${row.invoice.noDokumen}`} />}
                             {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">{nominalTerKunci ? 'Nilai harus sama dengan sisa tagihan' : 'Tidak boleh melebihi sisa tagihan'}</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">{isGagalTagih ? 'Dihapus penuh' : 'Lunas'}</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
                           </TableCell>
-                          {/* Update #01 — input PPh 23 per faktur + shortcut 2%
-                              (Update #044 — disembunyikan mode Gagal Tagih;
-                               Update #046 — disembunyikan untuk piutang/Penerimaan) */}
-                          {!isGagalTagih && !isPiutang && (
-                            <TableCell className="text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <Input type="text" inputMode="numeric" placeholder="0" value={row.pph23Display || ''} onChange={(e) => updatePph23(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm w-24 ${pph23Over ? 'border-destructive' : ''}`} aria-label={`PPh 23 pelunasan ${row.invoice.noDokumen}`} />
-                                <Button type="button" variant="outline" size="sm" className="h-8 px-2 text-[11px] shrink-0" onClick={() => setPph23DuaPersen(row.invoice.invoiceId)} title="Isi otomatis 2% dari nilai pembayaran">
-                                  2%
-                                </Button>
-                              </div>
-                              {pph23Over ? (
-                                <p className="mt-1 text-[11px] leading-tight text-destructive">Diskon + PPh 23 melebihi nilai</p>
-                              ) : pph > 0 ? (
-                                <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
-                                  {isPiutang ? 'Diterima tunai' : 'Dibayar tunai'}: {formatRp(netTunai)}
-                                </p>
-                              ) : null}
-                            </TableCell>
-                          )}
+                          {/* === Update #053 — sel input PPh 23 + tombol 2%
+                              DIHAPUS (PPh23 direkam di Invoice Pembelian
+                              sejak #052 — bayar sebesar sisa tagihan). === */}
                           {/* AUD-08 (update #04) — no bukti potong + masa pajak (YYYY-MM)
                               (Update #044 — disembunyikan mode Gagal Tagih) */}
                           {!isGagalTagih && (
@@ -1501,14 +1434,8 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                     <span className="font-mono">−{formatRp(totalDiskon)}</span>
                   </div>
                 )}
-                {/* Update #01 — PPh 23 memotong kas (Update #044 — Gagal Tagih: tanpa;
-                    Update #046 — piutang/Penerimaan: tanpa — selalu 0) */}
-                {!isGagalTagih && !isPiutang && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">PPh 23</span>
-                    <span className="font-mono">−{formatRp(totalPPh23)}</span>
-                  </div>
-                )}
+                {/* === Update #053 — baris "PPh 23" DIHAPUS dari ringkasan:
+                    total kas kini = Σ nilai − Σ diskon + penalti. === */}
                 {!isGagalTagih && (
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Penalti</span>
@@ -1587,7 +1514,7 @@ export function PelunasanHutangView({ refreshKey }: { refreshKey?: number }) {
     <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Pelunasan Hutang</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Pilih supplier terlebih dahulu, lalu alokasikan pembayaran kas ke invoice pembelian yang masih bersaldo — mendukung partial, multi-invoice, diskon, dan PPh 23</p>
+        <p className="text-muted-foreground mt-1 text-sm">Pilih supplier terlebih dahulu, lalu alokasikan pembayaran kas ke invoice pembelian yang masih bersaldo — mendukung partial, multi-invoice, dan diskon. Potongan PPh 23 tidak diinput di sini — invoice pembelian ber-PPh23 sudah merekam potongannya sejak dibuat.</p>
       </div>
       <PelunasanTab jenis="hutang" refreshKey={refreshKey} />
     </div>
