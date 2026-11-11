@@ -14,6 +14,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
+// === Update #057 — draft otomatis untuk form create Aset Tetap (Daftar
+// Aset) & Transaksi Aset (mirror pola draft di sales/index.tsx): isian
+// tersimpan otomatis (debounced) ke localStorage per user, dipulihkan saat
+// form dibuka kembali — data tidak hilang saat koneksi putus / refresh. ===
+import { useAuthStore } from '@/store/auth-store';
+import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
+import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { formatRp, formatDate } from '@/lib/pdf-utils';
@@ -432,6 +439,42 @@ function DaftarAsetCreateForm() {
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
 
+  // ── === Update #057 — draft otomatis: simpan tiap perubahan (debounced),
+  // pulihkan saat form dibuka kembali, buang setelah submit sukses / tombol
+  // Buang Draft. === ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<FormState>(draftKey(userId, 'fixed-assets', 'daftar-aset', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setForm({ ...emptyForm, ...d });
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Tambah Aset dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRenderRef = useRef(true);
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    draft.saveDraft(form);
+  }, [form]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setForm(emptyForm);
+  }, []);
+
   const updateForm = (key: keyof FormState, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -523,6 +566,8 @@ function DaftarAsetCreateForm() {
       };
       await api.post<AsetTetapResponse>('/aset-tetap', payload);
       toast.success('Aset tetap berhasil ditambahkan');
+      // === Update #057 — draft dibuang setelah create sukses. ===
+      draft.clearDraft();
       refreshListTab('fixed-assets', 'daftar-aset');
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
@@ -691,6 +736,10 @@ function DaftarAsetCreateForm() {
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
+            {/* === Update #057 — indikator draft otomatis. === */}
+            <div className="mr-auto">
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Tambah Aset" />
+            </div>
             <Button variant="outline" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>
@@ -2105,6 +2154,21 @@ function TransaksiAsetList({ refreshKey }: { refreshKey?: number }) {
 
 // ─── Form: Transaksi Aset Create ─────────────────────────────────────────────
 
+// === Update #057 — data draft otomatis form Transaksi Aset. ===
+interface TransaksiAsetDraftData {
+  asetId: string;
+  jenis: string;
+  tanggal: string;
+  umurBulan: string;
+  nilaiSisa: string;
+  akunLawanId: string;
+  sourceJournalId: string;
+  akumulasiAwal: string;
+  lokasi: string;
+  nilaiPelepasan: string;
+  akunLabaRugiId: string;
+}
+
 function TransaksiAsetCreateForm() {
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
@@ -2133,6 +2197,80 @@ function TransaksiAsetCreateForm() {
   const [fLokasi, setFLokasi] = useState('');
   const [fNilaiPelepasan, setFNilaiPelepasan] = useState('');
   const [fAkunLabaRugiId, setFAkunLabaRugiId] = useState('');
+
+  // ── === Update #057 — draft otomatis: simpan tiap perubahan (debounced),
+  // pulihkan saat form dibuka kembali, buang setelah submit sukses / tombol
+  // Buang Draft. === ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<TransaksiAsetDraftData>(draftKey(userId, 'fixed-assets', 'transaksi-aset', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+
+  const todayIso = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFAsetId(d.asetId || '');
+    setFJenis((d.jenis || '') as JenisAsetTransaksi | '');
+    setFTanggal(d.tanggal || todayIso());
+    setFUmurBulan(d.umurBulan || '');
+    setFNilaiSisa(d.nilaiSisa || '');
+    setFAkunLawanId(d.akunLawanId || '');
+    setFSourceJournalId(d.sourceJournalId || '');
+    setFAkumulasiAwal(d.akumulasiAwal || '');
+    setFLokasi(d.lokasi || '');
+    setFNilaiPelepasan(d.nilaiPelepasan || '');
+    setFAkunLabaRugiId(d.akunLabaRugiId || '');
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Transaksi Aset dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRenderRef = useRef(true);
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    draft.saveDraft({
+      asetId: fAsetId,
+      jenis: fJenis,
+      tanggal: fTanggal,
+      umurBulan: fUmurBulan,
+      nilaiSisa: fNilaiSisa,
+      akunLawanId: fAkunLawanId,
+      sourceJournalId: fSourceJournalId,
+      akumulasiAwal: fAkumulasiAwal,
+      lokasi: fLokasi,
+      nilaiPelepasan: fNilaiPelepasan,
+      akunLabaRugiId: fAkunLabaRugiId
+    });
+  }, [fAsetId, fJenis, fTanggal, fUmurBulan, fNilaiSisa, fAkunLawanId, fSourceJournalId, fAkumulasiAwal, fLokasi, fNilaiPelepasan, fAkunLabaRugiId]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFAsetId('');
+    setFJenis('');
+    setFTanggal(todayIso());
+    setFUmurBulan('');
+    setFNilaiSisa('');
+    setFAkunLawanId('');
+    setFSourceJournalId('');
+    setFAkumulasiAwal('');
+    setFLokasi('');
+    setFNilaiPelepasan('');
+    setFAkunLabaRugiId('');
+    setFormErrors({});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2190,6 +2328,8 @@ function TransaksiAsetCreateForm() {
       }
       await api.post('/aset-transaksi', payload);
       toast.success('Transaksi aset berhasil dibuat');
+      // === Update #057 — draft dibuang setelah create sukses. ===
+      draft.clearDraft();
       refreshListTab('fixed-assets', 'transaksi-aset');
       if (activeTabId) closeTab(activeTabId);
     } catch (err) {
@@ -2349,6 +2489,10 @@ function TransaksiAsetCreateForm() {
           )}
 
           <div className="flex justify-end gap-2 pt-2">
+            {/* === Update #057 — indikator draft otomatis. === */}
+            <div className="mr-auto">
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Transaksi Aset" />
+            </div>
             <Button variant="outline" size="sm" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>

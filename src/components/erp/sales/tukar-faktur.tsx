@@ -9,7 +9,7 @@
 // sales/index.tsx TIDAK disentuh.
 // ═════════════════════════════════════════════════════════════════════════════
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,11 @@ import { CompanyBrand } from '@/components/erp/company-brand';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
+// === Update #057 — draft otomatis form Tukar Faktur (mirror pola draft
+// form Pengiriman/Invoice/Retur di sales/index.tsx). ===
+import { useAuthStore } from '@/store/auth-store';
+import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
+import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 import type { TukarFakturResponse, TukarFakturCreate, TukarFakturUpdate, SalesInvoiceResponse, HardDeleteResponse } from '@/types/api';
@@ -611,6 +616,13 @@ export function TukarFakturTab({ refreshKey }: { refreshKey?: number }) {
 // FORM CREATE: TukarFakturCreateForm
 // ═════════════════════════════════════════════════════════════════════════════
 
+// === Update #057 — data draft otomatis form Tukar Faktur. ===
+interface TukarFakturDraftData {
+  salesInvoiceId: string;
+  tanggal: string;
+  keterangan: string;
+}
+
 export function TukarFakturCreateForm() {
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
@@ -629,6 +641,51 @@ export function TukarFakturCreateForm() {
   const [preview, setPreview] = useState<SalesInvoiceResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // ── === Update #057 — draft otomatis: simpan tiap perubahan (debounced),
+  // pulihkan saat form dibuka kembali, buang setelah submit sukses / tombol
+  // Buang Draft — isian tidak hilang saat koneksi putus / refresh. === ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<TukarFakturDraftData>(draftKey(userId, 'sales', 'tukar-faktur', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFSalesInvoiceId(d.salesInvoiceId || '');
+    setFTanggal(d.tanggal || '');
+    setFKeterangan(d.keterangan || '');
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Tukar Faktur dimuat kembali otomatis.' });
+  }, []);
+
+  const isFirstRenderRef = useRef(true);
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    draft.saveDraft({
+      salesInvoiceId: fSalesInvoiceId,
+      tanggal: fTanggal,
+      keterangan: fKeterangan
+    });
+  }, [fSalesInvoiceId, fTanggal, fKeterangan]);
+
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFSalesInvoiceId('');
+    setFTanggal('');
+    setFKeterangan('');
+    setFormErrors({});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -701,6 +758,8 @@ export function TukarFakturCreateForm() {
       };
       const res = await api.post<TukarFakturResponse>('/penjualan/tukar-faktur', body);
       toast.success(`Tukar Faktur ${res.noTukarFaktur} berhasil dibuat`);
+      // === Update #057 — draft dibuang setelah create sukses. ===
+      draft.clearDraft();
       refreshListTab('sales', 'tukar-faktur');
       if (activeTabId) closeTab(activeTabId);
     } catch (e) {
@@ -813,6 +872,10 @@ export function TukarFakturCreateForm() {
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            {/* === Update #057 — indikator draft otomatis. === */}
+            <div className="mr-auto">
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Tukar Faktur" />
+            </div>
             <Button variant="outline" size="sm" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>

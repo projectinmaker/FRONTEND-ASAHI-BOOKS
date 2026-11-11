@@ -7,7 +7,7 @@
 // dan sales/cetak-tabs.tsx. Dipasang di sales/index.tsx (routing + formMode).
 // ═════════════════════════════════════════════════════════════════════════════
 
-import { useState, useCallback, useEffect, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,6 +28,13 @@ import { api, PaginatedResponse, ApiError } from '@/lib/api';
 // (PPN dihapus dari penawaran; tarif default hanya untuk PO/Invoice). ===
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
+// === Update #057 — draft otomatis form Penawaran (mirror pola Pengiriman/
+// Invoice/Retur di sales/index.tsx): isian tersimpan otomatis (debounced)
+// ke localStorage per user, dipulihkan saat form dibuka kembali — data TIDAK
+// hilang lagi saat koneksi terputus / pindah tab / refresh halaman. ===
+import { useAuthStore } from '@/store/auth-store';
+import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
+import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 import { PenawaranPDFTemplate, type PenawaranData, type DetailRow, type BiayaTambahan } from '@/components/erp/sales/pdf-templates';
@@ -157,6 +164,22 @@ interface PenawaranBiayaRow {
   id: string;
   nama: string;
   jumlah: string;
+}
+
+// === Update #057 — data draft otomatis form Penawaran (mode create). ===
+interface PenawaranDraftData {
+  pelangganId: string;
+  customerCode: string;
+  tanggal: string;
+  berlakuHingga: string;
+  syaratBayarId: string;
+  alamatPengiriman: string;
+  keterangan: string;
+  diskonGlobal: string;
+  bulan: string;
+  tahun: string;
+  detail: PenawaranFormRow[];
+  biayaTambahan: PenawaranBiayaRow[];
 }
 
 function newFormRow(): PenawaranFormRow {
@@ -940,6 +963,86 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   // ── Update #031 — katalog item bebas (saran item berulang) ──
   const [katalogItems, setKatalogItems] = useState<PenawaranKatalogItemResponse[]>([]);
 
+  // ── === Update #057 — draft otomatis (mode CREATE saja; form edit memuat
+  // data dari server). Mirror pola draft di sales/index.tsx: simpan tiap
+  // perubahan (debounced ~600ms), pulihkan saat form dibuka kembali, buang
+  // setelah submit sukses / tombol Buang Draft. === ──
+  const userId = useAuthStore((s) => s.user?.id ?? 'anon');
+  const draft = useFormDraft<PenawaranDraftData>(draftKey(userId, 'sales', 'penawaran', 'create'));
+  const skipNextSaveRef = useRef(false);
+  const restoredRef = useRef(false);
+
+  // Pulihkan draft saat mount (hanya create).
+  useEffect(() => {
+    if (editId) return;
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const d = draft.draft;
+    if (!d) return;
+    setFPelangganId(d.pelangganId || '');
+    setFCustomerCode(d.customerCode || '');
+    setFTanggal(d.tanggal || todayStr());
+    setFBerlakuHingga(d.berlakuHingga || '');
+    setFSyaratBayarId(d.syaratBayarId || '');
+    setFAlamatPengiriman(d.alamatPengiriman || '');
+    setFKeterangan(d.keterangan || '');
+    setFDiskonGlobal(d.diskonGlobal || '0');
+    const nw = new Date();
+    setFBulan(d.bulan || String(nw.getMonth() + 1));
+    setFTahun(d.tahun || String(nw.getFullYear()));
+    setFDetail(Array.isArray(d.detail) && d.detail.length ? d.detail : [newFormRow()]);
+    setFBiayaTambahan(Array.isArray(d.biayaTambahan) ? d.biayaTambahan : []);
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Penawaran dimuat kembali otomatis.' });
+  }, []);
+
+  // Simpan draft tiap perubahan isian (debounced).
+  const isFirstRenderRef = useRef(true);
+  useEffect(() => {
+    if (editId) return;
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    draft.saveDraft({
+      pelangganId: fPelangganId,
+      customerCode: fCustomerCode,
+      tanggal: fTanggal,
+      berlakuHingga: fBerlakuHingga,
+      syaratBayarId: fSyaratBayarId,
+      alamatPengiriman: fAlamatPengiriman,
+      keterangan: fKeterangan,
+      diskonGlobal: fDiskonGlobal,
+      bulan: fBulan,
+      tahun: fTahun,
+      detail: fDetail,
+      biayaTambahan: fBiayaTambahan
+    });
+  }, [editId, fPelangganId, fCustomerCode, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fDiskonGlobal, fBulan, fTahun, fDetail, fBiayaTambahan]);
+
+  // Buang draft + kosongkan form.
+  const handleDiscardDraft = useCallback(() => {
+    skipNextSaveRef.current = true;
+    draft.clearDraft();
+    setFPelangganId('');
+    setFCustomerCode('');
+    setFTanggal(todayStr());
+    setFBerlakuHingga('');
+    setFSyaratBayarId('');
+    setFAlamatPengiriman('');
+    setFKeterangan('');
+    setFDiskonGlobal('0');
+    const nw = new Date();
+    setFBulan(String(nw.getMonth() + 1));
+    setFTahun(String(nw.getFullYear()));
+    setFDetail([newFormRow()]);
+    setFBiayaTambahan([]);
+    setFormErrors({});
+  }, []);
+
   // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis
   // dari master (tidak perlu input manual lagi; tetap bisa disunting).
   // Update #003: singkatan customer ikut ditarik dari master pelanggan. ──
@@ -1199,6 +1302,8 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
       } else {
         await api.post<PenawaranResponse>('/penjualan/penawaran', body);
         toast.success('Penawaran berhasil dibuat');
+        // === Update #057 — draft dibuang setelah create sukses. ===
+        draft.clearDraft();
       }
       refreshListTab('sales', subPage);
       if (activeTabId) closeTab(activeTabId);
@@ -1501,6 +1606,12 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." disabled={readOnly} />
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+            {/* === Update #057 — indikator draft otomatis (mode create). === */}
+            {!editId && (
+              <div className="mr-auto">
+                <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Penawaran" />
+              </div>
+            )}
             <Button variant="outline" size="sm" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>

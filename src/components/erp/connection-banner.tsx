@@ -14,11 +14,9 @@ import { pingServer, NET_DOWN_EVENT, NET_UP_EVENT } from '@/lib/api';
  *
  * SEKARANG: begitu ada request yang gagal karena jaringan (ApiError status 0
  * dari api.ts), banner kuning ini muncul otomatis di atas layar berisi:
- * 1. Penjelasan apa yang terjadi + penegasan DATA YANG SUDAH TERSIMPAN AMAN.
- * 2. Instruksi urut: periksa koneksi internet → tunggu & coba lagi →
- *    muat ulang halaman (F5 / Ctrl+R) → hubungi administrator bila berlanjut.
- * 3. Peringatan lembut: ada pekerjaan belum disimpan? Jangan tutup halaman
- *    dulu — tekan "Coba Lagi" (biasanya pulih dalam beberapa saat).
+ * 1. Penegasan DATA YANG SUDAH TERSIMPAN AMAN + instruksi singkat
+ *    (periksa internet → Coba Lagi / muat ulang halaman).
+ * 2. Peringatan lembut: ada isian belum disimpan? Jangan tutup halaman dulu.
  *
  * Perilaku:
  * - Tombol "Coba Lagi" → ping ringan GET /health (tanpa auth) via pingServer().
@@ -89,10 +87,12 @@ export function ConnectionStatusBanner() {
           <WifiOff className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
           <div className="min-w-0">
             <p className="text-sm font-semibold">Koneksi ke server terputus</p>
+            {/* === Update #057 — teks dipersingkat: inti pesan (data aman +
+                aksi ringkas) tetap ada, kalimat bertele-tele dihapus. === */}
             <p className="mt-0.5 text-xs leading-relaxed">
-              Aplikasi tidak dapat menghubungi server. <strong>Tenang — data yang sudah tersimpan aman.</strong> Silakan periksa koneksi internet Anda, tunggu sebentar, lalu coba lagi. Bila masih gagal, muat ulang halaman (tekan F5 / Ctrl+R). Bila masalah berlanjut, hubungi administrator.
+              <strong>Tenang — data yang sudah tersimpan aman.</strong> Periksa koneksi internet Anda, lalu tekan &ldquo;Coba Lagi&rdquo; atau muat ulang halaman (F5).
             </p>
-            <p className="mt-1 text-xs italic">Ada pekerjaan yang belum disimpan? Jangan tutup halaman dulu — tekan &ldquo;Coba Lagi&rdquo;, biasanya koneksi pulih dalam beberapa saat.</p>
+            <p className="mt-1 text-xs italic">Ada isian belum disimpan? Jangan tutup halaman dulu.</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:ml-auto sm:pt-0.5">

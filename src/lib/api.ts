@@ -79,10 +79,11 @@ function notifyNetUp() {
 
 /**
  * Update #055 — pesan ramah saat koneksi ke backend terputus (status 0).
- * Dipakai semua jalur fetch di file ini supaya instruksinya konsisten:
- * data aman → periksa internet → coba lagi → muat ulang → hubungi admin.
+ * Dipakai semua jalur fetch di file ini supaya instruksinya konsisten.
+ * === Update #057 — teks dipersingkat: inti pesan tetap ada (data aman +
+ * cek internet + coba lagi / muat ulang), kalimat bertele-tele dihapus. ===
  */
-const NETWORK_ERROR_MESSAGE = 'Koneksi ke server terputus. Tenang — data yang sudah tersimpan aman. ' + 'Silakan periksa koneksi internet Anda, tunggu sebentar, lalu coba lagi. ' + 'Bila masih gagal, muat ulang halaman (tekan F5 / Ctrl+R). ' + 'Bila masalah berlanjut, hubungi administrator.';
+const NETWORK_ERROR_MESSAGE = 'Koneksi ke server terputus. Data tersimpan aman — cek koneksi internet Anda, lalu coba lagi atau muat ulang halaman (F5).';
 
 /**
  * Update #055 — ping ringan GET /health (root backend, tanpa auth).
