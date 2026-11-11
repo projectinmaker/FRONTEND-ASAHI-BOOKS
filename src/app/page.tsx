@@ -18,6 +18,10 @@ import { useSessionWatch } from '@/hooks/use-session-watch';
 // === Update #055 — banner "Koneksi ke server terputus" (pesan ramah +
 //     instruksi: coba lagi / muat ulang / hubungi admin) ===
 import { ConnectionStatusBanner } from '@/components/erp/connection-banner';
+// === Update #059 — error boundary area konten modul: chunk JS gagal dimuat
+//     saat koneksi user terputus → kartu pemulihan di area konten (sidebar,
+//     header, TabBar tetap utuh) + auto pulih saat browser 'online'. ===
+import { ModuleErrorBoundary } from '@/components/erp/module-error-boundary';
 
 // Dynamic imports for all modules
 const Dashboard = dynamic(() => import('@/components/erp/dashboard'), { ssr: false });
@@ -306,7 +310,17 @@ export default function HomePage() {
         <main className="flex-1 overflow-y-auto">
           {/* === Update #043 — key mengikuti id tab + seq (dedupe openFormTab
               menaikkan seq → konten form REMOUNT dengan props/data segar). === */}
-          {activeTab && <ModuleContent key={`${activeTab.id}-${activeTab.seq ?? 0}`} moduleId={activeTab.module} subPage={activeTab.subPage} refreshKey={refreshKey} formMode={activeTab.tabType === 'form' ? activeTab.formKey : undefined} formProps={activeTab.formProps} />}
+          {/* === Update #059 — ModuleErrorBoundary menangkap gagal-muat chunk
+              modul (next/dynamic) saat koneksi USER terputus: kartu pemulihan
+              tampil DI AREA KONTEN saja + auto coba lagi saat browser
+              melaporkan 'online'. Boundary ikut di-remount per tab (key sama
+              dengan ModuleContent) supaya pindah tab selalu mulai dari state
+              bersih — modul lain yang sudah ter-load tetap bisa dipakai. === */}
+          {activeTab && (
+            <ModuleErrorBoundary key={`meb-${activeTab.id}-${activeTab.seq ?? 0}`}>
+              <ModuleContent key={`${activeTab.id}-${activeTab.seq ?? 0}`} moduleId={activeTab.module} subPage={activeTab.subPage} refreshKey={refreshKey} formMode={activeTab.tabType === 'form' ? activeTab.formKey : undefined} formProps={activeTab.formProps} />
+            </ModuleErrorBoundary>
+          )}
         </main>
       </SidebarInset>
 

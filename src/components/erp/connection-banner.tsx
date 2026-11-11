@@ -27,12 +27,27 @@ import { pingServer, NET_DOWN_EVENT, NET_UP_EVENT } from '@/lib/api';
  *   dan ada request baru yang gagal).
  *
  * Dipasang di src/app/page.tsx — di halaman login DAN di dalam shell ERP.
+ *
+ * === Update #059 — deteksi sisi USER ===
+ * Event browser 'offline'/'online' kini dijembatani api.ts ke NET_DOWN/NET_UP
+ * (+ ping server saat 'online'), sehingga banner bereaksi SEKETIKA saat
+ * internet user terputus — walau tidak ada request yang sedang berjalan.
+ * Satu-satunya celah: halaman dibuka/di-reload SAAT sudah offline (event
+ * 'offline' sudah lewat sebelum listener terpasang) — ditutup dengan
+ * inisialisasi lazy navigator.onLine (banner tampil SEGERA, mis. di halaman
+ * login yang belum memanggil API apa pun).
  */
 export function ConnectionStatusBanner() {
-  const [offline, setOffline] = useState(false);
+  // === Update #059 — inisialisasi lazy: bila halaman dibuka/di-reload dalam
+  // kondisi offline, banner tampil SEGERA (tidak menunggu request pertama
+  // gagal). Aman membaca navigator.onLine saat inisialisasi karena komponen
+  // ini hanya merender SETELAH mount di client (page.tsx mengembalikan null
+  // pra-mount) — tidak di-SSR/hydrate. ===
+  const [offline, setOffline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine === false : false));
   const [checking, setChecking] = useState(false);
   // true saat pernah offline — supaya toast "pulih" hanya sekali per pemulihan
-  const wasOffline = useRef(false);
+  // (ikut true saat mulai offline supaya toast muncul saat koneksi kembali)
+  const wasOffline = useRef(typeof navigator !== 'undefined' && navigator.onLine === false);
 
   useEffect(() => {
     const onDown = () => {
@@ -90,7 +105,7 @@ export function ConnectionStatusBanner() {
             {/* === Update #057 — teks dipersingkat: inti pesan (data aman +
                 aksi ringkas) tetap ada, kalimat bertele-tele dihapus. === */}
             <p className="mt-0.5 text-xs leading-relaxed">
-              <strong>Tenang — data yang sudah tersimpan aman.</strong> Periksa koneksi internet Anda, lalu tekan &ldquo;Coba Lagi&rdquo; atau muat ulang halaman (F5).
+              <strong>Tenang — data yang sudah tersimpan aman.</strong> Periksa koneksi internet Anda, lalu tekan &ldquo;Coba Lagi&rdquo; atau muat ulang halaman.
             </p>
             <p className="mt-1 text-xs italic">Ada isian belum disimpan? Jangan tutup halaman dulu.</p>
           </div>

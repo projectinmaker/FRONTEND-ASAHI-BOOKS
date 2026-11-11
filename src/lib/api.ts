@@ -83,7 +83,7 @@ function notifyNetUp() {
  * === Update #057 — teks dipersingkat: inti pesan tetap ada (data aman +
  * cek internet + coba lagi / muat ulang), kalimat bertele-tele dihapus. ===
  */
-const NETWORK_ERROR_MESSAGE = 'Koneksi ke server terputus. Data tersimpan aman — cek koneksi internet Anda, lalu coba lagi atau muat ulang halaman (F5).';
+const NETWORK_ERROR_MESSAGE = 'Koneksi ke server terputus. Data tersimpan aman — cek koneksi internet Anda, lalu coba lagi atau muat ulang halaman.';
 
 /**
  * Update #055 — ping ringan GET /health (root backend, tanpa auth).
@@ -312,4 +312,24 @@ export async function postForm<T>(endpoint: string, form: FormData): Promise<T> 
   notifyNetUp();
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+// ── Update #059 — deteksi koneksi dari SISI USER (event browser) ──────────
+// NET_DOWN/NET_UP sebelumnya hanya terpicu oleh HASIL REQUEST (gagal/sukses)
+// — tepat untuk mendeteksi masalah sisi SERVER. Tapi bila internet USER
+// sendiri terputus saat TIDAK ada request berjalan (user sedang idle), sistem
+// tidak menyadari apa-apa sampai aksi berikutnya gagal. Event bawaan browser
+// menutup celah itu:
+// - 'offline' → langsung NET_DOWN: banner koneksi (#055) + skeleton sidebar
+//   "Menyambungkan kembali…" (#058) muncul SEKETIKA, tanpa menunggu request
+//   pertama gagal.
+// - 'online'  → JANGAN langsung dianggap pulih (bisa saja server tetap down):
+//   ping server dulu — bila sukses, pingServer() memancarkan NET_UP (#056)
+//   → banner tertutup + izin dimuat ulang otomatis. Bila ping gagal, banner
+//   tetap tampil dan auto-ping 30 detik (#055) berlanjut.
+if (typeof window !== 'undefined') {
+  window.addEventListener('offline', () => notifyNetDown());
+  window.addEventListener('online', () => {
+    void pingServer();
+  });
 }
