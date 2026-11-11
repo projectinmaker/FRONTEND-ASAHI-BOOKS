@@ -22,8 +22,19 @@ import { useAuthStore, readExpiresAt, readLastRefresh, setLastActivity } from '@
  *    (pembersihan token/user sama seperti alur 401 di api.ts).
  * 4. 401 dari server tetap memicu sesi berakhir (api.ts) — jaring pengaman
  *    bila token tidak sempat digeser.
+ *
+ * === Update #055 — umur token JWT backend kini 5 jam (app/config.py),
+ * SENGAJA lebih panjang dari window idle 2 jam. Sebelumnya umur token = 2
+ * jam sama dengan idle window, sehingga token yang "tua" (terakhir digeser
+ * >30 menit sebelum user diam) bisa mati lebih cepat dari batas idle →
+ * request pertama setelah kembali 401 → sesi berakhir lebih awal padahal
+ * belum idle 2 jam penuh. Sekarang token selalu hidup melampaui window
+ * idle → sesi benar-benar berakhir HANYA karena tidak ada aktivitas. ===
  */
-const SESSION_DURATION_MS = 2 * 60 * 60 * 1000; // 2 jam — mirror auth-store & backend (app/config.py)
+// 2 jam — window IDLE (mirror SESSION_DURATION_MS di auth-store).
+// Update #055: TIDAK lagi mirror umur token backend (yang kini 5 jam dan
+// sengaja lebih panjang) — nilai ini murni batas tanpa aktivitas.
+const SESSION_DURATION_MS = 2 * 60 * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 20_000; // tulis aktivitas maks. 1× per 20 detik
 const REFRESH_AFTER_MS = 30 * 60 * 1000; // geser token bila sudah berumur 30 menit
 const EXPIRES_AT_KEY = 'asahi_erp_expires_at';

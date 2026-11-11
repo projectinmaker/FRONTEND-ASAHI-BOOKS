@@ -33,7 +33,14 @@ interface AuthState {
   setUser: (user: UserResponse) => void;
 }
 
-// === Update #043 — durasi sesi login: 2 jam ===
+// === Update #043/#051/#055 — WINDOW IDLE sesi: 2 jam tanpa aktivitas. ===
+// Update #055: nilai ini adalah BATAS TANPA AKTIVITAS, BUKAN umur token.
+// Umur token JWT backend (ACCESS_TOKEN_EXPIRE_MINUTES, kini 5 jam) sengaja
+// LEBIH PANJANG dari window ini — sebelum #055 token berumur sama (2 jam)
+// sehingga token "tua" bisa mati lebih cepat dari idle window → 401 → sesi
+// berakhir lebih awal. Sekarang satu-satunya penyebab sesi berakhir adalah
+// TIDAK ADA AKTIVITAS 2 jam. JANGAN menyamakan dua nilai ini saat mengubah
+// durasi idle (ubah yang di sini + use-session-watch, bukan backend).
 const SESSION_DURATION_MS = 2 * 60 * 60 * 1000;
 const EXPIRES_AT_KEY = 'asahi_erp_expires_at';
 // === Update #051 — waktu terakhir token digeser (POST /auth/refresh).

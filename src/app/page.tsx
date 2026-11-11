@@ -15,6 +15,9 @@ import LoginPage from '@/components/erp/login-page';
 import { usePreferensiStore } from '@/store/preferensi-store';
 // === Update #043 — timer sesi 2 jam (interval 30 detik) ===
 import { useSessionWatch } from '@/hooks/use-session-watch';
+// === Update #055 — banner "Koneksi ke server terputus" (pesan ramah +
+//     instruksi: coba lagi / muat ulang / hubungi admin) ===
+import { ConnectionStatusBanner } from '@/components/erp/connection-banner';
 
 // Dynamic imports for all modules
 const Dashboard = dynamic(() => import('@/components/erp/dashboard'), { ssr: false });
@@ -229,7 +232,15 @@ export default function HomePage() {
   }
 
   if (!isAuthenticated) {
-    return <LoginPage />;
+    return (
+      <>
+        {/* === Update #055 — banner koneksi terputus juga tampil di halaman
+            login: bila server down saat user mencoba login, user langsung
+            tahu apa yang terjadi & apa yang harus dilakukan. === */}
+        <ConnectionStatusBanner />
+        <LoginPage />
+      </>
+    );
   }
 
   // Breadcrumb from active tab
@@ -243,6 +254,9 @@ export default function HomePage() {
 
   return (
     <SidebarProvider>
+      {/* === Update #055 — banner koneksi terputus (overlay fixed di atas
+          shell; muncul otomatis saat request gagal karena jaringan). === */}
+      <ConnectionStatusBanner />
       <ERPSidebar />
       {/* === Update #043 — kolom shell TINGGI TETAP (h-svh + overflow-hidden):
           header & TabBar shrink-0 selalu terlihat; main yang jadi satu-satunya
@@ -301,12 +315,15 @@ export default function HomePage() {
           logout() penuh → isAuthenticated false → LoginPage. Tidak dirender
           saat sudah di halaman login (sessionExpired direset logout).
           === Update #051 — sesi kini idle-timeout: berakhir hanya bila user
-          TIDAK ada aktivitas 2 jam (atau token tidak lagi valid). === */}
+          TIDAK ada aktivitas 2 jam (atau token tidak lagi valid).
+          === Update #055 — umur token JWT backend kini 5 jam (lebih panjang
+          dari idle 2 jam) → satu-satunya penyebab sesi berakhir adalah
+          TIDAK ADA AKTIVITAS selama 2 jam. === */}
       <AlertDialog open={sessionExpired}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Sesi Berakhir</AlertDialogTitle>
-            <AlertDialogDescription>Sesi Anda telah berakhir — karena tidak ada aktivitas. Silakan login kembali.</AlertDialogDescription>
+            <AlertDialogDescription>Sesi Anda telah berakhir. Silakan login kembali.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => logout()}>OK</AlertDialogAction>

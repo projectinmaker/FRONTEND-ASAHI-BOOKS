@@ -61,6 +61,47 @@ function setToken(token: string | null) {
 
 export { setToken };
 
+// ── Update #055 — status koneksi ke server (dipakai ConnectionStatusBanner) ──
+// Setiap request yang gagal karena JARINGAN (bukan HTTP error) memancarkan
+// event 'asahi:net-down'; setiap request BERHASIL memancarkan 'asahi:net-up'.
+// Banner koneksi (src/components/erp/connection-banner.tsx) mendengarkan
+// event ini → muncul otomatis saat terputus, menutup sendiri saat pulih.
+export const NET_DOWN_EVENT = 'asahi:net-down';
+export const NET_UP_EVENT = 'asahi:net-up';
+
+function notifyNetDown() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(NET_DOWN_EVENT));
+}
+
+function notifyNetUp() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(NET_UP_EVENT));
+}
+
+/**
+ * Update #055 — pesan ramah saat koneksi ke backend terputus (status 0).
+ * Dipakai semua jalur fetch di file ini supaya instruksinya konsisten:
+ * data aman → periksa internet → coba lagi → muat ulang → hubungi admin.
+ */
+const NETWORK_ERROR_MESSAGE = 'Koneksi ke server terputus. Tenang — data yang sudah tersimpan aman. ' + 'Silakan periksa koneksi internet Anda, tunggu sebentar, lalu coba lagi. ' + 'Bila masih gagal, muat ulang halaman (tekan F5 / Ctrl+R). ' + 'Bila masalah berlanjut, hubungi administrator.';
+
+/**
+ * Update #055 — ping ringan GET /health (root backend, tanpa auth).
+ * Dipakai tombol "Coba Lagi" pada banner koneksi. URL root diturunkan dari
+ * API_BASE (dipangkas akhiran /api/v1) karena /health didaftarkan di root
+ * aplikasi, bukan di bawah prefix /api/v1.
+ */
+export async function pingServer(): Promise<boolean> {
+  try {
+    const root = API_BASE.replace(/\/api\/v1\/?$/, '');
+    let url = `${root}/health`;
+    if (API_GATEWAY_PORT) url += `?XTransformPort=${API_GATEWAY_PORT}`;
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ── Error Message Mapper (Central) ─────────────────────────────────────
 // Transform pesan error backend → pesan user-friendly Bahasa Indonesia
 // Tambahkan mapping di sini untuk konsisten di semua modul
@@ -126,10 +167,12 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
     // Network error — backend tidak nyala, CORS issue, atau koneksi ditolak
     // Browser throw TypeError dengan message "Failed to fetch" (Chrome) atau
     // "NetworkError when attempting to fetch resource" (Firefox)
+    // === Update #055 — pesan ramah + instruksi lengkap (data aman, periksa
+    // internet, coba lagi, F5, hubungi admin) + panggil banner koneksi. ===
+    notifyNetDown();
     throw new ApiError(
       0, // status 0 = network error (bukan HTTP status)
-      //'Tidak terhubung ke server. Pastikan server backend sedang berjalan.'
-      'Tidak terhubung ke server'
+      NETWORK_ERROR_MESSAGE
     );
   }
 
@@ -150,6 +193,11 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
     const backendDetail = errorBody.detail || errorBody.message;
     throw new ApiError(res.status, getErrorMessage(res.status, backendDetail));
   }
+
+  // === Update #055 — request sukses → server terjangkau → tutup banner
+  // koneksi bila sedang tampil (event dipancarkan di setiap request sukses;
+  // banner hanya bereaksi bila memang sedang offline). ===
+  notifyNetUp();
 
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -217,9 +265,12 @@ export async function downloadFile(endpoint: string, fallbackName: string): Prom
   try {
     res = await fetch(buildUrl(endpoint), { headers: authHeaders() });
   } catch {
-    throw new ApiError(0, 'Tidak terhubung ke server');
+    // === Update #055 — pesan ramah + banner koneksi (mirror apiRequest). ===
+    notifyNetDown();
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE);
   }
   if (!res.ok) await throwApiError(res);
+  notifyNetUp();
   const blob = await res.blob();
   const disposition = res.headers.get('content-disposition') || '';
   const match = /filename="?([^";]+)"?/i.exec(disposition);
@@ -246,9 +297,12 @@ export async function postForm<T>(endpoint: string, form: FormData): Promise<T> 
   try {
     res = await fetch(buildUrl(endpoint), { method: 'POST', headers, body: form });
   } catch {
-    throw new ApiError(0, 'Tidak terhubung ke server');
+    // === Update #055 — pesan ramah + banner koneksi (mirror apiRequest). ===
+    notifyNetDown();
+    throw new ApiError(0, NETWORK_ERROR_MESSAGE);
   }
   if (!res.ok) await throwApiError(res);
+  notifyNetUp();
   if (res.status === 204) return undefined as T;
   return res.json();
 }
