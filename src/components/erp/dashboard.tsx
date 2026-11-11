@@ -6,11 +6,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { CalendarDays, RefreshCw, TrendingUp, TrendingDown, DollarSign, ArrowUpRight, ArrowDownRight, Package, Clock, Scale, AlertTriangle, CheckCircle2, ChevronRight, Activity, Loader2, Info, Factory, ShoppingCart } from 'lucide-react';
+import { CalendarDays, RefreshCw, TrendingUp, TrendingDown, DollarSign, ArrowUpRight, ArrowDownRight, Package, Clock, Scale, AlertTriangle, CheckCircle2, ChevronRight, Info, Factory, ShoppingCart } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
-import type { DashboardSummaryResponse, FakturJatuhTempoItem, AktivitasItem, RekonsiliasiPersediaanRingkasanResponse, AccountingHealthResponse } from '@/types/api';
+import type { DashboardSummaryResponse, FakturJatuhTempoItem, AktivitasItem, RekonsiliasiPersediaanRingkasanResponse } from '@/types/api';
 import { useTabStore } from '@/store/tab-store';
 import { useAccessStore } from '@/store/access-store';
 import { toast } from 'sonner';
@@ -230,85 +230,13 @@ function RekonsiliasiPersediaanWidget() {
   );
 }
 
-// ─── Phase 9: Widget Accounting Health (cached 5 menit di localStorage) ──
+// ─── Update #054 — widget Accounting Health DIHAPUS dari dashboard
+// (laporan lengkapnya tetap tersedia di Laporan → Accounting Health).
 
-function AccountingHealthWidget() {
-  const CACHE_KEY = 'accounting_health_cache';
-  const CACHE_TIME_KEY = 'accounting_health_cache_time';
-  const TTL = 5 * 60 * 1000; // 5 minutes
-
-  // Read cache synchronously during initial render (avoid setState-in-effect lint).
-  const [health, setHealth] = useState<AccountingHealthResponse | null>(() => {
-    if (typeof window === 'undefined') return null;
-    const cached = localStorage.getItem(CACHE_KEY);
-    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
-    if (cached && cachedTime && Date.now() - parseInt(cachedTime) < TTL) {
-      try {
-        return JSON.parse(cached);
-      } catch {
-        /* ignore parse error */
-      }
-    }
-    return null;
-  });
-  const [loading, setLoading] = useState(() => health === null);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const asOf = todayStr();
-      const res = await api.get<AccountingHealthResponse>(`/laporan/accounting-health?as_of=${asOf}`);
-      setHealth(res);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(res));
-        localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
-      }
-    } catch {
-      setHealth(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Skip fetch if cache is valid (initial state already populated from localStorage).
-    if (health) return;
-    fetchData();
-  }, [health, fetchData]);
-
-  const isHealthy = health?.overallStatus === 'HEALTHY';
-
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 py-4">
-        <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${isHealthy ? 'bg-emerald-50' : 'bg-red-50'}`}>{loading ? <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /> : isHealthy ? <CheckCircle2 className="h-6 w-6 text-emerald-600" /> : <AlertTriangle className="h-6 w-6 text-red-600" />}</div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-muted-foreground truncate">Accounting Health</p>
-          {loading ? (
-            <Skeleton className="mt-1.5 h-6 w-24" />
-          ) : health ? (
-            <>
-              <p className={`mt-0.5 text-lg font-bold tracking-tight ${isHealthy ? 'text-emerald-600' : 'text-red-600'}`}>{health.overallStatus}</p>
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100 text-[10px]">{health.summary.matchCount} Match</Badge>
-                {health.summary.mismatchCount > 0 && <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100 text-[10px]">{health.summary.mismatchCount} Mismatch</Badge>}
-                {health.summary.notConfiguredCount > 0 && <Badge className="bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-100 text-[10px]">{health.summary.notConfiguredCount} N/A</Badge>}
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">Gagal memuat</p>
-          )}
-        </div>
-        <Activity className="h-5 w-5 text-muted-foreground/40 shrink-0" />
-      </CardContent>
-    </Card>
-  );
-}
-
-// === Phase 10 — 3 widget baru dari /dashboard/summary ============================
-// Backend menyatukan inventory_value + low_stock + accounting_health (ringkasan)
-// ke dalam response GET /dashboard/summary, jadi widget di bawah cukup menerima prop
-// `data` dari parent tanpa fetch terpisah (lebih hemat round-trip).
+// === Phase 10 — widget dari /dashboard/summary ============================
+// Backend menyatukan inventory_value + low_stock ke dalam response
+// GET /dashboard/summary, jadi widget di bawah cukup menerima prop `data` dari
+// parent tanpa fetch terpisah (lebih hemat round-trip).
 
 function InventoryValueWidget({ data }: { data: DashboardSummaryResponse | null }) {
   const inv = data?.inventoryValue;
@@ -389,43 +317,6 @@ function LowStockWidget({ data }: { data: DashboardSummaryResponse | null }) {
   );
 }
 
-function DashboardAccountingHealthWidget({ data }: { data: DashboardSummaryResponse | null }) {
-  const health = data?.accountingHealth;
-  const isHealthy = health?.overallStatus === 'HEALTHY';
-  const isError = !!health?.error;
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Activity className="h-4 w-4" />
-          Accounting Health (Ringkasan)
-        </CardTitle>
-        <CardDescription className="text-xs">Status {health?.totalChecks ?? 11} reconciliation checks (dari dashboard summary)</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {!health ? (
-          <div className="flex h-[100px] items-center justify-center">
-            <p className="text-xs text-muted-foreground">Tidak ada data</p>
-          </div>
-        ) : isError ? (
-          <div className="flex h-[100px] items-center justify-center text-center">
-            <p className="text-xs text-red-600">{health.error}</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className={`text-lg font-bold ${isHealthy ? 'text-emerald-600' : 'text-red-600'}`}>{health.overallStatus}</div>
-            <div className="flex flex-wrap gap-1.5">
-              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100 text-[10px]">{health.matchCount} Match</Badge>
-              {health.mismatchCount > 0 && <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100 text-[10px]">{health.mismatchCount} Mismatch</Badge>}
-              {health.notConfiguredCount > 0 && <Badge className="bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-100 text-[10px]">{health.notConfiguredCount} N/A</Badge>}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 // ─── Update #018 — Dashboard per role (widget per permission) ──────────────
 // Pemetaan section → permission selaras dengan SECTION_PERMISSIONS backend
 // (endpoints/dashboard.py): role berbeda melihat dashboard berbeda.
@@ -436,7 +327,6 @@ const WIDGET_PERM = {
   penjualan: 'sales.sales_invoice.view', // Tren penjualan + invoice jatuh tempo
   persediaan: 'inventory.stock.view', // Nilai persediaan + stok menipis
   rekonsiliasi: 'reports.inventory_report.view', // Rekonsiliasi persediaan (endpoint /laporan)
-  health: 'reports.reconciliation_report.view', // Accounting health (endpoint /laporan)
   produksi: 'production.request_order_part.view',
   pembelian: 'purchase.purchase_order.view'
 } as const;
@@ -622,7 +512,6 @@ export default function Dashboard() {
   const showPenjualan = can(WIDGET_PERM.penjualan);
   const showPersediaan = can(WIDGET_PERM.persediaan);
   const showRekonsiliasi = can(WIDGET_PERM.rekonsiliasi);
-  const showHealth = can(WIDGET_PERM.health);
   const showProduksi = can(WIDGET_PERM.produksi);
   const showPembelian = can(WIDGET_PERM.pembelian);
 
@@ -882,15 +771,6 @@ export default function Dashboard() {
           {showRekonsiliasi && <RekonsiliasiPersediaanWidget />}
           {showPersediaan && <InventoryValueWidget data={data} />}
           {showPersediaan && <LowStockWidget data={data} />}
-        </div>
-      )}
-
-      {/* Phase 9 + Phase 10 — Accounting Health (Update #018: hanya role
-          dengan akses laporan rekonsiliasi) */}
-      {showHealth && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <AccountingHealthWidget />
-          <DashboardAccountingHealthWidget data={data} />
         </div>
       )}
 

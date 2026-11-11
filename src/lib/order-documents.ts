@@ -180,7 +180,7 @@ export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: Or
   return payload;
 }
 export function orderSaveMismatches(kind: OrderKind, requested: Record<string, unknown>, saved: OrderResponse): string[] {
-  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppn: 'Tarif PPN', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23', picGudang: 'PIC Gudang', picGudangTelepon: 'No. Telp PIC Gudang' };
+  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppn: 'Tarif PPN', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23', picGudang: 'PIC', picGudangTelepon: 'No. Hp' };
   const actual = serializeOrderHeader(kind, orderHeaderFromResponse(saved));
   const issues: string[] = [];
   for (const [key, value] of Object.entries(requested)) {

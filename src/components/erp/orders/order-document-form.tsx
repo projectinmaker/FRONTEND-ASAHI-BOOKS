@@ -860,7 +860,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                   <div className="space-y-3 rounded-md border p-4" id="field-alamatPengirimanId">
                     <div>
                       <Label>Alamat Pengiriman (Gudang Tujuan) *</Label>
-                      <p className="text-xs text-muted-foreground">Wajib pilih satu — tampil di bawah tabel barang pada cetak Purchase Order bersama PIC Gudang. Daftar diatur di Pengaturan → Profil Perusahaan.</p>
+                      <p className="text-xs text-muted-foreground">Wajib pilih satu — tampil di bawah tabel barang pada cetak Purchase Order bersama PIC. Daftar diatur di Pengaturan → Profil Perusahaan.</p>
                     </div>
                     {alamatKirimOptions.length === 0 ? (
                       <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">Belum ada alamat pengiriman. Tambahkan dulu di Pengaturan → Profil Perusahaan → Alamat Pengiriman.</p>
@@ -897,11 +897,11 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         })}
                       </div>
                     )}
-                    {/* Update #003: PIC Gudang + no. telepon — snapshot untuk cetak PO
-                      (checkbox PPIC dihapus). */}
+                    {/* Update #003 / #054: PIC + No. Hp (sebelumnya "PIC Gudang")
+                      — snapshot untuk cetak PO (checkbox PPIC dihapus). */}
                     <div className="grid gap-4 sm:grid-cols-2">
-                      {input('picGudang', 'PIC Gudang', 'text', 100)}
-                      {input('picGudangTelepon', 'No. Telepon PIC', 'text', 50)}
+                      {input('picGudang', 'PIC', 'text', 100)}
+                      {input('picGudangTelepon', 'No. Hp', 'text', 50)}
                     </div>
                     <p className="text-xs text-muted-foreground">Terisi otomatis dari gudang terpilih — masih bisa diubah.</p>
                   </div>

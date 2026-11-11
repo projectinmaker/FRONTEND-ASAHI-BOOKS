@@ -521,13 +521,13 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
       {/* ── Info Section ── */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          {/* Update ASAHI: "Kepada" → "Nama Pemasok:" + Kontak Person & No. Contact */}
+          {/* Update ASAHI/#054: "Nama Pemasok:" + PIC & No. Hp kontak supplier */}
           <div style={{ marginBottom: '2px' }}>
             <strong>Nama Pemasok:</strong>
           </div>
           <div style={{ marginBottom: '2px' }}>{data.kepada}</div>
-          {data.kontakPerson ? <div style={{ marginBottom: '2px' }}>Kontak Person: {data.kontakPerson}</div> : null}
-          {data.noContact ? <div style={{ marginBottom: '2px' }}>No. Contact: {data.noContact}</div> : null}
+          {data.kontakPerson ? <div style={{ marginBottom: '2px' }}>PIC: {data.kontakPerson}</div> : null}
+          {data.noContact ? <div style={{ marginBottom: '2px' }}>No. Hp: {data.noContact}</div> : null}
           <div>{data.alamat}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
@@ -558,11 +558,12 @@ export function PembelianPDFTemplate({ data }: { data: PembelianData }) {
         <div className="mb-4">
           <strong>Alamat Pengiriman:</strong>
           <div style={{ whiteSpace: 'pre-line' }}>{data.alamatPengiriman}</div>
-          {/* Update #003: baris PPIC dihapus — digantikan PIC Gudang di bawah. */}
-          {/* Update #002: PIC Gudang + no. telepon (snapshot saat input PO) */}
+          {/* Update #003: baris PPIC dihapus — digantikan PIC di bawah. */}
+          {/* Update #002/#054: PIC (sebelumnya "PIC Gudang") + No. Hp dalam
+              kurung (snapshot saat input PO) */}
           {data.picGudang ? (
             <div>
-              PIC Gudang: {data.picGudang}
+              PIC: {data.picGudang}
               {data.picGudangTelepon ? ` (${data.picGudangTelepon})` : ''}
             </div>
           ) : null}

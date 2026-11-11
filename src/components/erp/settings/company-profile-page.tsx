@@ -563,7 +563,7 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
             <MapPin className="size-5" /> Alamat Pengiriman
           </CardTitle>
           <CardDescription>
-            Daftar gudang tujuan untuk Purchase Order — saat input PO wajib memilih satu (checkbox). Saat dicetak, alamat tampil di bawah tabel barang sebagai <em>prefix</em> + nama gudang, dengan opsi tambahan PPIC. Update #002: PIC Gudang terisi otomatis di form PO saat gudang dicentang dan ikut dicetak. Mengubah daftar ini tidak mengubah PO yang sudah tersimpan.
+            Daftar gudang tujuan untuk Purchase Order — saat input PO wajib memilih satu (checkbox). Saat dicetak, alamat tampil di bawah tabel barang sebagai <em>prefix</em> + nama gudang, dengan opsi tambahan PPIC. Update #002/#054: PIC terisi otomatis di form PO saat gudang dicentang dan ikut dicetak. Mengubah daftar ini tidak mengubah PO yang sudah tersimpan.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -576,8 +576,9 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
                   <TableRow>
                     <TableHead>Prefix</TableHead>
                     <TableHead>Nama Gudang</TableHead>
-                    {/* Update #002: PIC Gudang per alamat pengiriman */}
-                    <TableHead>PIC Gudang</TableHead>
+                    {/* Update #002: PIC per alamat pengiriman (dulu "PIC Gudang",
+                        dirapikan di #054) */}
+                    <TableHead>PIC</TableHead>
                     <TableHead className="w-24">Status</TableHead>
                     <TableHead className="w-24 text-right">Aksi</TableHead>
                   </TableRow>
@@ -757,15 +758,15 @@ export default function CompanyProfilePage({ refreshKey }: CompanyProfilePagePro
                 <Label htmlFor="alamat-nama">Nama Gudang *</Label>
                 <Input id="alamat-nama" value={alamatDialog.nama} maxLength={200} onChange={(e) => setAlamatDialog({ ...alamatDialog, nama: e.target.value })} placeholder="P I - GUDANG ATAS TOOL" />
               </div>
-              {/* Update #002: PIC Gudang — terisi otomatis di kolom Pengiriman
+              {/* Update #002/#054: PIC — terisi otomatis di kolom Pengiriman
                   form PO saat gudang ini dicentang (masih bisa diubah). */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="alamat-pic-nama">PIC Gudang</Label>
+                  <Label htmlFor="alamat-pic-nama">PIC</Label>
                   <Input id="alamat-pic-nama" value={alamatDialog.picNama} maxLength={100} onChange={(e) => setAlamatDialog({ ...alamatDialog, picNama: e.target.value })} placeholder="mis. Budi Santoso" />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="alamat-pic-telepon">No. Telepon PIC</Label>
+                  <Label htmlFor="alamat-pic-telepon">No. Hp</Label>
                   <Input id="alamat-pic-telepon" value={alamatDialog.picTelepon} maxLength={50} onChange={(e) => setAlamatDialog({ ...alamatDialog, picTelepon: e.target.value })} placeholder="0812-xxxx-xxxx" />
                 </div>
               </div>
