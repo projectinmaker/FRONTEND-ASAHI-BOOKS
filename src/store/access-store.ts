@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/api';
+import { api, ApiError, NET_DOWN_EVENT, NET_UP_EVENT } from '@/lib/api';
 import type { MePermissionsResponse, RoleBrief } from '@/types/api';
 
 /**
@@ -8,6 +8,16 @@ import type { MePermissionsResponse, RoleBrief } from '@/types/api';
  * Sumber: GET /auth/me/permissions.
  * Prinsip FAIL-CLOSED: bila gagal memuat → loaded=true + permissions kosong,
  * sehingga semua menu tergating tersembunyi sampai "Coba Lagi" berhasil.
+ *
+ * === Update #056 — pengecualian untuk KONEKSI TERPUTUS (ApiError status 0) ===
+ * Kegagalan jaringan BUKAN masalah izin: izin terakhir yang berhasil dimuat
+ * DIKONSUMSI APA ADANYA (menu tetap tampil, tidak ada pesan menakutkan di
+ * sidebar). Penjelasan bagi user cukup satu sumber: banner global "Koneksi
+ * ke server terputus" (ConnectionStatusBanner, #055). Fail-closed tetap
+ * berlaku untuk error non-jaringan (server menjawab tapi endpoint izin gagal).
+ * Keamanan tetap terjaga: backend memvalidasi permission pada SETIAP request,
+ * sehingga menu yang tetap tampil hanyalah pintasan navigasi — aksi tanpa
+ * izin tetap ditolak server dengan 403.
  */
 
 const TOKEN_KEY = 'asahi_erp_token';
@@ -59,8 +69,23 @@ export const useAccessStore = create<AccessState>((set, get) => ({
         loading: false,
         error: null
       });
-    } catch {
-      // FAIL-CLOSED: izin kosong + error terisi → UI menampilkan banner + tombol Coba Lagi.
+    } catch (err) {
+      // === Update #056 — koneksi terputus (status 0): JANGAN wipe izin &
+      // JANGAN set error. Menu sidebar tetap tampil memakai izin terakhir
+      // yang berhasil dimuat; banner global koneksi (#055) sudah menjelaskan
+      // apa yang terjadi + instruksi ke user. loaded dibiarkan apa adanya:
+      // - sebelumnya pernah sukses → menu tampil normal (loaded true)
+      // - belum pernah sukses → skeleton "Memuat menu…" sampai koneksi pulih
+      //   (jarang: login saja sudah butuh server hidup)
+      // Pemulihan: listener NET_UP di bawah otomatis memuat ulang izin begitu
+      // koneksi kembali (plus focus / visibilitychange / interval 5 menit). ===
+      if (err instanceof ApiError && err.status === 0) {
+        set({ loading: false });
+        return;
+      }
+      // FAIL-CLOSED (error non-jaringan: server menjawab tapi endpoint izin
+      // gagal — 500/403 dll): izin kosong + error terisi → UI menampilkan
+      // banner + tombol Coba Lagi.
       set({
         permissions: [],
         isSuperAdmin: false,
@@ -101,6 +126,22 @@ if (typeof window !== 'undefined') {
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') maybeFetch();
+  });
+
+  // === Update #056 — koneksi pulih → muat ulang izin OTOMATIS. ===
+  // NET_UP dipicu api.ts pada SETIAP request sukses, jadi refetch hanya
+  // dilakukan bila sebelumnya benar-benar ada kegagalan jaringan (transisi
+  // down → up), bukan setiap request. Dengan begitu menu yang selama offline
+  // tampil memakai izin lama langsung disegarkan begitu server kembali
+  // — tanpa user perlu tekan apa pun / refresh halaman.
+  let netWasDown = false;
+  window.addEventListener(NET_DOWN_EVENT, () => {
+    netWasDown = true;
+  });
+  window.addEventListener(NET_UP_EVENT, () => {
+    if (!netWasDown) return;
+    netWasDown = false;
+    maybeFetch();
   });
 
   const intervalId = window.setInterval(maybeFetch, REFRESH_INTERVAL_MS);

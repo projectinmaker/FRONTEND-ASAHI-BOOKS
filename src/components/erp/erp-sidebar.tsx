@@ -533,7 +533,15 @@ export function ERPSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* ── Banner fail-closed: izin gagal dimuat ───────────────────── */}
+        {/* ── Banner fail-closed: izin gagal dimuat ─────────────────────
+            === Update #056 — banner ini TIDAK LAGI muncul saat koneksi ke
+            server terputus. Kegagalan jaringan (ApiError status 0) kini
+            ditangani access-store dengan memPERTAHANKAN izin terakhir yang
+            berhasil dimuat → menu tetap tampil & error tetap null; penjelasan
+            bagi user cukup banner global "Koneksi ke server terputus" (#055).
+            Banner di bawah hanya tampil untuk kegagalan non-jaringan (server
+            menjawab tapi endpoint izin error, mis. 500) — kasus ini benar2
+            masalah izin, jadi menu tetap disembunyikan demi keamanan. === */}
         {accessError && (
           <SidebarGroup>
             <SidebarGroupContent>
@@ -542,6 +550,10 @@ export function ERPSidebar() {
                   <AlertTriangle className="size-3.5 shrink-0" />
                   Izin akses gagal dimuat — menu disembunyikan.
                 </p>
+                {/* Update #056 — beri tahu user bahwa percobaan ulang berjalan
+                    otomatis (focus / ganti tab kembali / tiap 5 menit / saat
+                    koneksi pulih), supaya tidak panik atau bingung harus ngapain. */}
+                <p className="mt-1 text-[11px] leading-relaxed text-amber-700/90 dark:text-amber-400/80">Menu akan dicoba ulang otomatis — atau tekan tombol di bawah ini.</p>
                 <Button variant="outline" size="sm" className="mt-2 h-8 gap-1.5" onClick={() => void fetchPermissions()}>
                   <RefreshCw className="size-3.5" /> Coba Lagi
                 </Button>

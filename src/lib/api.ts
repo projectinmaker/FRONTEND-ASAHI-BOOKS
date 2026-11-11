@@ -96,6 +96,12 @@ export async function pingServer(): Promise<boolean> {
     let url = `${root}/health`;
     if (API_GATEWAY_PORT) url += `?XTransformPort=${API_GATEWAY_PORT}`;
     const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    // === Update #056 — ping sukses juga dihitung sebagai NET_UP. Ping ini
+    // adalah jalur pemulihan paling awal (tombol "Coba Lagi" + auto-ping 30
+    // detik pada banner koneksi), jadi listener NET_UP (mis. access-store
+    // yang memuat ulang izin setelah koneksi pulih) ikut terpicu SEGERA —
+    // tidak menunggu request data pertama yang sukses. ===
+    if (res.ok) notifyNetUp();
     return res.ok;
   } catch {
     return false;
