@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { FileText, Loader2, Lock, Package, Plus, Trash2, Type, Unlink } from 'lucide-react';
+import { FileText, Loader2, Package, Plus, Trash2, Type, Unlink } from 'lucide-react';
 import { api, ApiError, PaginatedResponse } from '@/lib/api';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
@@ -1112,9 +1112,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                               {/* === Update #048 — tarif PPN readOnly: terpusat di
                                 Referensi → Perpajakan (RATE_PPN). === */}
                               <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={header.ppn} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" disabled={disabled} />
-                              <span className="text-xs text-muted-foreground">
-                                % <Lock className="inline h-3 w-3" aria-hidden />
-                              </span>
+                              <span className="text-xs text-muted-foreground">%</span>
                             </span>
                           )}
                         </span>
@@ -1261,7 +1259,8 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                   {!readOnly && (
                     <Button onClick={save} disabled={disabled}>
                       {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      {isSales ? 'Simpan Sales Order' : 'Simpan Pesanan'}
+                      {/* Update #052 — label seragam semua modul: Simpan. */}
+                      {submitting ? 'Menyimpan...' : 'Simpan'}
                     </Button>
                   )}
                 </div>

@@ -1059,7 +1059,7 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
             </Button>
             <Button onClick={handleSubmit} disabled={saveDisabled} className="gap-2">
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === 'create' ? 'Simpan Akun' : 'Perbarui Akun'}
+              {mode === 'create' ? 'Simpan' : 'Simpan Perubahan'}
             </Button>
           </div>
         </CardContent>

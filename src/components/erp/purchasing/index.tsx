@@ -36,6 +36,7 @@ import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
 import { FileText, Package, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, TrendingDown, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, CheckCircle2, Link2, Unlink, Undo2, Lock } from 'lucide-react';
 import { formatRp, formatDate } from '@/lib/pdf-utils';
 // Update #4 — auto-fill alamat & field terkait dari master saat supplier dipilih
@@ -366,6 +367,14 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground pl-3">+ PPN ({ppnPct}%)</span>
           <span className="font-mono">{formatRp(ppnAmount)}</span>
+        </div>
+      )}
+      {/* === Update #052 — baris PPh23 akhirnya TAMPIL (sebelumnya hanya
+          dihitung tanpa dirender; mirror Invoice Penjualan). === */}
+      {pph23Pct > 0 && (
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground pl-3">- PPh23 ({pph23Pct}%)</span>
+          <span className="font-mono text-destructive">({formatRp(pph23Amount)})</span>
         </div>
       )}
       {totalBiayaTambahan > 0 && (
@@ -1110,7 +1119,7 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
       // === Update #049 — navigasi otomatis: scroll + fokus ke field wajib
       // pertama yang terlewat (bukan hanya teks merah yang kadang di luar layar). ===
       focusFormError(Object.keys(errs), { root: formRef.current });
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       return;
     }
     setFormErrors({});
@@ -1301,7 +1310,7 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
               </Button>
               <Button size="sm" onClick={handleSubmit} disabled={submitting || !fGudangId}>
                 {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Package className="mr-1.5 h-4 w-4" />}
-                {submitting ? 'Menyimpan...' : 'Simpan Penerimaan'}
+                {submitting ? 'Menyimpan...' : 'Simpan'}
               </Button>
             </div>
           </CardContent>
@@ -1397,7 +1406,7 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
     if (!editPurchaseOrderId) missing.push('purchaseOrderId');
     if (!editGudangId) missing.push('gudangId');
     if (missing.length) {
-      toast.error('Field wajib belum lengkap', { description: 'Diarahkan ke kolom pertama yang belum diisi — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       focusFormError(missing, { root: formRef.current });
       return;
     }
@@ -1656,6 +1665,8 @@ function InvoiceCreateForm() {
   const [fAlamat, setFAlamat] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
   const [fPpn, setFPpn] = useState('11');
+  // === Update #052 — PPN bisa dimatikan per invoice (mirror PO/SI). ===
+  const [fPpnApplicable, setFPpnApplicable] = useState(true);
   // AUD-09 (update #04) — PPh 23 pada PI: hutang supplier dicatat NET sejak
   // invoice (grand total − PPh 23) + Cr Hutang PPh 23 saat posting.
   const [fPph23Applicable, setFPph23Applicable] = useState(false);
@@ -1860,7 +1871,7 @@ function InvoiceCreateForm() {
       // === Update #049 — navigasi otomatis: scroll + fokus ke field wajib
       // pertama yang terlewat. ===
       focusFormError(Object.keys(errs), { root: formRef.current });
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       return;
     }
     setFormErrors({});
@@ -1891,6 +1902,9 @@ function InvoiceCreateForm() {
         alamat: fAlamat || null,
         diskonGlobal: parseFloat(fDiskonGlobal) || null,
         ppn: parseFloat(fPpn) || 0,
+        // === Update #052 — pilihan PPN/PPh23 kini benar-benar tersimpan di
+        // backend (sebelumnya diabaikan → total tersimpan ≠ tampilan form). ===
+        ppnApplicable: fPpnApplicable,
         // AUD-09 (update #04) — PPh 23 opsional di PI
         pph23: fPph23Applicable ? parseFloat(fPph23) || 0 : 0,
         pph23Applicable: fPph23Applicable,
@@ -2149,39 +2163,49 @@ function InvoiceCreateForm() {
                 <Label className="text-xs font-medium">Diskon Global %</Label>
                 <Input type="number" className="h-9 text-xs" value={fDiskonGlobal} min={0} max={100} onChange={(e) => setFDiskonGlobal(e.target.value)} />
               </div>
-              <div className="space-y-1.5">
-                {/* === Update #046 — tarif PPN DIKUNCI (readOnly): nilainya diatur
-                  terpusat di Referensi → Perpajakan (RATE_PPN). === */}
-                <Label className="text-xs font-medium">
-                  PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
-                </Label>
-                <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
-                <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
+            </div>
+            {/* === Update #052 — kartu Pajak terpadu (mirror form PO & Invoice
+                Penjualan): PPN dan PPh23 masing-masing BISA DIKLIK aktif/
+                nonaktif. Tarif PPN terkunci (Referensi → Perpajakan); tarif
+                PPh23 ber-default dari Perpajakan dan bisa disesuaikan per
+                jenis jasa supplier (2%/4%/6%). === */}
+            <div className="space-y-3 rounded-md border p-4">
+              <div>
+                <Label className="text-xs font-medium">Pajak (PPN / PPh23)</Label>
+                <p className="text-[11px] text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (ditahan dari pembayaran ke supplier sejak invoice). Tarif PPN terkunci (Referensi → Perpajakan); tarif PPh23 ber-default dari Perpajakan — dapat disesuaikan per jenis jasa (mis. 2%, 4%, 6%).</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${fPpnApplicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                  <Checkbox aria-checked={fPpnApplicable} className="mt-0.5" checked={fPpnApplicable} onCheckedChange={(checked) => setFPpnApplicable(checked === true)} />
+                  <span className="min-w-0 flex-1 space-y-2 text-sm leading-snug">
+                    <span className="block font-medium">PPN</span>
+                    {fPpnApplicable && (
+                      <span className="flex items-center gap-2">
+                        {/* Tarif PPN readOnly: terpusat di Referensi → Perpajakan
+                            (RATE_PPN). Update #052: icon gembok dihapus. */}
+                        <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={fPpn} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </span>
+                    )}
+                  </span>
+                </label>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${fPph23Applicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                  <Checkbox aria-checked={fPph23Applicable} className="mt-0.5" checked={fPph23Applicable} onCheckedChange={(checked) => setFPph23Applicable(checked === true)} />
+                  <span className="min-w-0 flex-1 space-y-2 text-sm leading-snug">
+                    <span className="block font-medium">PPh23</span>
+                    {fPph23Applicable && (
+                      <span className="flex items-center gap-2">
+                        {/* Update #048 — tarif PPh23 bisa disesuaikan per jenis
+                            jasa supplier (default RATE_PPH23). */}
+                        <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={fPph23} onChange={(e) => setFPph23(e.target.value)} title="Default dari Referensi → Perpajakan — sesuaikan bila jenis jasa supplier berbeda" />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </span>
+                    )}
+                  </span>
+                </label>
               </div>
             </div>
-            {/* AUD-09 (update #04) — PPh 23 pada Purchase Invoice */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex items-start gap-2 rounded-md border p-3">
-                <input type="checkbox" id="pi-pph23" className="mt-0.5 h-4 w-4 accent-emerald-600" checked={fPph23Applicable} onChange={(e) => setFPph23Applicable(e.target.checked)} />
-                <div className="min-w-0">
-                  <Label htmlFor="pi-pph23" className="text-xs font-medium cursor-pointer">
-                    Potong PPh 23
-                  </Label>
-                  <p className="text-[11px] leading-tight text-muted-foreground mt-0.5">PPh 23 ditahan dari supplier sejak invoice: hutang dicatat net (grand total − PPh 23) dan hutang pajak (213002) terbentuk saat posting.</p>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                {/* === Update #048 — tarif PPh 23 DIBUKA (bisa diedit): tarif PPh 23
-                  bergantung jenis jasa supplier (mis. 2% / 4% / 6%), jadi nilai
-                  default tetap diambil dari Referensi → Perpajakan (RATE_PPH23)
-                  tetapi boleh disesuaikan per invoice; centang pakai/tidak tetap
-                  bisa diubah. === */}
-                <Label className="text-xs font-medium">PPh 23 (%)</Label>
-                <Input type="number" className="h-9 text-xs" value={fPph23} min={0} max={100} disabled={!fPph23Applicable} onChange={(e) => setFPph23(e.target.value)} title="Default dari Referensi → Perpajakan — sesuaikan bila jenis jasa supplier berbeda" />
-                <p className="text-[11px] text-muted-foreground">Default dari Referensi → Perpajakan — dapat disesuaikan per jenis jasa (mis. 2%, 4%, 6%).</p>
-              </div>
-            </div>
-            <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={parseFloat(fPpn) || 0} totalBiayaTambahan={formTotalBiaya} pph23Pct={fPph23Applicable ? parseFloat(fPph23) || 0 : 0} />
+            <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={fPpnApplicable ? parseFloat(fPpn) || 0 : 0} totalBiayaTambahan={formTotalBiaya} pph23Pct={fPph23Applicable ? parseFloat(fPph23) || 0 : 0} />
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Keterangan</Label>
               <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." />
@@ -2195,7 +2219,7 @@ function InvoiceCreateForm() {
               </Button>
               <Button size="sm" onClick={handleSubmit} disabled={submitting || !!savedInvoice}>
                 {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Receipt className="mr-1.5 h-4 w-4" />}
-                {submitting ? 'Menyimpan...' : 'Simpan Invoice'}
+                {submitting ? 'Menyimpan...' : 'Simpan'}
               </Button>
             </div>
           </CardContent>
@@ -2237,6 +2261,10 @@ function InvoiceEditForm({ editId }: { editId: string }) {
   const [editAlamat, setEditAlamat] = useState('');
   const [editDiskonGlobal, setEditDiskonGlobal] = useState('0');
   const [editPpn, setEditPpn] = useState('11');
+  // === Update #052 — pilihan PPN/PPh23 pada form edit invoice (draft saja). ===
+  const [editPpnApplicable, setEditPpnApplicable] = useState(true);
+  const [editPph23Applicable, setEditPph23Applicable] = useState(false);
+  const [editPph23, setEditPph23] = useState('2');
   const [editKeterangan, setEditKeterangan] = useState('');
 
   useEffect(() => {
@@ -2258,6 +2286,9 @@ function InvoiceEditForm({ editId }: { editId: string }) {
         setEditAlamat(inv.alamat || '');
         setEditDiskonGlobal(String(inv.diskonGlobal ?? 0));
         setEditPpn(String(inv.ppn ?? 0));
+        setEditPpnApplicable(inv.ppnApplicable ?? true);
+        setEditPph23Applicable(inv.pph23Applicable ?? false);
+        setEditPph23(String(inv.pph23 ?? 2));
         setEditKeterangan(inv.keterangan || '');
       } catch (err) {
         toast.error(err instanceof ApiError ? err.detail : 'Gagal memuat data invoice');
@@ -2289,7 +2320,7 @@ function InvoiceEditForm({ editId }: { editId: string }) {
     if (!editTanggal) missingInv.push('tanggal');
     if (missingInv.length) {
       setSaveWarning(!editNoFaktur.trim() ? 'No Faktur wajib diisi' : '');
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       focusFormError(missingInv, { root: formRef.current });
       return;
     }
@@ -2304,6 +2335,11 @@ function InvoiceEditForm({ editId }: { editId: string }) {
         alamat: editAlamat || null,
         diskonGlobal: parseFloat(editDiskonGlobal) || null,
         ppn: parseFloat(editPpn) || 0,
+        // === Update #052 — pilihan pajak ikut terkirim saat edit invoice
+        // (draft); total dihitung ulang server. ===
+        ppnApplicable: editPpnApplicable,
+        pph23: editPph23Applicable ? parseFloat(editPph23) || 0 : 0,
+        pph23Applicable: editPph23Applicable,
         keterangan: editKeterangan || null
       };
       const saved = await api.put<PurchaseInvoiceResponse>(`/pembelian/purchase-invoice/${editId}`, body);
@@ -2472,15 +2508,39 @@ function InvoiceEditForm({ editId }: { editId: string }) {
                 <Label className="text-xs font-medium">Diskon Global %</Label>
                 <Input type="number" className="h-9 text-xs" value={editDiskonGlobal} min={0} max={100} onChange={(e) => setEditDiskonGlobal(e.target.value)} />
               </div>
-              <div className="space-y-1.5">
-                {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
-                  Referensi → Perpajakan (RATE_PPN); menampilkan nilai yang
-                  tersimpan pada invoice (paritas perilaku form create). === */}
-                <Label className="text-xs font-medium">
-                  PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
-                </Label>
-                <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={editPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
-                <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
+            </div>
+            {/* === Update #052 — kartu Pajak terpadu pada form edit (paritas
+                form buat; hanya berlaku saat invoice masih draft). === */}
+            <div className="space-y-3 rounded-md border p-4">
+              <div>
+                <Label className="text-xs font-medium">Pajak (PPN / PPh23)</Label>
+                <p className="text-[11px] text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (ditahan dari pembayaran ke supplier sejak invoice). Tarif PPN terkunci (Referensi → Perpajakan); tarif PPh23 ber-default dari Perpajakan — dapat disesuaikan per jenis jasa (mis. 2%, 4%, 6%).</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${editPpnApplicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                  <Checkbox aria-checked={editPpnApplicable} className="mt-0.5" checked={editPpnApplicable} onCheckedChange={(checked) => setEditPpnApplicable(checked === true)} />
+                  <span className="min-w-0 flex-1 space-y-2 text-sm leading-snug">
+                    <span className="block font-medium">PPN</span>
+                    {editPpnApplicable && (
+                      <span className="flex items-center gap-2">
+                        <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={editPpn} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </span>
+                    )}
+                  </span>
+                </label>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${editPph23Applicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                  <Checkbox aria-checked={editPph23Applicable} className="mt-0.5" checked={editPph23Applicable} onCheckedChange={(checked) => setEditPph23Applicable(checked === true)} />
+                  <span className="min-w-0 flex-1 space-y-2 text-sm leading-snug">
+                    <span className="block font-medium">PPh23</span>
+                    {editPph23Applicable && (
+                      <span className="flex items-center gap-2">
+                        <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={editPph23} onChange={(e) => setEditPph23(e.target.value)} title="Default dari Referensi → Perpajakan — sesuaikan bila jenis jasa supplier berbeda" />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </span>
+                    )}
+                  </span>
+                </label>
               </div>
             </div>
             <div className="space-y-1.5">
@@ -2663,7 +2723,7 @@ function ReturCreateForm() {
       // === Update #049 — navigasi otomatis: scroll + fokus ke field wajib
       // pertama yang terlewat. ===
       focusFormError(Object.keys(errs), { root: formRef.current });
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       return;
     }
     setSubmitting(true);
@@ -2797,9 +2857,7 @@ function ReturCreateForm() {
                 {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
                   Referensi → Perpajakan (RATE_PPN); nilai mengikuti setting
                   global (form create), bukan input manual. === */}
-                <Label className="text-xs font-medium">
-                  PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
-                </Label>
+                <Label className="text-xs font-medium">PPN (%)</Label>
                 <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                 <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
               </div>
@@ -2878,7 +2936,7 @@ function ReturCreateForm() {
               </Button>
               <Button size="sm" onClick={handleSubmit} disabled={submitting}>
                 {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1.5 h-4 w-4" />}
-                {submitting ? 'Menyimpan...' : 'Simpan Retur'}
+                {submitting ? 'Menyimpan...' : 'Simpan'}
               </Button>
             </div>
           </CardContent>
@@ -3077,10 +3135,8 @@ function ReturEditForm({ editId }: { editId: string }) {
               <div className="space-y-1.5">
                 {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
                   Referensi → Perpajakan; menampilkan nilai yang tersimpan
-                  pada retur. === */}
-                <Label className="text-xs font-medium">
-                  PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
-                </Label>
+                  pada retur. Update #052: icon gembok dihapus. === */}
+                <Label className="text-xs font-medium">PPN (%)</Label>
                 <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={editPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                 <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
               </div>

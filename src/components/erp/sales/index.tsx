@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2, Package, Type, Lock } from 'lucide-react';
+import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2, Package, Type } from 'lucide-react';
 import { formatRp, formatDate } from '@/lib/pdf-utils';
 // === Update #050 — navigasi otomatis ke field wajib yang terlewat. ===
 import { focusFormError } from '@/lib/form-error-focus';
@@ -967,7 +967,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
       // (paritas #049 modul Pembelian). Prefix "dof-" unik untuk form ini
       // supaya tidak salah sasaran saat beberapa tab form terbuka bersamaan. ===
       focusFormError(Object.keys(errs), { prefix: 'dof-' });
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       return;
     }
     setFormErrors({});
@@ -1125,7 +1125,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
             </Button>
             <Button size="sm" onClick={handleSubmit} disabled={submitting || !fGudangId}>
               {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Truck className="mr-1.5 h-4 w-4" />}
-              {submitting ? 'Menyimpan...' : 'Simpan Pengiriman'}
+              {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </div>
         </CardContent>
@@ -1771,7 +1771,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
       // === Update #050 — navigasi otomatis ke field wajib yang terlewat
       // (prefix "sif-" unik untuk form Invoice Penjualan). ===
       focusFormError(Object.keys(errs), { prefix: 'sif-' });
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       return;
     }
     setSubmitting(true);
@@ -1971,10 +1971,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             <div>
               <Label className="text-xs font-medium">Pajak (PPN / PPh23)</Label>
               <p className="text-[11px] text-muted-foreground">
-                Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar).{' '}
-                <span className="inline-flex items-center gap-1 font-medium">
-                  <Lock className="h-3 w-3" /> Tarif terkunci — diatur di Referensi → Perpajakan.
-                </span>
+                Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar). <span className="inline-flex items-center gap-1 font-medium">Tarif terkunci — diatur di Referensi → Perpajakan.</span>
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -2056,7 +2053,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
             </Button>
             <Button size="sm" onClick={handleSubmit} disabled={submitting}>
               {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Receipt className="mr-1.5 h-4 w-4" />}
-              {submitting ? 'Menyimpan...' : 'Simpan Invoice'}
+              {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </div>
         </CardContent>
@@ -2400,10 +2397,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                   {/* === Update #048 — keterangan tarif terkunci ditambahkan
                       (paritas form create Update #046). === */}
                   <p className="text-[11px] text-muted-foreground">
-                    Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar). Grand total dihitung ulang saat disimpan.{' '}
-                    <span className="inline-flex items-center gap-1 font-medium">
-                      <Lock className="h-3 w-3" /> Tarif terkunci — diatur di Referensi → Perpajakan.
-                    </span>
+                    Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar). Grand total dihitung ulang saat disimpan. <span className="inline-flex items-center gap-1 font-medium">Tarif terkunci — diatur di Referensi → Perpajakan.</span>
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -2599,7 +2593,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
       // === Update #050 — navigasi otomatis ke field wajib yang terlewat
       // (prefix "srf-" unik untuk form Retur Penjualan). ===
       focusFormError(Object.keys(errs), { prefix: 'srf-' });
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       return;
     }
     setFormErrors({});
@@ -2759,9 +2753,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
               {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
                   Referensi → Perpajakan (RATE_PPN); nilai mengikuti setting
                   global, bukan input manual. === */}
-              <Label className="text-xs font-medium">
-                PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
-              </Label>
+              <Label className="text-xs font-medium">PPN (%)</Label>
               <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
               <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
             </div>
@@ -2795,7 +2787,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
             </Button>
             <Button size="sm" onClick={handleSubmit} disabled={submitting || !source.invoice || !!createdReturn}>
               {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1.5 h-4 w-4" />}
-              {submitting ? 'Menyimpan...' : 'Simpan Retur'}
+              {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </div>
         </CardContent>
@@ -2993,9 +2985,7 @@ function ReturPenjualanEditForm({ editId, subPage, initialNoRetur, initialStatus
                   {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
                       Referensi → Perpajakan; menampilkan nilai yang tersimpan
                       pada retur. === */}
-                  <Label className="text-xs font-medium">
-                    PPN (%) <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />
-                  </Label>
+                  <Label className="text-xs font-medium">PPN (%)</Label>
                   <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={editPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                   <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
                 </div>
@@ -3218,9 +3208,9 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                     <TableHead className="w-[100px]">Tanggal</TableHead>
                     <TableHead>Pelanggan</TableHead>
                     <TableHead>Customer PO</TableHead>
-                    {/* Update #031 — kolom Pembayaran: progress termin SO
-                        (mis. "2/3 · Rp 30.000.000"). */}
-                    <TableHead className="w-[150px]">Pembayaran</TableHead>
+                    {/* Update #052 — kolom Pembayaran (histori termin SO lama,
+                        fitur termin dihapus #040; SO baru selalu "—")
+                        DIHAPUS biar rapi. */}
                     <TableHead>Fulfillment Status</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
                     {/* Update #043 — kolom Workflow dihapus (dokumen SO langsung final). */}
@@ -3229,10 +3219,10 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={8} />
+                    <SkeletonRows cols={7} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                         Tidak ada data Sales Order.
                       </TableCell>
                     </TableRow>
@@ -3253,34 +3243,8 @@ function PesananTab({ pelangganOptions, syaratBayarOptions, barangOptions, refre
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.customerPoNumber || '-'}</TableCell>
-                        <TableCell>
-                          {/* Update #031 — progress pembayaran termin SO.
-                              Update #036 — baris "via invoice" untuk termin bebas
-                              (total termin < Grand Total): sisanya ditagih lewat
-                              Invoice. Update #042 — DP/Pelunasan kini diatur
-                              lewat field DP/Pelunasan di invoice (bukan otomatis
-                              saat posting). Kolom ini murni HISTORI termin SO
-                              lama (fitur termin dihapus #040). */}
-                          {(() => {
-                            const total = Number(d.terminTotal) || 0;
-                            if (!total) return <span className="text-xs text-muted-foreground">—</span>;
-                            const dibayar = Number(d.terminDibayar) || 0;
-                            const viaInvoice = Math.max((Number(d.grandTotal) || 0) - total, 0);
-                            return (
-                              <div className="space-y-0.5">
-                                <span className="font-mono text-xs font-medium">
-                                  {formatRp(dibayar)} <span className="text-muted-foreground">/ {formatRp(total)}</span>
-                                </span>
-                                <p className="text-[10px] text-muted-foreground">Termin SO · sisa {formatRp(Math.max(total - dibayar, 0))}</p>
-                                {viaInvoice > 0 && (
-                                  <p className="text-[10px] text-amber-700" title="Sisa tagihan di luar termin — ditagih lewat Invoice dengan field DP/Pelunasan (Update #042).">
-                                    Via invoice: {formatRp(viaInvoice)}
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </TableCell>
+                        {/* Update #052 — sel kolom Pembayaran (histori termin)
+                            dihapus bersama kolomnya. */}
                         <TableCell>
                           {/* M-05: fulfillment_status diisi backend (OPEN/PARTIAL/FULFILLED/CLOSED) — tampilkan label Indonesia */}
                           {(() => {

@@ -2230,6 +2230,8 @@ export interface PurchaseInvoiceCreate {
   alamat?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
+  // Update #052 — PPN bisa dimatikan per invoice (mirror PO/SI).
+  ppnApplicable?: boolean;
   // AUD-09 (update #04) — PPh 23 opsional di PI (persen 0-100; hutang net +
   // Cr Hutang PPh 23 saat posting). pph23 hanya dipakai bila pph23Applicable.
   pph23?: number;
@@ -2249,6 +2251,8 @@ export interface PurchaseInvoiceUpdate {
   alamat?: string | null;
   diskonGlobal?: number | null;
   ppn?: number;
+  // Update #052 — PPN per invoice bisa dimatikan (draft saja).
+  ppnApplicable?: boolean;
   // AUD-09 — PPh 23 PI (hanya bisa diubah saat masih draft)
   pph23?: number;
   pph23Applicable?: boolean;
@@ -2268,6 +2272,8 @@ export interface PurchaseInvoiceResponse {
   alamat: string | null;
   diskonGlobal: number;
   ppn: number;
+  // Update #052 — pilihan PPN/PPh23 tersimpan di invoice pembelian.
+  ppnApplicable: boolean;
   // AUD-09 (update #04) — PPh 23 pada Purchase Invoice
   pph23: number | null;
   pph23Applicable: boolean;

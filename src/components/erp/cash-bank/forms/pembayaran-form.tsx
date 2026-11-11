@@ -784,9 +784,9 @@ export default function PembayaranForm({ mode, id }: Props) {
             <Button variant="outline" onClick={handleClose} disabled={submitting}>
               Batal
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting} className={isEdit ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'}>
+            <Button onClick={handleSubmit} disabled={submitting}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isEdit ? 'Simpan Perubahan' : 'Catat Pembayaran'}
+              {submitting ? 'Menyimpan...' : isEdit ? 'Simpan Perubahan' : 'Simpan'}
             </Button>
           </div>
         </CardContent>

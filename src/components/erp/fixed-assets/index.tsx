@@ -408,7 +408,7 @@ function KategoriAsetForm({ mode, editId, initialKode, initialNama }: { mode: 'c
             </Button>
             <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === 'create' ? 'Simpan' : 'Perbarui'}
+              {mode === 'create' ? 'Simpan' : 'Simpan Perubahan'}
             </Button>
           </div>
         </CardContent>
@@ -1017,7 +1017,7 @@ function DaftarAsetEditForm({ editId }: { editId: string }) {
               </Button>
               <Button onClick={handleSubmit} disabled={editSubmitting} className="gap-2">
                 {editSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                Perbarui Aset
+                {editSubmitting ? 'Menyimpan...' : 'Simpan Perubahan'}
               </Button>
             </div>
           </CardContent>
@@ -2354,7 +2354,7 @@ function TransaksiAsetCreateForm() {
             </Button>
             <Button size="sm" onClick={handleSubmit} disabled={submitting || !fAsetId || !fJenis}>
               {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Plus className="mr-1.5 h-4 w-4" />}
-              {submitting ? 'Menyimpan...' : 'Simpan Transaksi'}
+              {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </div>
         </CardContent>

@@ -240,7 +240,7 @@ function PenggunaForm({ mode, editId, initialData }: { mode: FormMode; editId?: 
             </Button>
             <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === 'create' ? 'Simpan Pengguna' : 'Perbarui Pengguna'}
+              {mode === 'create' ? 'Simpan' : 'Simpan Perubahan'}
             </Button>
           </div>
         </CardContent>

@@ -1506,7 +1506,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
             </Button>
             <Button size="sm" onClick={handleSubmit} disabled={submitting || readOnly}>
               {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileText className="mr-1.5 h-4 w-4" />}
-              {submitting ? 'Menyimpan...' : editId ? 'Simpan Perubahan' : 'Simpan Penawaran'}
+              {submitting ? 'Menyimpan...' : editId ? 'Simpan Perubahan' : 'Simpan'}
             </Button>
           </div>
         </CardContent>

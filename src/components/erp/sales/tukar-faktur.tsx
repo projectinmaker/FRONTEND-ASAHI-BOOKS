@@ -689,7 +689,7 @@ export function TukarFakturCreateForm() {
       // === Update #050 — navigasi otomatis ke field wajib yang terlewat
       // (prefix "tfc-" unik untuk form Buat Tukar Faktur). ===
       focusFormError(Object.keys(errs), { prefix: 'tfc-' });
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       return;
     }
     setSubmitting(true);
@@ -818,7 +818,7 @@ export function TukarFakturCreateForm() {
             </Button>
             <Button size="sm" onClick={handleSubmit} disabled={submitting}>
               {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <FileCheck className="mr-1.5 h-4 w-4" />}
-              {submitting ? 'Menyimpan...' : 'Simpan Tukar Faktur'}
+              {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </div>
         </CardContent>
@@ -875,7 +875,7 @@ export function TukarFakturEditForm({ id }: { id: string }) {
       setFormErrors(errs);
       // === Update #050 — navigasi otomatis (prefix "tfe-" utk form edit). ===
       focusFormError(Object.keys(errs), { prefix: 'tfe-' });
-      toast.error('Ada field wajib yang belum diisi', { description: 'Diarahkan ke kolom pertama yang belum lengkap — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
       return;
     }
     setSubmitting(true);

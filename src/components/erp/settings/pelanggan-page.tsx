@@ -604,7 +604,7 @@ function PelangganForm({ mode, editId, initialData, preselectedCoaId, preselecte
             </Button>
             <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === 'create' ? 'Simpan Pelanggan' : 'Perbarui Pelanggan'}
+              {mode === 'create' ? 'Simpan' : 'Simpan Perubahan'}
             </Button>
           </div>
         </CardContent>

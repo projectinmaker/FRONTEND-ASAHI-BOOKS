@@ -513,7 +513,7 @@ function PermintaanBarangForm({ formProps }: { formProps?: Record<string, unknow
                 </Button>
                 <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {isEdit ? 'Simpan Perubahan' : 'Ajukan Permintaan'}
+                  {submitting ? 'Menyimpan...' : isEdit ? 'Simpan Perubahan' : 'Simpan'}
                 </Button>
               </div>
             </>
@@ -806,7 +806,7 @@ function PemindahanBarangForm({ formProps }: { formProps?: Record<string, unknow
                 </Button>
                 <Button onClick={handleSubmit} disabled={submitting} className="gap-2">
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {isEdit ? 'Simpan Perubahan' : 'Proses Pemindahan'}
+                  {submitting ? 'Menyimpan...' : isEdit ? 'Simpan Perubahan' : 'Simpan'}
                 </Button>
               </div>
             </>
@@ -1225,7 +1225,7 @@ function PenyesuaianForm({ formProps }: { formProps?: Record<string, unknown> })
                 </Button>
                 <Button onClick={handleSubmit} disabled={submitting || !!loadError || !formGudangId || !selectedBarang || (showExpiry && !formExpiry)} className="gap-2">
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {isEdit ? 'Simpan Perubahan' : 'Simpan Penyesuaian'}
+                  {submitting ? 'Menyimpan...' : isEdit ? 'Simpan Perubahan' : 'Simpan'}
                 </Button>
               </div>
             </>

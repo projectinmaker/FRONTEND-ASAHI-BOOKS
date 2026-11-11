@@ -104,6 +104,7 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
   const openFormTab = useTabStore((s) => s.openFormTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
 
+  // Update #052 — judul tab salah ketik ('Simpan Bank') -> judul sesuai form.
   const title = 'Buat Rekonsiliasi Bank';
 
   // ── Draft otomatis (form ini selalu mode create) ──
@@ -350,7 +351,7 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
             <Button variant="outline" onClick={handleClose} disabled={submitting}>
               Batal
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button onClick={handleSubmit} disabled={submitting}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Buat Rekonsiliasi
             </Button>

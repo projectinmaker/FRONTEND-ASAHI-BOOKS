@@ -736,7 +736,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     // dipanggil saat Simpan — aman dari spam toast). ===
     if (Object.keys(e).length) {
       focusFormError(Object.keys(e), { prefix: 'pay-' });
-      toast.error('Ada field wajib yang belum lengkap', { description: 'Diarahkan ke kolom pertama yang belum diisi — kolom wajib ditandai *.' });
+      toast.error('Ada field wajib yang belum diisi');
     }
     return Object.keys(e).length === 0;
   }, [pihakFilter, tanggal, kasBankId, noNukti, selectedList, selectedPihakId, pihakLabel, penaltiNum, akunPenaltiId, isPiutang, nilaiTukar, isGagalTagih, nominalTerKunci]);
@@ -1528,9 +1528,10 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
               <Button variant="outline" onClick={clearSelection} disabled={submitting}>
                 Batal
               </Button>
-              <Button onClick={handleSubmit} disabled={submitting || (!isGagalTagih && penaltiMissingAkun)} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Button onClick={handleSubmit} disabled={submitting || (!isGagalTagih && penaltiMissingAkun)}>
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}
-                {isGagalTagih ? 'Simpan Voucher Memorial' : 'Simpan Draft'}
+                {/* Update #052 — label seragam dengan semua modul: Simpan. */}
+                {submitting ? 'Menyimpan...' : 'Simpan'}
               </Button>
             </div>
           </CardContent>
