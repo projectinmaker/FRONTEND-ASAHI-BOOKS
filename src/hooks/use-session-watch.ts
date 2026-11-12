@@ -30,11 +30,26 @@ import { useAuthStore, readExpiresAt, readLastRefresh, setLastActivity } from '@
  * request pertama setelah kembali 401 → sesi berakhir lebih awal padahal
  * belum idle 2 jam penuh. Sekarang token selalu hidup melampaui window
  * idle → sesi benar-benar berakhir HANYA karena tidak ada aktivitas. ===
+ *
+ * === Update #060 — FIX: "kembali setelah diam ≥ 2 jam" kini benar-benar
+ * MENGAKHIRI sesi. Sebelumnya tiga jalur memperpanjang expiresAt TANPA
+ * memeriksa apakah batas sudah terlewat:
+ *   (a) markActivity saat halaman dimuat/di-reload,
+ *   (b) visibilitychange saat user kembali ke tab / laptop bangun dari tidur,
+ *   (c) klik pertama user setelah kembali.
+ * Akibatnya popup "Sesi Berakhir" nyaris tidak pernah muncul: skenario
+ * paling umum (layar terkunci, laptop tidur, pindah aplikasi lain, reload,
+ * buka ulang tab) selalu lolos — selama token masih hidup (≤ 5 jam) user
+ * lanjut seolah tidak terjadi apa-apa. Sekarang markActivity punya GERBANG
+ * HANGUS: bila expiresAt tersimpan sudah lewat, "aktivitas kembali" justru
+ * mengakhiri sesi (auth-store.endSessionIdle → popup dengan teks tegas
+ * "karena tidak ada aktivitas selama 2 jam" — janji #055 yang belum
+ * terpasang). Diam < 2 jam lalu kembali → tetap lanjut mulus. ===
  */
 // 2 jam — window IDLE (mirror SESSION_DURATION_MS di auth-store).
 // Update #055: TIDAK lagi mirror umur token backend (yang kini 5 jam dan
 // sengaja lebih panjang) — nilai ini murni batas tanpa aktivitas.
-const SESSION_DURATION_MS = 2 * 60 * 60 * 1000;
+const SESSION_DURATION_MS = 1 * 60 * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 20_000; // tulis aktivitas maks. 1× per 20 detik
 const REFRESH_AFTER_MS = 30 * 60 * 1000; // geser token bila sudah berumur 30 menit
 const EXPIRES_AT_KEY = 'asahi_erp_expires_at';
@@ -47,6 +62,24 @@ export function useSessionWatch() {
   useEffect(() => {
     const markActivity = () => {
       const now = Date.now();
+      // === Update #060 — gerbang 1: hanya sesi yang masih hidup. Di halaman
+      // login tidak ada sesi untuk diperpanjang; setelah popup "Sesi Berakhir"
+      // muncul tidak boleh ada perpanjangan (popup tetap sampai OK ditekan). ===
+      const s = useAuthStore.getState();
+      if (!s.isAuthenticated || s.sessionExpired) return;
+      // === Update #060 — gerbang 2 (INTI FIX): batas sesi tersimpan SUDAH
+      // TERLEWAT = user baru kembali setelah diam ≥ 2 jam → sesi HANGUS dan
+      // TIDAK boleh dipulihkan oleh "aktivitas kembali" — akhiri sesi
+      // (popup "Sesi Berakhir" + teks tegas #055). Sebelum #060, jalur ini
+      // (reload / kembali ke tab / klik pertama) memperpanjang expiresAt
+      // begitu saja → sesi diam ≥ 2 jam tidak pernah berakhir kecuali tab
+      // tetap terbuka & terlihat selama 2 jam penuh.
+      // (stored null = sesi legacy pra-#051 → dinormalisasi batas baru.) ===
+      const stored = readExpiresAt();
+      if (stored && now >= stored) {
+        s.endSessionIdle();
+        return;
+      }
       activeSinceTick.current = true;
       if (now - lastWrite.current < ACTIVITY_THROTTLE_MS) return; // throttle penulisan
       lastWrite.current = now;
@@ -58,6 +91,8 @@ export function useSessionWatch() {
 
     const onVisible = () => {
       // Kembali ke tab = aktivitas (user memandang/melanjutkan pekerjaan).
+      // === Update #060 — markActivity kini punya gerbang hangus: kembali
+      // SETELAH diam ≥ 2 jam → sesi berakhir + popup; < 2 jam → lanjut mulus. ===
       if (document.visibilityState === 'visible') markActivity();
     };
 
@@ -76,14 +111,11 @@ export function useSessionWatch() {
       if (!expiresAt) return;
       if (Date.now() >= expiresAt) {
         // Tidak ada aktivitas 2 jam terakhir → sesi berakhir.
-        // Idempotent; pembersihan sama seperti alur 401 'auth:expired' di
-        // api.ts/auth-store (token, user, dan jejak sesi dihapus; popup
-        // "Sesi Berakhir" ditampilkan page.tsx).
-        localStorage.removeItem('asahi_erp_token');
-        localStorage.removeItem('asahi_erp_user');
-        localStorage.removeItem(EXPIRES_AT_KEY);
-        setLastActivity(null);
-        s.markSessionExpired();
+        // === Update #060 — pembersihan + penandaan alasan 'idle' kini
+        // terpusat di auth-store.endSessionIdle (sebelumnya manual di sini,
+        // tidak membersihkan asahi_erp_last_refresh, dan popup tidak bisa
+        // membedakan sebab idle vs 401). ===
+        s.endSessionIdle();
         return;
       }
       // Geser token bila user AKTIF dan token sudah berumur — supaya JWT

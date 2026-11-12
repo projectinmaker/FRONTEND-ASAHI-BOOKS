@@ -21,10 +21,21 @@ interface AuthState {
   /** true setelah sesi berakhir (idle 2 jam ATAU 401 dari api.ts) —
    *  memunculkan AlertDialog "Sesi Berakhir"; tab TIDAK direset. */
   sessionExpired: boolean;
+  /** === Update #060 — PENYEBAB sesi berakhir, menentukan teks popup:
+   *  'idle' = tidak ada aktivitas 2 jam (teks tegas, janji #055) atau
+   *  'auth' = token ditolak server / 401 (teks generik). null = sesi hidup. === */
+  sessionExpiredReason: 'idle' | 'auth' | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
-  /** Update #043 — tandai sesi berakhir (idempotent; tidak reset tab). */
-  markSessionExpired: () => void;
+  /** Update #043 — tandai sesi berakhir (idempotent; tidak reset tab).
+   *  === Update #060 — kini menyertai ALASAN ('idle' | 'auth'); bila keduanya
+   *  nyaris bersamaan, diagnosis 'idle' menang (paling spesifik & akurat). === */
+  markSessionExpired: (reason?: 'idle' | 'auth') => void;
+  /** === Update #060 — akhiri sesi karena IDLE ≥ 2 jam: bersihkan seluruh
+   *  jejak sesi (token, user, expiresAt, lastRefresh, lastActivity) lalu
+   *  tandai berakhir dengan alasan 'idle'. Dipanggil useSessionWatch
+   *  (tick 30 detik + gerbang "sesi hangus" saat user kembali). === */
+  endSessionIdle: () => void;
   /** Update #051 — sesi geser: tukar token masih-sah dengan token baru
    *  berumur penuh + perpanjang expiresAt. Dipanggil useSessionWatch saat
    *  user aktif & token sudah berumur > 30 menit. */
@@ -41,7 +52,7 @@ interface AuthState {
 // berakhir lebih awal. Sekarang satu-satunya penyebab sesi berakhir adalah
 // TIDAK ADA AKTIVITAS 2 jam. JANGAN menyamakan dua nilai ini saat mengubah
 // durasi idle (ubah yang di sini + use-session-watch, bukan backend).
-const SESSION_DURATION_MS = 2 * 60 * 60 * 1000;
+const SESSION_DURATION_MS = 1 * 60 * 60 * 1000;
 const EXPIRES_AT_KEY = 'asahi_erp_expires_at';
 // === Update #051 — waktu terakhir token digeser (POST /auth/refresh).
 // Dipakai useSessionWatch untuk throttle: token hanya ditukar bila sudah
@@ -55,6 +66,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: false,
   expiresAt: getExpiresAt(),
   sessionExpired: false,
+  sessionExpiredReason: null,
 
   login: async (username, password) => {
     set({ isLoading: true });
@@ -68,7 +80,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       setExpiresAt(expiresAt);
       setLastRefresh(Date.now());
       setLastActivity(Date.now());
-      set({ user: res.user, isAuthenticated: true, isLoading: false, expiresAt, sessionExpired: false });
+      set({ user: res.user, isAuthenticated: true, isLoading: false, expiresAt, sessionExpired: false, sessionExpiredReason: null });
       // Muat permission efektif (RBAC v2) — fire-and-forget, jangan di-await.
       void useAccessStore.getState().fetchPermissions();
     } catch (err) {
@@ -86,7 +98,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     // === Update #051 — bersihkan jejak idle-timeout juga. ===
     setLastRefresh(null);
     setLastActivity(null);
-    set({ user: null, isAuthenticated: false, expiresAt: null, sessionExpired: false });
+    set({ user: null, isAuthenticated: false, expiresAt: null, sessionExpired: false, sessionExpiredReason: null });
     // Reset permission RBAC (event `auth:logout` untuk listener lain sudah
     // ditangani api.ts pada kasus 401; di sini cukup reset langsung agar
     // tidak memicu loop listener auth-store sendiri).
@@ -106,8 +118,28 @@ export const useAuthStore = create<AuthState>((set) => ({
   // === Update #043 — tandai sesi berakhir (idempotent; state tab dibiarkan).
   // Pemanggil (timer useSessionWatch / listener 401 api.ts) yang bertugas
   // membersihkan token/user. ===
-  markSessionExpired: () => {
-    set((s) => (s.sessionExpired ? s : { sessionExpired: true }));
+  markSessionExpired: (reason: 'idle' | 'auth' = 'auth') => {
+    set((s) => {
+      if (!s.sessionExpired) return { sessionExpired: true, sessionExpiredReason: reason };
+      // === Update #060 — 'idle' adalah diagnosis paling spesifik: bila
+      // idle-check dan 401 nyaris bersamaan (mis. user kembali setelah diam
+      // > 5 jam: request izin 401 duluan, visibilitychange idle-check sesaat
+      // kemudian), alasan (dan teks popup) tetap akurat "tidak ada aktivitas
+      // 2 jam" — 401 tidak menimpanya menjadi teks generik. ===
+      if (reason === 'idle' && s.sessionExpiredReason !== 'idle') return { sessionExpiredReason: 'idle' };
+      return s;
+    });
+  },
+
+  // === Update #060 — akhiri sesi karena IDLE ≥ 2 jam (dipanggil
+  // useSessionWatch). Pembersihan terpusat di clearSessionPersist() — sama
+  // dengan alur 401 'auth:expired' — supaya tidak ada jejak sesi yang
+  // tertinggal di salah satu jalur (sebelum #060 jalur idle tidak
+  // membersihkan asahi_erp_last_refresh). ===
+  endSessionIdle: () => {
+    if (!useAuthStore.getState().isAuthenticated) return;
+    clearSessionPersist();
+    useAuthStore.getState().markSessionExpired('idle');
   },
 
   // === Update #051 — sesi geser (idle-timeout). Tukar token lama yang masih
@@ -233,6 +265,20 @@ export function setLastActivity(ts: number | null) {
   }
 }
 
+// === Update #060 — pusat pembersihan jejak sesi, dipakai BERSAMA oleh:
+// - endSessionIdle (sesi berakhir karena idle ≥ 2 jam), dan
+// - listener 'auth:expired' di bawah (sesi berakhir karena 401).
+// Sebelumnya logika ini terduplikasi dan jalur idle tidak membersihkan
+// asahi_erp_last_refresh. ===
+function clearSessionPersist() {
+  if (typeof window === 'undefined') return;
+  setToken(null);
+  setUserStorage(null);
+  setExpiresAt(null);
+  setLastRefresh(null);
+  setLastActivity(null);
+}
+
 // Listener untuk event 401 dari api.ts
 if (typeof window !== 'undefined') {
   window.addEventListener('auth:logout', () => {
@@ -242,12 +288,11 @@ if (typeof window !== 'undefined') {
   // markSessionExpired (popup AlertDialog di page.tsx; state tab TIDAK
   // direset — logout penuh hanya saat tombol OK ditekan). ===
   window.addEventListener('auth:expired', () => {
-    setToken(null);
-    setUserStorage(null);
-    setExpiresAt(null);
-    // === Update #051 — bersihkan jejak idle-timeout juga. ===
-    setLastRefresh(null);
-    setLastActivity(null);
-    useAuthStore.getState().markSessionExpired();
+    // === Update #060 — pembersihan terpusat (identik dengan jalur idle di
+    // endSessionIdle) + alasan 'auth' (token ditolak server) → popup memakai
+    // teks generik; bila idle-check sudah lebih dulu menandai 'idle', alasan
+    // (dan teks) 'idle' tetap dipertahankan. ===
+    clearSessionPersist();
+    useAuthStore.getState().markSessionExpired('auth');
   });
 }
