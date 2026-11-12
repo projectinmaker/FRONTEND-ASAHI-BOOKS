@@ -1,5 +1,5 @@
 import { api } from '@/lib/api';
-import { formatNumberIDR } from '@/lib/money';
+import { formatNumberIDR, trimDecimalString } from '@/lib/money';
 import type { SalesOrderResponse, PurchaseOrderResponse, PurchaseOrderDetailResponse } from '@/types/api';
 
 export type OrderKind = 'sales' | 'purchase';
@@ -59,7 +59,10 @@ export function orderLinesFromResponse(order: OrderResponse): OrderLine[] {
     // supaya form edit/detail menampilkan nama + satuan itemnya.
     const soLine = line as SalesOrderResponse['details'][number];
     const bebas = !line.barangId && !!(soLine.itemNama || '').trim();
-    return { key: line.id, barangId: line.barangId || '', satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: String(line.diskon ?? 0), salesOrderId: poLine.salesOrderId || '', jenisPembelian: poLine.jenisPembelian || '', ropItemId: poLine.ropItemId || '', ropNo: poLine.ropItem?.ropNo || '', bebas, itemNama: soLine.itemNama || '', itemSatuan: soLine.itemSatuan || '' };
+    // === Update #061 — diskon per baris dipangkas desimalnya ("0.00" Decimal
+    // backend → "0"): tanpa ini kolom Diskon di form edit/detail PO tampil
+    // "0,00". Harga aman (CurrencyInput memangkas ".00"); qty backend int. ===
+    return { key: line.id, barangId: line.barangId || '', satuanId: line.satuanId || '', harga: String(line.harga), qty: String(line.qty), diskon: trimDecimalString(line.diskon ?? 0, '0'), salesOrderId: poLine.salesOrderId || '', jenisPembelian: poLine.jenisPembelian || '', ropItemId: poLine.ropItemId || '', ropNo: poLine.ropItem?.ropNo || '', bebas, itemNama: soLine.itemNama || '', itemSatuan: soLine.itemSatuan || '' };
   });
 }
 export function serializeOrderLines(lines: OrderLine[]) {
@@ -133,9 +136,16 @@ export function newOrderHeader(rates?: { ppn?: string; pph23?: string }): OrderH
 export function orderHeaderFromResponse(order: OrderResponse): OrderHeader {
   const header = newOrderHeader();
   const record = order as unknown as Record<string, unknown>;
+  // === Update #061 — field tarif/persentase (ppn, pph23, diskonGlobal)
+  // dipangkas desimalnya: backend (Pydantic) menserialisasi Decimal sebagai
+  // string "11.00" / "2.00" / "0.00"; tanpa pemangkasan, input number di
+  // form edit/detail PO tampil "11,00" / "2,00" / "0,00" (locale id-ID).
+  // serializeOrderHeader tetap memakai Number() sehingga perbandingan di
+  // buildOrderUpdate / orderSaveMismatches tidak berubah perilaku. ===
+  const rateKeys: ReadonlySet<string> = new Set(['ppn', 'pph23', 'diskonGlobal']);
   for (const key of Object.keys(header) as OrderHeaderKey[]) {
     const value = record[key];
-    header[key] = value == null ? '' : String(value);
+    header[key] = value == null ? '' : rateKeys.has(key) ? trimDecimalString(value as string | number) : String(value);
     if (key === 'tanggal' || key === 'tanggalPengiriman' || key === 'tanggalKirim' || key === 'customerPoDate') header[key] = header[key].slice(0, 10);
   }
   return header;

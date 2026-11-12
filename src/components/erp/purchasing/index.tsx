@@ -2871,9 +2871,7 @@ function ReturCreateForm() {
                 {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
                   Referensi → Perpajakan (RATE_PPN); nilai mengikuti setting
                   global (form create), bukan input manual. === */}
-                <Label className="text-xs font-medium">
-                  PPN (%)
-                </Label>
+                <Label className="text-xs font-medium">PPN (%)</Label>
                 <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={fPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                 <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
               </div>
@@ -3152,9 +3150,7 @@ function ReturEditForm({ editId }: { editId: string }) {
                 {/* === Update #048 — tarif PPN DIKUNCI (readOnly): terpusat di
                   Referensi → Perpajakan; menampilkan nilai yang tersimpan
                   pada retur. Update #052: icon gembok dihapus. === */}
-                <Label className="text-xs font-medium">
-                  PPN (%)
-                </Label>
+                <Label className="text-xs font-medium">PPN (%)</Label>
                 <Input type="number" className="h-9 text-xs bg-muted/60 font-medium" value={editPpn} min={0} max={100} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
                 <p className="text-[11px] text-muted-foreground">Tarif terkunci — diatur di Referensi → Perpajakan.</p>
               </div>
@@ -3409,7 +3405,12 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
                         <TableCell className="font-mono text-xs font-medium">{d.noPesanan}</TableCell>
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.supplierNameSnapshot || d.supplier?.nama || '-'}</TableCell>
-                        <TableCell className="text-xs">{d.syaratBayar?.nama || d.syaratBayarId || '-'}</TableCell>
+                        {/* === Update #061 — kolom Payment Term: tampil dari
+                            relasi syaratBayar (nama istilah). Fallback UUID
+                            dihapus — nama kini DIJAMIN ikut response karena
+                            backend meng-eager-load relasi syarat_bayar; PO
+                            tanpa syarat bayar tampil "-". === */}
+                        <TableCell className="text-xs">{d.syaratBayar?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.currency || '-'}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
