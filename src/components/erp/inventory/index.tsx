@@ -26,7 +26,7 @@ import { Package, AlertTriangle, DollarSign, Plus, Search, ArrowRightLeft, Wareh
 import { toast } from 'sonner';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
 import { formatRp, todayStr } from '@/lib/pdf-utils';
-import type { PenyesuaianStokResponse, PenyesuaianStokCreate, PenyesuaianStokUpdate, PemindahanBarangResponse, PemindahanBarangCreate, PemindahanBarangUpdate, PermintaanBarangResponse, PermintaanBarangCreate, PermintaanBarangUpdate, BarangDropdown, GudangResponse, BarangResponse, KategoriBarangResponse, TipePenyesuaian, ProsesPemindahan, SalesOrderResponse, SalesOrderSisaResponse } from '@/types/api';
+import type { PenyesuaianStokResponse, PenyesuaianStokCreate, PenyesuaianStokUpdate, PemindahanBarangResponse, PemindahanBarangCreate, PemindahanBarangUpdate, PermintaanBarangResponse, PermintaanBarangCreate, PermintaanBarangUpdate, BarangDropdown, GudangResponse, BarangResponse, KategoriBarangResponse, TipePenyesuaian, ProsesPemindahan, SalesOrderResponse, SalesOrderSisaResponse, SupplierDropdown, SatuanResponse, PurchaseOrderResponse } from '@/types/api';
 import StokKartuTab from '@/components/erp/inventory/stok-kartu';
 import BarangForm from '@/components/erp/inventory/barang-form';
 import { ExcelImportDialog, exportDateStamp } from '@/components/erp/excel-import-dialog';
@@ -35,6 +35,10 @@ import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workfl
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import { needsAdjustmentExpiry, adjustmentExpiryPayload } from '@/lib/phase-a';
 import { isStockItemBarang } from '@/lib/master-data';
+// === Update #066 — menu LPPB & Penerimaan pindah ke modul Persediaan (setelah
+// Penyesuaian). Halaman/form/cetak tetap komponen modul Pembelian — modul ini
+// me-render-nya; routing modul Pembelian dipertahankan untuk tab lama. ===
+import { PenerimaanTab, PenerimaanCreateForm, PenerimaanEditForm, LppbTab, LppbForm, PenerimaanCetakTab, LppbCetakTab } from '@/components/erp/purchasing/index';
 
 // ─── Constants ───────────────────────────────────────────────────────────
 
@@ -2493,6 +2497,57 @@ function KategoriBarangTab({ refreshKey }: { refreshKey?: number }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// === Update #066 — TAB: Penerimaan Barang (pindah menu dari modul Pembelian).
+// Daftar tetap komponen modul Pembelian (PenerimaanTab); modul Persediaan
+// memuat dropdown-nya SENDIRI (state lokal) — tidak bergantung pada state
+// dropdown bersama modul Pembelian. ===
+// ═══════════════════════════════════════════════════════════════════════════
+function PenerimaanBarangTab({ refreshKey }: { refreshKey?: number }) {
+  const [supplierOptions, setSupplierOptions] = useState<SupplierDropdown[]>([]);
+  const [barangOptions, setBarangOptions] = useState<BarangDropdown[]>([]);
+  const [satuanOptions, setSatuanOptions] = useState<SatuanResponse[]>([]);
+  const [purchaseOrderOptions, setPurchaseOrderOptions] = useState<{ id: string; noPesanan: string }[]>([]);
+  const [dropdownsLoading, setDropdownsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setDropdownsLoading(true);
+      try {
+        const [supplier, barang, satuan, poRes] = await Promise.all([api.get<SupplierDropdown[]>('/master/supplier-dropdown'), api.get<BarangDropdown[]>('/master/barang-dropdown'), api.get<SatuanResponse[]>('/master/satuan'), api.get<PaginatedResponse<PurchaseOrderResponse>>('/pembelian/purchase-order?limit=200')]);
+        if (cancelled) return;
+        setSupplierOptions(supplier);
+        setBarangOptions(barang);
+        setSatuanOptions(satuan);
+        setPurchaseOrderOptions(poRes.data.map((p) => ({ id: p.id, noPesanan: p.noPesanan })));
+      } catch {
+        // Silently fail — dropdowns will be empty
+      } finally {
+        if (!cancelled) setDropdownsLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (dropdownsLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+        <Skeleton className="h-[500px] w-full" />
+      </div>
+    );
+  }
+
+  return <PenerimaanTab supplierOptions={supplierOptions} barangOptions={barangOptions} satuanOptions={satuanOptions} purchaseOrderOptions={purchaseOrderOptions} refreshKey={refreshKey} />;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Main Component
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -2529,6 +2584,29 @@ export default function InventoryModule({ subPage: propsSubPage, refreshKey, for
       }
       return <BarangForm mode="edit" editId={editId} />;
     }
+    // === Update #066 — LPPB & Penerimaan pindah menu ke modul Persediaan:
+    // form & cetak tetap komponen modul Pembelian. Cabang ini menjamin tab
+    // form/cetak yang terbuka di bawah modul Persediaan tetap ter-render
+    // (tombol di daftar masih membuka tab modul Pembelian — routing modul itu
+    // dipertahankan untuk kompatibilitas tab lama). ===
+    if (formMode === 'penerimaan-pembelian-create') {
+      return <PenerimaanCreateForm initialPurchaseOrderId={formProps?.purchaseOrderId as string | undefined} />;
+    }
+    if (formMode === 'penerimaan-pembelian-edit') {
+      const editId = formProps?.id as string | undefined;
+      if (editId) return <PenerimaanEditForm editId={editId} />;
+    }
+    if (formMode === 'penerimaan-cetak') {
+      const cetakId = formProps?.id as string | undefined;
+      if (cetakId) return <PenerimaanCetakTab id={cetakId} />;
+    }
+    if (formMode === 'lppb-create' || formMode === 'lppb-edit') {
+      return <LppbForm lppbId={formProps?.id as string | undefined} />;
+    }
+    if (formMode === 'lppb-cetak') {
+      const cetakId = formProps?.id as string | undefined;
+      if (cetakId) return <LppbCetakTab id={cetakId} />;
+    }
   }
 
   return (
@@ -2536,12 +2614,18 @@ export default function InventoryModule({ subPage: propsSubPage, refreshKey, for
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Persediaan</h1>
-        <p className="text-muted-foreground">Kelola stok barang, permintaan, pemindahan, penyesuaian, gudang, dan kategori barang</p>
+        {/* === Update #066 — LPPB & Penerimaan kini bagian modul Persediaan. === */}
+        <p className="text-muted-foreground">Kelola stok barang, permintaan, pemindahan, penyesuaian, LPPB, penerimaan barang, gudang, dan kategori barang</p>
       </div>
 
       {subPage === 'permintaan-barang' && <PermintaanBarangTab refreshKey={refreshKey} />}
       {subPage === 'pemindahan-barang' && <PemindahanBarangTab refreshKey={refreshKey} />}
       {subPage === 'penyesuaian' && <PenyesuaianTab refreshKey={refreshKey} />}
+      {/* === Update #066 — LPPB & Penerimaan pindah dari modul Pembelian
+          (setelah Penyesuaian). LPPB self-contained; daftar Penerimaan memuat
+          dropdown-nya sendiri (PenerimaanBarangTab di atas). === */}
+      {subPage === 'lppb' && <LppbTab refreshKey={refreshKey} />}
+      {subPage === 'penerimaan' && <PenerimaanBarangTab refreshKey={refreshKey} />}
       {subPage === 'barang-jasa' && <BarangJasaTab refreshKey={refreshKey} />}
       {subPage === 'gudang' && <GudangTab refreshKey={refreshKey} />}
       {subPage === 'kategori-barang' && <KategoriBarangTab refreshKey={refreshKey} />}

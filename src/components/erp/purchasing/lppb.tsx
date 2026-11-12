@@ -943,8 +943,9 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
                     )}
                   </TableRow>
                   <TableRow>
-                    <TableHead className="bg-slate-100 text-center">BAIK</TableHead>
-                    <TableHead className="bg-slate-100 text-center">TIDAK BAIK</TableHead>
+                    {/* === Update #066 — kolom BAIK & TIDAK BAIK dilebarkan (w-24, senada kolom KUANTITAS PENERIMAAN) === */}
+                    <TableHead className="w-24 bg-slate-100 text-center">BAIK</TableHead>
+                    <TableHead className="w-24 bg-slate-100 text-center">TIDAK BAIK</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -973,11 +974,12 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
                         <TableCell>
                           <Input type="number" min={0} className="h-8 text-center" value={r.qtyPenerimaan} onChange={(e) => updateRow(idx, { qtyPenerimaan: Number(e.target.value) || 0 })} disabled={readOnly} />
                         </TableCell>
+                        {/* === Update #066 — input qty BAIK/TIDAK BAIK diberi min-width agar angka 4-5 digit tampil utuh === */}
                         <TableCell>
-                          <Input type="number" min={0} className="h-8 text-center" value={r.qtyBaik} onChange={(e) => updateRow(idx, { qtyBaik: Number(e.target.value) || 0 })} disabled={readOnly} />
+                          <Input type="number" min={0} className="h-8 min-w-20 text-center" value={r.qtyBaik} onChange={(e) => updateRow(idx, { qtyBaik: Number(e.target.value) || 0 })} disabled={readOnly} />
                         </TableCell>
                         <TableCell>
-                          <Input type="number" min={0} className="h-8 text-center text-red-600" value={r.qtyTidakBaik} onChange={(e) => updateRow(idx, { qtyTidakBaik: Number(e.target.value) || 0 })} disabled={readOnly} />
+                          <Input type="number" min={0} className="h-8 min-w-20 text-center text-red-600" value={r.qtyTidakBaik} onChange={(e) => updateRow(idx, { qtyTidakBaik: Number(e.target.value) || 0 })} disabled={readOnly} />
                         </TableCell>
                         <TableCell className="text-center font-medium">{sudahDiterima(r)}</TableCell>
                         <TableCell className="text-center font-medium">{belumDiterima(r)}</TableCell>

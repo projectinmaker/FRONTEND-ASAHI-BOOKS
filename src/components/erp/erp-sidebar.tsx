@@ -109,9 +109,10 @@ const modules: NavModule[] = [
       // → sistem buat PO DRAFT (qty otomatis = kekurangan stok gudang).
       { id: 'detail-rop', label: 'Detail ROP', icon: ClipboardList },
       { id: 'pesanan', label: 'Pesanan', icon: FileText },
-      // Update ASAHI #005 — LPPB: inspeksi QC barang masuk (sebelum diterima ke gudang)
-      { id: 'lppb', label: 'LPPB', icon: ClipboardCheck },
-      { id: 'penerimaan', label: 'Penerimaan', icon: Package },
+      // === Update #066 — menu LPPB & Penerimaan DIPINDAHKAN ke modul
+      // Persediaan (setelah Penyesuaian). Hak akses TIDAK berubah (tetap
+      // purchase.lppb.view / purchase.goods_receipt.view); routing modul
+      // Pembelian dipertahankan untuk tab lama yang masih terbuka. ===
       { id: 'invoice', label: 'Invoice', icon: Receipt },
       { id: 'retur', label: 'Retur', icon: RotateCcw }
       // Update #01 — Pelunasan Hutang dipindahkan ke modul Kas & Bank
@@ -137,6 +138,12 @@ const modules: NavModule[] = [
       { id: 'permintaan-barang', label: 'Permintaan Barang', icon: ClipboardList },
       { id: 'pemindahan-barang', label: 'Pemindahan Barang', icon: ArrowLeftRight },
       { id: 'penyesuaian', label: 'Penyesuaian', icon: Scale },
+      // === Update #066 — LPPB & Penerimaan dipindahkan dari modul Pembelian
+      // (dokumen barang masuk dikelola bersama stok di modul Persediaan).
+      // id subPage & permission tetap sama seperti di modul Pembelian. ===
+      // Update ASAHI #005 — LPPB: inspeksi QC barang masuk (sebelum diterima ke gudang)
+      { id: 'lppb', label: 'LPPB', icon: ClipboardCheck },
+      { id: 'penerimaan', label: 'Penerimaan', icon: Package },
       { id: 'barang-jasa', label: 'Barang & Jasa', icon: Package },
       { id: 'gudang', label: 'Gudang', icon: Warehouse },
       { id: 'stok-kartu', label: 'Stok Kartu / Valuasi', icon: Calculator }
@@ -310,6 +317,9 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     // siapa pun yang bisa membuka Pesanan bisa membuka kolam belanja ROP.
     'detail-rop': 'purchase.purchase_order.view',
     pesanan: 'purchase.purchase_order.view',
+    // === Update #066 — entri LPPB & Penerimaan dipertahankan meski menunya
+    // pindah ke modul Persediaan (kode permission tidak berubah; entri modul
+    // Persediaan yang kini digating menu — lihat inventory di bawah). ===
     lppb: 'purchase.lppb.view',
     penerimaan: 'purchase.goods_receipt.view',
     invoice: 'purchase.purchase_invoice.view',
@@ -325,6 +335,10 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     'permintaan-barang': 'inventory.stock_request.view',
     'pemindahan-barang': 'inventory.transfer.view',
     penyesuaian: 'inventory.adjustment.view',
+    // === Update #066 — LPPB & Penerimaan pindah menu ke modul Persediaan;
+    // kode permission TIDAK berubah (tetap purchase.* — setup role aman). ===
+    lppb: 'purchase.lppb.view',
+    penerimaan: 'purchase.goods_receipt.view',
     'barang-jasa': 'master.barang.view',
     gudang: 'master.gudang.view',
     'stok-kartu': 'inventory.stock.view'

@@ -116,8 +116,15 @@ export interface PenawaranData {
   detail: DetailRow[];
   biayaTambahan: BiayaTambahan[];
   diskonGlobal: number;
-  // === Update #042 — PPN dihapus dari penawaran (dokumen nilai penuh;
-  // grand total = subtotal − diskon + biaya; PPN hanya di INVOICE). ===
+  // === Update #066 — PPN & PPh23 OPSIONAL di penawaran (mirror PO): flag +
+  // tarif + total pajak TERSIMPAN (string Decimal dikonversi Number oleh
+  // mapper; grand total backend sudah termasuk keduanya). ===
+  ppn?: number;
+  ppnApplicable?: boolean;
+  pph23?: number;
+  pph23Applicable?: boolean;
+  totalPpn?: number;
+  totalPph23?: number;
 }
 
 // ─── Shared Styles ───────────────────────────────────────────────────────────
@@ -172,7 +179,7 @@ function sanitizeKeterangan(keterangan: string): string {
   return keterangan.replace(/(atas\s+)(?:SO\s+){2,}/gi, '$1SO ');
 }
 
-function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0, hideDiskon = false, dpPelunasan }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number; hideDiskon?: boolean; dpPelunasan?: number }) {
+function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable = true, pph23Applicable = false, pph23 = 0, hideDiskon = false, dpPelunasan, totalPpnStored, totalPph23Stored }: { detail: DetailRow[]; diskonGlobal: number; ppn: number; biayaTambahan: BiayaTambahan[]; ppnApplicable?: boolean; pph23Applicable?: boolean; pph23?: number; hideDiskon?: boolean; dpPelunasan?: number; totalPpnStored?: number; totalPph23Stored?: number }) {
   // === Update #042 — DP/Pelunasan (header invoice) menggantikan perhitungan
   // dari dp per baris: gross = Σ qty × harga (nilai penuh); effective =
   // dpPelunasan bila > 0 (nilai ditagih), selain itu gross (perilaku lama).
@@ -187,8 +194,13 @@ function SummaryTable({ detail, diskonGlobal, ppn, biayaTambahan, ppnApplicable 
   const diskonAmt = diskonGlobal ? (effective * diskonGlobal) / 100 : 0;
   const afterDiskon = effective - diskonAmt;
   // Update ASAHI: PPN hanya bila dipilih; PPh23 (jika dipilih) memotong total.
-  const ppnAmt = ppnApplicable && ppn ? (afterDiskon * ppn) / 100 : 0;
-  const pph23Amt = pph23Applicable && pph23 ? (afterDiskon * pph23) / 100 : 0;
+  // === Update #066 — total pajak TERSIMPAN dari backend (penawaran) lebih
+  // akurat daripada hitung ulang (dasar pajak memperhitungkan diskon per
+  // baris); hitung ulang hanya fallback (mirror SummaryTable purchasing). ===
+  const ppnAmtCalc = ppnApplicable && ppn ? (afterDiskon * ppn) / 100 : 0;
+  const pph23AmtCalc = pph23Applicable && pph23 ? (afterDiskon * pph23) / 100 : 0;
+  const ppnAmt = ppnApplicable ? (totalPpnStored ?? ppnAmtCalc) : 0;
+  const pph23Amt = pph23Applicable ? (totalPph23Stored ?? pph23AmtCalc) : 0;
   const biayaLain = biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
   const grandTotal = afterDiskon + ppnAmt + biayaLain - pph23Amt;
 
@@ -747,14 +759,16 @@ export function ReturPDFTemplate({ data }: { data: ReturData }) {
 export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
   // Update ASAHI #5: posisi terbilang dikembalikan ke blok footer kiri
   // (seperti sebelum update #4) — tetap menyebut TOTAL.
-  // === Update #042 — PPN DIHAPUS dari penawaran (order doc nilai penuh
-  // tanpa pajak; PPN hanya di INVOICE): grand total = subtotal − diskon
-  // + biaya; ringkasan tanpa baris "DP Diterapkan"/PPN. ===
+  // === Update #066 — PPN & PPh23 OPSIONAL di penawaran (mirror cetakan
+  // PO): baris pajak tampil hanya bila flag aktif & nilai tersimpan > 0;
+  // grand total = subtotal − diskon + biaya + PPN − PPh23. ===
   const subTotal = data.detail.reduce((s, r) => s + r.qty * r.harga, 0);
   const diskonAmt = data.diskonGlobal ? (subTotal * data.diskonGlobal) / 100 : 0;
   const afterDiskon = subTotal - diskonAmt;
   const biayaLain = data.biayaTambahan.reduce((s, b) => s + b.jumlah, 0);
-  const grandTotal = afterDiskon + biayaLain;
+  const totalPpn = data.ppnApplicable && (data.totalPpn ?? 0) > 0 ? (data.totalPpn ?? 0) : 0;
+  const totalPph23 = data.pph23Applicable && (data.totalPph23 ?? 0) > 0 ? (data.totalPph23 ?? 0) : 0;
+  const grandTotal = afterDiskon + biayaLain + totalPpn - totalPph23;
 
   return (
     <div id="pdf-content" className="bg-white text-black p-8 min-w-[210mm]" style={rootStyle}>
@@ -817,10 +831,10 @@ export function PenawaranPDFTemplate({ data }: { data: PenawaranData }) {
 
         {/* Right */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          {/* === Update #042 — ringkasan penawaran TANPA PPN (dokumen nilai
-              penuh; pajak hanya di INVOICE) — ppnApplicable=false meniadikan
-              baris PPN di SummaryTable. === */}
-          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={0} biayaTambahan={data.biayaTambahan} ppnApplicable={false} />
+          {/* === Update #066 — baris PPN (+) & PPh23 (−) hanya bila flag aktif
+              & nilai tersimpan > 0 (mirror cetakan PO); total pajak TERSIMPAN
+              dipakai — hitung ulang hanya fallback di dalam SummaryTable. === */}
+          <SummaryTable detail={data.detail} diskonGlobal={data.diskonGlobal} ppn={data.ppn || 0} biayaTambahan={data.biayaTambahan} ppnApplicable={!!data.ppnApplicable && totalPpn > 0} pph23={data.pph23 || 0} pph23Applicable={!!data.pph23Applicable && totalPph23 > 0} totalPpnStored={totalPpn} totalPph23Stored={totalPph23} />
         </div>
       </div>
 

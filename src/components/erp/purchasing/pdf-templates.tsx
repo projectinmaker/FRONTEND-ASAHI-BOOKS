@@ -1014,8 +1014,9 @@ export function LppbPDFTemplate({ data }: { data: LppbData }) {
             </th>
           </tr>
           <tr>
-            <th style={{ ...lppbThStyle, backgroundColor: '#e2e8f0' }}>BAIK</th>
-            <th style={{ ...lppbThStyle, backgroundColor: '#e2e8f0' }}>TIDAK BAIK</th>
+            {/* === Update #066 — sub-kolom BAIK & TIDAK BAIK dilebarkan (width 70px); sel data td mengikuti lebar th === */}
+            <th style={{ ...lppbThStyle, backgroundColor: '#e2e8f0', width: '70px' }}>BAIK</th>
+            <th style={{ ...lppbThStyle, backgroundColor: '#e2e8f0', width: '70px' }}>TIDAK BAIK</th>
           </tr>
         </thead>
         <tbody>

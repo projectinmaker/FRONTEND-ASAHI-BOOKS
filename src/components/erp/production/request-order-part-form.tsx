@@ -7,18 +7,23 @@
  * - Header: Project Name, Model, Customer (READ-ONLY, otomatis dari SO yang
  *   dipilih), Tanggal, dan pemilihan SO via SearchableDropdown (kartu info SO
  *   tampil di kanan atas setelah dipilih).
- * - Tabel item (update ASAHI #003): kolom NO s.d. SUPPLIER SEJAJAR satu
+ * - Tabel item (update ASAHI #003; #066): kolom NO s.d. QS SEJAJAR satu
  *   baris header; kolom terakhir KETERANGAN dibagi dua sub-kolom di bawahnya:
- *   ORDER dan STOK. QS bertipe data seperti ID PART (kode, bisa alfanumerik).
+ *   ORDER dan STOK (kini CHECKBOX — centang = '✓' tercetak di dokumen).
+ *   QS bertipe data seperti ID PART (kode, bisa alfanumerik). Kolom SUPPLIER
+ *   dihapus dari tabel (Update #066; data lama tetap tersimpan).
  * - Bawah tabel: Note (catatan) di kiri + blok tanda tangan 4 kolom
  *   (DIBUAT / DIPERIKSA / DIKETAHUI / DISETUJUI).
  * - Legenda distribusi salinan: PUTIH = PURCHASING, KUNING = PRODUKSI,
  *   MERAH = ENGINEERING.
  *
- * Workflow (update ASAHI #003 — tanpa persetujuan): form diisi → Simpan
- * (status DRAFT) → tombol "Buat ROP" (final, status DIBUAT). Hanya DRAFT
- * yang bisa diedit. Hapus/Batalkan = hard delete dengan alasan (jejak di
- * modul Histori). Status TIDAK ditampilkan di form.
+ * Workflow (update ASAHI #003 — tanpa persetujuan; #066): form diisi →
+ * tombol "Terbitkan ROP" (dokumen dibuat lalu LANGSUNG difinalisasi,
+ * status DIBUAT; bila finalisasi gagal — mis. hak akses — dokumen tetap
+ * tersimpan sebagai DRAFT). DRAFT juga bisa difinalisasi manual lewat
+ * tombol "Buat ROP". Hanya DRAFT yang bisa diedit. Hapus/Batalkan = hard
+ * delete dengan alasan (jejak di modul Histori). Status TIDAK ditampilkan
+ * di form.
  */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
@@ -28,15 +33,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
-// Update #007 — quick add master data langsung dari form transaksi
-import { QuickAddSupplierButton, toSupplierDropdown } from '@/components/erp/quick-add';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+// === Update #066 — KETERANGAN ORDER/STOK kini CHECKBOX per baris item. ===
+import { Checkbox } from '@/components/ui/checkbox';
 // Update #037 — quick add barang master langsung di baris part (kombinasi picker
 // master + quick add; stok gudang kelihatan akurat untuk stok opname).
 import { QuickAddBarangButton } from '@/components/erp/quick-add';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Loader2, Plus, Trash2, Printer, CheckCircle, FileText, AlertTriangle } from 'lucide-react';
+import { Loader2, Plus, Trash2, Printer, CheckCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { formatDate, todayStr } from '@/lib/pdf-utils';
@@ -47,13 +52,14 @@ import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
-import type { RequestOrderPart, RequestOrderPartCreate, RequestOrderPartItemCreate, RequestOrderPartOptionsResponse, RequestOrderPartStatus, RequestOrderPartUpdate, RopBarangOption, RopSalesOrderOption, SupplierDropdown } from '@/types/api';
+import type { RequestOrderPart, RequestOrderPartCreate, RequestOrderPartItemCreate, RequestOrderPartOptionsResponse, RequestOrderPartStatus, RequestOrderPartUpdate, RopBarangOption, RopSalesOrderOption } from '@/types/api';
 
 // ─── Konstanta ───────────────────────────────────────────────────────────────
 
 /** Kode permission RBAC (registry backend — modul produksi).
  * CATATAN #003: `approve` = hak finalisasi lewat tombol "Buat ROP"
- * (endpoint POST /buat — dipetakan ke permission approve di access_registry). */
+ * (endpoint POST /buat — dipetakan ke permission approve di access_registry).
+ * Update #066: hak yang sama dipakai auto-finalisasi "Terbitkan ROP". */
 const PERM = {
   create: 'production.request_order_part.create',
   edit: 'production.request_order_part.edit',
@@ -87,11 +93,14 @@ interface RopItemDraft {
   qty: string;
   /** Update #003: QS bertipe data seperti ID PART — kode (bisa alfanumerik). */
   qs: string;
-  /** '' = tanpa supplier (null di backend). */
-  supplierId: string;
-  /** Update #003: KETERANGAN dibagi dua sub-kolom — ORDER & STOK. */
-  keteranganOrder: string;
-  keteranganStok: string;
+  /* === Update #066 — kolom SUPPLIER dihapus dari tabel item; payload baru
+     tidak lagi mengirim supplierId (data lama tetap tersimpan di database). === */
+  /** === Update #066 — KETERANGAN ORDER & STOK kini CHECKBOX: true = '✓'
+   *  tercetak di dokumen, false = kosong. Baris LAMA yang sudah berteks
+   *  (string — data sebelum #066) tetap ditampilkan apa adanya, sehingga
+   *  tipe-nya union string|boolean. === */
+  keteranganOrder: string | boolean;
+  keteranganStok: string | boolean;
 }
 
 let ropRowKeyCounter = 0;
@@ -100,7 +109,24 @@ function newRowKey() {
 }
 
 function emptyItem(): RopItemDraft {
-  return { key: newRowKey(), barangId: '', idPart: '', description: '', material: '', qty: '', qs: '', supplierId: '', keteranganOrder: '', keteranganStok: '' };
+  // === Update #066 — keterangan baru berupa checkbox (false = belum dicentang); kolom supplier dihapus. ===
+  return { key: newRowKey(), barangId: '', idPart: '', description: '', material: '', qty: '', qs: '', keteranganOrder: false, keteranganStok: false };
+}
+
+/** === Update #066 — konversi nilai KETERANGAN (union string|boolean) ke
+ *  teks payload: boolean true → '✓' (tercetak di dokumen), false → null;
+ *  string lama (baris berteks sebelum #066) dikirim apa adanya. === */
+function keteranganToPayload(v: string | boolean): string | null {
+  if (typeof v === 'boolean') return v ? '\u2713' : null;
+  return v.trim() || null;
+}
+
+/** === Update #066 — bandingkan nilai keterangan lokal (string|boolean)
+ *  dengan nilai tersimpan di backend (string|null) untuk diff edit. === */
+function keteranganEquals(saved: string | null | undefined, local: string | boolean): boolean {
+  const a = (saved || '').trim();
+  const b = typeof local === 'boolean' ? (local ? '\u2713' : '') : local.trim();
+  return a === b;
 }
 
 /** Data draft localStorage (mode create). */
@@ -147,7 +173,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
 
   // ── Dropdown referensi ──
   const [salesOrderOptions, setSalesOrderOptions] = useState<RopSalesOrderOption[]>([]);
-  const [supplierOptions, setSupplierOptions] = useState<SupplierDropdown[]>([]);
+  // === Update #066 — state dropdown supplier DIHAPUS: kolom SUPPLIER tidak
+  // lagi ada di tabel item (data lama tetap tersimpan di database). ===
   // Update #037 — barang master untuk picker per baris (stok ikut terkirim).
   const [barangOptions, setBarangOptions] = useState<RopBarangOption[]>([]);
   const [dropdownsLoading, setDropdownsLoading] = useState(true);
@@ -204,7 +231,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
         if (cancelled) return;
         // Backend sudah menyeragamkan SO tanpa DIBATALKAN & supplier AKTIF.
         setSalesOrderOptions(res.salesOrders.filter((so) => so.status !== 'DIBATALKAN'));
-        setSupplierOptions(res.suppliers);
+        // === Update #066 — res.suppliers tidak lagi disimpan (kolom
+        //     SUPPLIER dihapus dari tabel item). ===
         // Update #037 — barang master AKTIF (stok gudang akurat per baris).
         mergeBarangOptions(res.barangs || []);
       } catch {
@@ -256,9 +284,12 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
               // normalisasi ke number. QS kini kode teks (update #003).
               qty: it.qty != null && it.qty !== '' ? String(Number(it.qty)) : '',
               qs: it.qs || '',
-              supplierId: it.supplierId || '',
-              keteranganOrder: it.keteranganOrder || '',
-              keteranganStok: it.keteranganStok || ''
+              // === Update #066 — supplierId tidak dimuat (kolom dihapus;
+              //     data lama tetap tersimpan di database). Keterangan:
+              //     teks lama tetap tampil apa adanya; null/kosong → false
+              //     (checkbox belum dicentang). ===
+              keteranganOrder: it.keteranganOrder || false,
+              keteranganStok: it.keteranganStok || false
             }))
         );
         // Update #037 — info barang nested dari detail (termasuk NONAKTIF /
@@ -367,7 +398,8 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
     [salesOrderOptions]
   );
 
-  const supplierDropdownOptions = useMemo(() => supplierOptions.map((s) => ({ id: s.id, label: s.nama, subtitle: s.kode })), [supplierOptions]);
+  // === Update #066 — memo dropdown supplier dihapus (kolom SUPPLIER
+  //     tidak lagi ada di tabel item). ===
 
   // Update #037 — opsi picker barang master per baris: label = kode (selaras
   // ID PART), subtitle = nama + stok gudang (akurat untuk stok opname).
@@ -426,13 +458,16 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
       qty: Number(it.qty) || 0,
       // Update #003: QS = kode (tipe seperti ID PART), teks bebas.
       qs: it.qs.trim() || null,
-      supplierId: it.supplierId || null,
-      keteranganOrder: it.keteranganOrder.trim() || null,
-      keteranganStok: it.keteranganStok.trim() || null
+      // === Update #066 — supplierId TIDAK dikirim (kolom SUPPLIER dihapus
+      //     dari tabel; data lama tetap tersimpan di database). ===
+      // === Update #066 — keterangan checkbox: true → '✓' tercetak; baris
+      //     lama berteks tetap dikirim apa adanya. ===
+      keteranganOrder: keteranganToPayload(it.keteranganOrder),
+      keteranganStok: keteranganToPayload(it.keteranganStok)
     }));
   }, [items]);
 
-  // ── Submit: Simpan Draft (create) ──
+  // ── Submit: Terbitkan ROP (create + finalisasi otomatis — Update #066) ──
   const handleSubmitCreate = async () => {
     if (!formTanggal || !formProjectName.trim()) {
       toast.error('Tanggal dan Project Name wajib diisi');
@@ -465,11 +500,30 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
       const res = await api.post<RequestOrderPart>('/produksi/request-order-part', payload);
       draft.clearDraft();
       skipNextSaveRef.current = true;
+      // === Update #066 — "Terbitkan ROP": setelah dokumen dibuat, LANGSUNG
+      // difinalisasi (DIBUAT) lewat endpoint yang sama dengan tombol
+      // "Buat ROP" (POST /produksi/request-order-part/{id}/buat). Bila
+      // finalisasi gagal (mis. hak akses), dokumen TETAP tersimpan sebagai
+      // DRAFT — tidak di-rollback; daftar tetap di-refresh. ===
+      let final: RequestOrderPart | null = null;
+      let gagalFinalisasi: string | null = null;
+      try {
+        final = await api.post<RequestOrderPart>(`/produksi/request-order-part/${res.id}/buat`);
+      } catch (err) {
+        gagalFinalisasi = err instanceof ApiError ? err.detail : 'kesalahan tak diketahui';
+      }
       refreshListTab('production', 'request-order-part');
-      toast.success('Draft ROP berhasil disimpan', { description: `Nomor dokumen: ${res.noRop}` });
+      if (final) {
+        toast.success('ROP berhasil diterbitkan', { description: `${final.noRop} kini dokumen final (DIBUAT) — terkunci (read-only).` });
+      } else {
+        toast.warning('ROP tersimpan sebagai DRAFT', {
+          description: `Dokumen ${res.noRop} berhasil dibuat, tetapi finalisasi gagal (${gagalFinalisasi || 'kesalahan tak diketahui'}). Buka dokumen lalu tekan tombol "Buat ROP" untuk menyelesaikannya.`,
+          duration: 9000
+        });
+      }
       // Pindah ke mode edit pada tab yang sama (tab create diganti).
       openFormTab({
-        title: res.noRop,
+        title: (final || res).noRop,
         module: 'production',
         subPage: 'request-order-part',
         formKey: 'rop-edit',
@@ -513,7 +567,9 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
       origItems.length !== items.length ||
       origItems.some((o, i) => {
         const it = items[i];
-        return (o.barangId || '') !== it.barangId || o.idPart !== it.idPart.trim() || o.description !== it.description.trim() || (o.material || '') !== it.material.trim() || Number(o.qty) !== (Number(it.qty) || 0) || (o.qs || '') !== it.qs.trim() || (o.supplierId || '') !== (it.supplierId || '') || (o.keteranganOrder || '') !== it.keteranganOrder.trim() || (o.keteranganStok || '') !== it.keteranganStok.trim();
+        return (o.barangId || '') !== it.barangId || o.idPart !== it.idPart.trim() || o.description !== it.description.trim() || (o.material || '') !== it.material.trim() || Number(o.qty) !== (Number(it.qty) || 0) || (o.qs || '') !== it.qs.trim() || !keteranganEquals(o.keteranganOrder, it.keteranganOrder) || !keteranganEquals(o.keteranganStok, it.keteranganStok);
+        // === Update #066 — perbandingan supplierId dihapus dari diff (kolom
+        //     SUPPLIER tidak lagi ada di form; data lama tidak tersentuh). ===
       });
     if (itemsChanged) {
       const itemsPayload = buildItemsPayload();
@@ -607,7 +663,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
     );
   }
 
-  const tableColCount = readOnly ? 10 : 11; // NO + MASTER + 6 kolom flat + KETERANGAN(2) [+ aksi]
+  const tableColCount = readOnly ? 9 : 10; // NO + MASTER + 5 kolom flat + KETERANGAN(2) [+ aksi] — Update #066: tanpa SUPPLIER
 
   return (
     <FormTabShell title={title}>
@@ -697,8 +753,9 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
               </div>
             </div>
 
-            {/* ── Tabel item (update #003): NO s.d. SUPPLIER sejajar satu baris;
-                KETERANGAN = header grup yang dibagi dua sub-kolom ORDER & STOK ── */}
+            {/* ── Tabel item (update #003; #066): NO s.d. QS sejajar satu baris;
+                KETERANGAN = header grup dua sub-kolom CHECKBOX ORDER & STOK;
+                kolom SUPPLIER dihapus (#066 — data lama tetap tersimpan) ── */}
             <div className="space-y-2">
               <div className="overflow-x-auto rounded-md border">
                 <Table>
@@ -727,9 +784,9 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                       <TableHead rowSpan={2} className="min-w-[90px]">
                         QS
                       </TableHead>
-                      <TableHead rowSpan={2} className="min-w-[170px]">
-                        SUPPLIER
-                      </TableHead>
+                      {/* === Update #066 — kolom SUPPLIER DIHAPUS dari tabel item
+                          (data lama tetap tersimpan di database; payload baru
+                          tidak lagi mengirim supplierId). === */}
                       <TableHead colSpan={2} className="bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-widest">
                         KETERANGAN
                       </TableHead>
@@ -740,8 +797,10 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                       )}
                     </TableRow>
                     <TableRow>
-                      <TableHead className="min-w-[130px] bg-slate-100 text-[11px] font-semibold uppercase tracking-widest">ORDER</TableHead>
-                      <TableHead className="min-w-[130px] bg-amber-50 text-[11px] font-semibold uppercase tracking-widest">STOK</TableHead>
+                      {/* === Update #066 — sub-kolom ORDER & STOK kini CHECKBOX
+                          (centang = '✓' tercetak di dokumen cetak). === */}
+                      <TableHead className="w-[80px] bg-slate-100 text-center text-[11px] font-semibold uppercase tracking-widest">ORDER</TableHead>
+                      <TableHead className="w-[80px] bg-amber-50 text-center text-[11px] font-semibold uppercase tracking-widest">STOK</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -791,27 +850,42 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                           {/* Update #003: QS bertipe data seperti ID PART — input teks. */}
                           {readOnly ? <span className="font-mono text-xs">{it.qs || '-'}</span> : <Input value={it.qs} onChange={(e) => updateItem(idx, { qs: e.target.value })} placeholder="Kode QS" maxLength={100} className="h-9 font-mono text-xs" aria-label={`QS baris ${idx + 1}`} />}
                         </TableCell>
-                        <TableCell className="align-top">
-                          {readOnly ? (
-                            supplierOptions.find((s) => s.id === it.supplierId)?.nama || '-'
+                        {/* === Update #066 — sel SUPPLIER dihapus dari tabel
+                            item; data lama tetap tersimpan di database. === */}
+                        {/* ── KETERANGAN — dua sub-kolom CHECKBOX: ORDER & STOK
+                            (Update #066: centang = '✓' tercetak di dokumen;
+                            baris lama berteks tetap tampil apa adanya —
+                            union string|boolean) ── */}
+                        <TableCell className="align-top text-center">
+                          {typeof it.keteranganOrder === 'string' && it.keteranganOrder.trim() ? (
+                            <span className="text-xs font-medium" title="Keterangan lama (teks) — ditampilkan apa adanya">
+                              {it.keteranganOrder}
+                            </span>
+                          ) : readOnly ? (
+                            it.keteranganOrder === true ? (
+                              <span className="text-base font-bold leading-none text-emerald-700">✓</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )
                           ) : (
-                            <div className="flex items-center gap-1">
-                              <SearchableDropdown className="min-w-0 flex-1 text-left" value={it.supplierId} onValueChange={(v) => updateItem(idx, { supplierId: v })} options={supplierDropdownOptions} allOption={{ id: '', label: 'Tanpa supplier' }} placeholder="Pilih supplier..." searchPlaceholder="Cari supplier..." loading={dropdownsLoading} compact />
-                              {/* Update #007: quick add supplier per baris item */}
-                              <QuickAddSupplierButton
-                                compact
-                                onCreated={(sup) => {
-                                  const drop = toSupplierDropdown(sup);
-                                  setSupplierOptions((prev) => (prev.some((row) => row.id === sup.id) ? prev : [...prev, drop]));
-                                  updateItem(idx, { supplierId: sup.id });
-                                }}
-                              />
-                            </div>
+                            <Checkbox checked={it.keteranganOrder === true} onCheckedChange={(checked) => updateItem(idx, { keteranganOrder: checked === true })} aria-label={`KETERANGAN ORDER baris ${idx + 1}`} className="mt-1.5" />
                           )}
                         </TableCell>
-                        {/* ── KETERANGAN — dua sub-kolom: ORDER (kiri) & STOK (kanan) ── */}
-                        <TableCell className="align-top">{readOnly ? it.keteranganOrder || '-' : <Input value={it.keteranganOrder} onChange={(e) => updateItem(idx, { keteranganOrder: e.target.value })} placeholder="Keterangan order" className="h-9" aria-label={`KETERANGAN ORDER baris ${idx + 1}`} />}</TableCell>
-                        <TableCell className="align-top">{readOnly ? it.keteranganStok || '-' : <Input value={it.keteranganStok} onChange={(e) => updateItem(idx, { keteranganStok: e.target.value })} placeholder="Keterangan stok" className="h-9" aria-label={`KETERANGAN STOK baris ${idx + 1}`} />}</TableCell>
+                        <TableCell className="align-top text-center">
+                          {typeof it.keteranganStok === 'string' && it.keteranganStok.trim() ? (
+                            <span className="text-xs font-medium" title="Keterangan lama (teks) — ditampilkan apa adanya">
+                              {it.keteranganStok}
+                            </span>
+                          ) : readOnly ? (
+                            it.keteranganStok === true ? (
+                              <span className="text-base font-bold leading-none text-emerald-700">✓</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">-</span>
+                            )
+                          ) : (
+                            <Checkbox checked={it.keteranganStok === true} onCheckedChange={(checked) => updateItem(idx, { keteranganStok: checked === true })} aria-label={`KETERANGAN STOK baris ${idx + 1}`} className="mt-1.5" />
+                          )}
+                        </TableCell>
                         {!readOnly && (
                           <TableCell className="align-top">
                             <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive" onClick={() => removeItem(idx)} title={`Hapus baris ${idx + 1}`} aria-label={`Hapus baris ${idx + 1}`}>
@@ -831,7 +905,7 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                   </Button>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">MASTER BARANG opsional — pilih dari master agar stok gudang terbaca akurat (ID PART terisi otomatis dari kode; klik ikon + untuk tambah barang baru ke master). · QTY = jumlah yang di-order · QS = kode stok/part (tipe seperti ID PART) · Keterangan Order/Stok opsional per baris.</p>
+              <p className="text-xs text-muted-foreground">MASTER BARANG opsional — pilih dari master agar stok gudang terbaca akurat (ID PART terisi otomatis dari kode; klik ikon + untuk tambah barang baru ke master). · QTY = jumlah yang di-order · QS = kode stok/part (tipe seperti ID PART) · Keterangan ORDER/STOK = centang (✓ tercetak di dokumen; baris lama berteks tetap tampil apa adanya).</p>
             </div>
 
             {/* ── Bawah tabel: Note (kiri) + tanda tangan 4 kolom (kanan) ── */}
@@ -858,9 +932,9 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
             {/* ── Legenda distribusi salinan ── */}
             <ColorLegend />
 
-            {/* ── Bar aksi (update #003 — workflow baru tanpa persetujuan):
-                create → Simpan; DRAFT → Simpan Perubahan + Buat ROP + Hapus;
-                final (DIBUAT) → Cetak + Batalkan Dokumen ── */}
+            {/* ── Bar aksi (update #003 — workflow baru tanpa persetujuan;
+                #066): create → Terbitkan ROP; DRAFT → Simpan Perubahan +
+                Buat ROP + Hapus; final (DIBUAT) → Cetak + Batalkan Dokumen ── */}
             <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
               {mode === 'create' && (
                 <div className="mr-auto">
@@ -871,10 +945,13 @@ export function RequestOrderPartForm({ mode, ropId }: { mode: 'create' | 'edit' 
                 Tutup
               </Button>
 
+              {/* === Update #066 — tombol pembuatan menjadi "Terbitkan ROP":
+                  dokumen dibuat lalu LANGSUNG difinalisasi (DIBUAT); bila
+                  finalisasi gagal (mis. hak akses), tersimpan sebagai DRAFT. === */}
               {mode === 'create' && can(PERM.create) && (
-                <Button onClick={handleSubmitCreate} disabled={submitting} className="gap-2">
+                <Button onClick={handleSubmitCreate} disabled={submitting} className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  <FileText className="h-4 w-4" /> Simpan
+                  <CheckCircle className="h-4 w-4" /> {submitting ? 'Menerbitkan...' : 'Terbitkan ROP'}
                 </Button>
               )}
 

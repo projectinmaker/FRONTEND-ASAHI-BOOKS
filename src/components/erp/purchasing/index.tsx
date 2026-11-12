@@ -58,6 +58,13 @@ import { useInvoiceSaldos } from '@/lib/use-invoice-saldos';
 import type { PurchaseOrderResponse, PurchaseOrderSisaResponse, PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderDetailCreate, PenerimaanBarangResponse, PenerimaanBarangCreate, PenerimaanBarangUpdate, PenerimaanBarangDetailCreate, PurchaseInvoiceResponse, PurchaseInvoiceCreate, PurchaseInvoiceUpdate, PurchaseInvoiceDetailCreate, PurchaseReturResponse, PurchaseReturCreate, PurchaseReturUpdate, PurchaseReturDetailCreate, SupplierDropdown, BarangDropdown, BarangResponse, SatuanResponse, GudangResponse, TransaksiBiayaCreate, HardDeleteResponse } from '@/types/api';
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 
+// === Update #066 — menu LPPB & Penerimaan pindah ke modul Persediaan (setelah
+// Penyesuaian). Komponen halaman/form/cetak Penerimaan & LPPB diekspor agar
+// modul Persediaan bisa me-render-nya; routing modul Pembelian dipertahankan
+// untuk tab lama yang masih terbuka (lihat Purchasing di bawah). ===
+export { LppbTab, LppbForm };
+export { PenerimaanCetakTab, LppbCetakTab };
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 100;
@@ -669,16 +676,20 @@ interface PoTersediaItem {
   supplierId?: string | null;
   // === Update #065 — estimasi sisa NILAI yang belum difakturkan (hanya
   // mode invoice; null di mode penerimaan/lppb & fallback daftar penuh).
-  // Dipakai label dropdown PO di form Invoice Pembelian: "PO ASI/… · sisa
-  // Rp …" — PO boleh difakturkan BERKALI-KALI (potong qty per faktur);
-  // PO tetap tampil selama masih ada qty belum terfaktur (#063) dan
-  // hilang setelah seluruh qty terfaktur (lunas). ===
+  // Update #066: label dropdown PO kini HANYA nomor dokumen (tanpa suffix
+  // sisa) — estimasi sisa tetap terlihat lewat panel "Status Penerimaan
+  // PO" setelah PO dipilih. PO boleh difakturkan BERKALI-KALI (potong qty
+  // per faktur); PO tetap tampil selama masih ada qty belum terfaktur
+  // (#063) dan hilang setelah seluruh qty terfaktur (lunas). ===
   sisaNilai?: number | null;
 }
 
 // === Update #065 — label opsi PO form Invoice: tampilkan sisa nilai. ===
+// === Update #066 — label cukup nomor dokumen saja (mis. "PO ASI/2026/001",
+// tanpa suffix sisa nilai); hint sisa tampil terpisah di panel info
+// "Status Penerimaan PO" (poSisaInfo) setelah PO dipilih. ===
 function poTersediaLabel(po: PoTersediaItem): string {
-  return typeof po.sisaNilai === 'number' && po.sisaNilai > 0 ? `${po.noPesanan} · sisa ${formatRp(po.sisaNilai)}` : po.noPesanan;
+  return po.noPesanan;
 }
 
 function useTersediaPoOptions(untuk: 'penerimaan' | 'invoice', fallback: { id: string; noPesanan: string }[], currentId?: string, currentLabel?: string) {
@@ -1015,8 +1026,9 @@ function PoPenerimaanPanel({ list, loading, checkedIds, onToggle, onRefresh, onB
 
 // FORM: Penerimaan Barang — Create
 // ═════════════════════════════════════════════════════════════════════════════
-
-function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrderId?: string }) {
+// === Update #066 — diekspor untuk modul Persediaan (menu Penerimaan pindah
+// ke sana); tetap dipakai routing lama modul Pembelian. ===
+export function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrderId?: string }) {
   const { error: stockError, clearError: clearStockError, handleError: handleStockError } = useStockOperationError('penerimaan_barang');
   const { supplierOptions, setSupplierOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, purchaseOrderOptions, gudangOptions, setGudangOptions, loading: dropdownsLoading } = usePurchasingDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
@@ -1421,8 +1433,9 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
 // ═════════════════════════════════════════════════════════════════════════════
 // FORM: Penerimaan Barang — Edit
 // ═════════════════════════════════════════════════════════════════════════════
-
-function PenerimaanEditForm({ editId }: { editId: string }) {
+// === Update #066 — diekspor untuk modul Persediaan (menu Penerimaan pindah
+// ke sana); tetap dipakai routing lama modul Pembelian. ===
+export function PenerimaanEditForm({ editId }: { editId: string }) {
   const { error: stockError, clearError: clearStockError, handleError: handleStockError } = useStockOperationError('penerimaan_barang');
   const { supplierOptions, setSupplierOptions, purchaseOrderOptions, gudangOptions, setGudangOptions, loading: dropdownsLoading } = usePurchasingDropdowns();
   const activeTabId = useTabStore((s) => s.activeTabId);
@@ -3599,7 +3612,11 @@ function PesananTab({ supplierOptions, barangOptions, refreshKey }: { supplierOp
 // TAB 2: Penerimaan Barang (List Only)
 // ═════════════════════════════════════════════════════════════════════════════
 
-function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchaseOrderOptions, refreshKey }: { supplierOptions: SupplierDropdown[]; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; purchaseOrderOptions: { id: string; noPesanan: string }[]; refreshKey?: number }) {
+// === Update #066 — diekspor untuk modul Persediaan (menu Penerimaan pindah ke
+// sana); daftar di modul Persediaan memuat dropdown-nya sendiri, sementara
+// routing lama modul Pembelian (PurchasingListContent) tetap memakai komponen
+// ini dengan dropdown bersama modul Pembelian. ===
+export function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, purchaseOrderOptions, refreshKey }: { supplierOptions: SupplierDropdown[]; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; purchaseOrderOptions: { id: string; noPesanan: string }[]; refreshKey?: number }) {
   const openFormTab = useTabStore((s) => s.openFormTab);
 
   const [data, setData] = useState<PenerimaanBarangResponse[]>([]);

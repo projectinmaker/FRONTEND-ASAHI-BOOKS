@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CurrencyInput } from '@/components/ui/currency-input';
+// === Update #066 — checkbox PPN/PPh23 (kartu Pajak, mirror form PO). ===
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -24,8 +26,12 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { FileText, Plus, Trash2, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Printer, Download, Info, Package, Type, History } from 'lucide-react';
 import { formatRp, formatDate, todayStr, generatePDF, fileSafeNo } from '@/lib/pdf-utils';
 import { api, PaginatedResponse, ApiError } from '@/lib/api';
-// === Update #042 — useDefaultTaxRates tidak dipakai lagi di form penawaran
-// (PPN dihapus dari penawaran; tarif default hanya untuk PO/Invoice). ===
+// === Update #066 — PPN & PPh23 KEMBALI ke form penawaran (mirror form PO):
+// tarif default ditarik dari Referensi → Perpajakan (useDefaultTaxRates);
+// tarif tersimpan (string Decimal) dipangkas nol desimalnya via
+// trimDecimalString (mirror form PO / Invoice Pembelian). ===
+import { useDefaultTaxRates } from '@/lib/use-default-rates';
+import { trimDecimalString } from '@/lib/money';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
 // === Update #057 — draft otomatis form Penawaran (mirror pola Pengiriman/
@@ -176,6 +182,11 @@ interface PenawaranDraftData {
   alamatPengiriman: string;
   keterangan: string;
   diskonGlobal: string;
+  // === Update #066 — kartu Pajak ikut draft (mirror fDiskonGlobal). ===
+  ppn: string;
+  ppnApplicable: boolean;
+  pph23: string;
+  pph23Applicable: boolean;
   bulan: string;
   tahun: string;
   detail: PenawaranFormRow[];
@@ -470,11 +481,15 @@ function PenawaranBiayaTable({ rows, setRows }: { rows: PenawaranBiayaRow[]; set
 
 // ─── Totals Breakdown (mirror TotalsBreakdown sales/index.tsx) ──────────────
 
-// === Update #042 — PPN DIHAPUS dari penawaran (dokumen nilai penuh):
-// grand total = subtotal − diskon + biaya; pajak hanya di INVOICE. ===
-function TotalsBreakdown({ subtotal, diskonGlobalPct, totalBiayaTambahan }: { subtotal: number; diskonGlobalPct: number; totalBiayaTambahan: number }) {
+// === Update #066 — PPN & PPh23 KEMBALI ke penawaran (mirror form PO /
+// Invoice Penjualan): pemanggil mengirim 0 bila checkbox pajak mati;
+// grand total = subtotal − diskon + biaya + PPN − PPh23. ===
+function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan, pph23Pct = 0 }: { subtotal: number; diskonGlobalPct: number; ppnPct: number; totalBiayaTambahan: number; pph23Pct?: number }) {
   const totalDiskon = subtotal * (diskonGlobalPct / 100);
-  const grandTotal = subtotal - totalDiskon + totalBiayaTambahan;
+  const dasarPajak = subtotal - totalDiskon;
+  const ppnAmount = dasarPajak * (ppnPct / 100);
+  const pph23Amount = dasarPajak * (pph23Pct / 100);
+  const grandTotal = dasarPajak + ppnAmount + totalBiayaTambahan - pph23Amount;
 
   return (
     <div className="rounded-md border bg-muted/20 px-4 py-3 space-y-1">
@@ -486,6 +501,22 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, totalBiayaTambahan }: { su
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground pl-3">- Diskon ({diskonGlobalPct}%)</span>
           <span className="font-mono text-destructive">({formatRp(totalDiskon)})</span>
+        </div>
+      )}
+      <div className="flex justify-between text-xs border-t pt-1 mt-1">
+        <span className="font-medium">Dasar Pajak</span>
+        <span className="font-mono font-medium">{formatRp(dasarPajak)}</span>
+      </div>
+      {ppnPct > 0 && (
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground pl-3">+ PPN ({ppnPct}%)</span>
+          <span className="font-mono">{formatRp(ppnAmount)}</span>
+        </div>
+      )}
+      {pph23Pct > 0 && (
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground pl-3">- PPh23 ({pph23Pct}%)</span>
+          <span className="font-mono text-destructive">({formatRp(pph23Amount)})</span>
         </div>
       )}
       {totalBiayaTambahan > 0 && (
@@ -946,8 +977,14 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const [fAlamatPengiriman, setFAlamatPengiriman] = useState('');
   const [fKeterangan, setFKeterangan] = useState('');
   const [fDiskonGlobal, setFDiskonGlobal] = useState('0');
-  // === Update #042 — PPN DIHAPUS dari penawaran (order doc nilai penuh
-  // tanpa PPN); field PPN % & tarif default RATE_PPN tidak dipakai lagi. ===
+  // === Update #066 — PPN & PPh23 OPSIONAL di penawaran (mirror form PO):
+  // boleh dua-duanya / salah satu / tidak sama sekali. Tarif PPN terkunci
+  // (Referensi → Perpajakan); tarif PPh23 ber-default dari Perpajakan dan
+  // bisa disesuaikan per jenis jasa. Default: PPN aktif, PPh23 mati. ===
+  const [fPpn, setFPpn] = useState('11');
+  const [fPpnApplicable, setFPpnApplicable] = useState(true);
+  const [fPph23, setFPph23] = useState('2');
+  const [fPph23Applicable, setFPph23Applicable] = useState(false);
   // ── Update #003: singkatan customer — ditarik dari master pelanggan. ──
   // (Update #031: field LOCKED read-only — ambil data dari master data.)
   const [fCustomerCode, setFCustomerCode] = useState('');
@@ -971,6 +1008,11 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const draft = useFormDraft<PenawaranDraftData>(draftKey(userId, 'sales', 'penawaran', 'create'));
   const skipNextSaveRef = useRef(false);
   const restoredRef = useRef(false);
+  // === Update #066 — tarif default global (RATE_PPN / RATE_PPH23) dari
+  // Referensi → Perpajakan (mirror form PO); taxFromDraftRef mencekal tarif
+  // default menimpa nilai yang sudah dipulihkan dari draft. ===
+  const defaultRates = useDefaultTaxRates();
+  const taxFromDraftRef = useRef(false);
 
   // Pulihkan draft saat mount (hanya create).
   useEffect(() => {
@@ -987,6 +1029,14 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     setFAlamatPengiriman(d.alamatPengiriman || '');
     setFKeterangan(d.keterangan || '');
     setFDiskonGlobal(d.diskonGlobal || '0');
+    // === Update #066 — kartu Pajak ikut dipulihkan dari draft (mirror
+    // fDiskonGlobal). Draft lama (pra-#066) tanpa field pajak → tarif
+    // default diterapkan effect useDefaultTaxRates di bawah. ===
+    if (d.ppn != null || d.pph23 != null) taxFromDraftRef.current = true;
+    setFPpn(d.ppn ?? '11');
+    setFPpnApplicable(d.ppnApplicable ?? true);
+    setFPph23(d.pph23 ?? '2');
+    setFPph23Applicable(d.pph23Applicable ?? false);
     const nw = new Date();
     setFBulan(d.bulan || String(nw.getMonth() + 1));
     setFTahun(d.tahun || String(nw.getFullYear()));
@@ -994,6 +1044,17 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     setFBiayaTambahan(Array.isArray(d.biayaTambahan) ? d.biayaTambahan : []);
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Penawaran dimuat kembali otomatis.' });
   }, []);
+
+  // === Update #066 — tarif pajak default dari Referensi → Perpajakan
+  // (mirror form PO): hanya mode create TANPA draft; mode edit memakai
+  // nilai tersimpan dokumen (prefill). ===
+  useEffect(() => {
+    if (editId) return;
+    if (taxFromDraftRef.current) return;
+    if (!defaultRates) return;
+    setFPpn(defaultRates.ppn);
+    setFPph23(defaultRates.pph23);
+  }, [defaultRates, editId]);
 
   // Simpan draft tiap perubahan isian (debounced).
   const isFirstRenderRef = useRef(true);
@@ -1016,12 +1077,17 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
       alamatPengiriman: fAlamatPengiriman,
       keterangan: fKeterangan,
       diskonGlobal: fDiskonGlobal,
+      // === Update #066 — kartu Pajak ikut draft (mirror fDiskonGlobal). ===
+      ppn: fPpn,
+      ppnApplicable: fPpnApplicable,
+      pph23: fPph23,
+      pph23Applicable: fPph23Applicable,
       bulan: fBulan,
       tahun: fTahun,
       detail: fDetail,
       biayaTambahan: fBiayaTambahan
     });
-  }, [editId, fPelangganId, fCustomerCode, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fDiskonGlobal, fBulan, fTahun, fDetail, fBiayaTambahan]);
+  }, [editId, fPelangganId, fCustomerCode, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fDiskonGlobal, fPpn, fPpnApplicable, fPph23, fPph23Applicable, fBulan, fTahun, fDetail, fBiayaTambahan]);
 
   // Buang draft + kosongkan form.
   const handleDiscardDraft = useCallback(() => {
@@ -1035,13 +1101,20 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     setFAlamatPengiriman('');
     setFKeterangan('');
     setFDiskonGlobal('0');
+    // === Update #066 — kartu Pajak kembali ke default: PPN aktif, PPh23
+    // mati; tarif dari Referensi → Perpajakan bila sudah termuat. ===
+    taxFromDraftRef.current = false;
+    setFPpn(defaultRates?.ppn ?? '11');
+    setFPpnApplicable(true);
+    setFPph23(defaultRates?.pph23 ?? '2');
+    setFPph23Applicable(false);
     const nw = new Date();
     setFBulan(String(nw.getMonth() + 1));
     setFTahun(String(nw.getFullYear()));
     setFDetail([newFormRow()]);
     setFBiayaTambahan([]);
     setFormErrors({});
-  }, []);
+  }, [defaultRates]);
 
   // ── Update #4: pilih pelanggan → alamat & syarat bayar ditarik otomatis
   // dari master (tidak perlu input manual lagi; tetap bisa disunting).
@@ -1066,6 +1139,10 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
   const [editRevisiKe, setEditRevisiKe] = useState(1);
   const [editStatus, setEditStatus] = useState('');
   const [editGrandTotal, setEditGrandTotal] = useState(0);
+  // === Update #066 — total pajak tersimpan (tampilan detail header;
+  // grand total backend SUDAH termasuk keduanya — tidak dihitung ulang). ===
+  const [editTotalPpn, setEditTotalPpn] = useState(0);
+  const [editTotalPph23, setEditTotalPph23] = useState(0);
   // === Update #039 — kartu pemakaian/sisa penawaran di form edit/detail:
   // Σ SO aktif turunan + sisa + daftar SO-SOnya (alur DP bertahap). ===
   const [editDipakaiSoTotal, setEditDipakaiSoTotal] = useState(0);
@@ -1157,8 +1234,15 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         // customer dihapus dari form — nomor PO diisi di SO bila perlu).
         setFCustomerCode(p.customerCode || '');
         setFDiskonGlobal(String(Number(p.diskonGlobal) || 0));
-        // === Update #042 — ppn dihapus dari response penawaran (tidak
-        // diprefill lagi; dokumen nilai penuh tanpa PPN). ===
+        // === Update #066 — prefill kartu Pajak (mirror form PO): tarif
+        // dipangkas nol desimalnya ("11.00" → "11"); dokumen lama tanpa
+        // nilai → PPN centang AKTIF, PPh23 mati (perilaku default #066). ===
+        setFPpn(trimDecimalString(p.ppn, '11'));
+        setFPpnApplicable(p.ppnApplicable ?? true);
+        setFPph23(trimDecimalString(p.pph23, '2'));
+        setFPph23Applicable(p.pph23Applicable ?? false);
+        setEditTotalPpn(Number(p.totalPpn) || 0);
+        setEditTotalPph23(Number(p.totalPph23) || 0);
         setFDetail(
           (p.details || []).map((r) => ({
             id: crypto.randomUUID(),
@@ -1286,8 +1370,13 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
         // pelanggan); No. PO customer field dihapus dari form penawaran.
         mataUang: 'IDR',
         diskonGlobal: parseFloat(fDiskonGlobal) || 0,
-        // === Update #042 — ppn DIHAPUS dari payload penawaran (order doc
-        // nilai penuh; pajak hanya di INVOICE). ===
+        // === Update #066 — PPN & PPh23 opsional ikut payload (mirror PO):
+        // flag dari checkbox; totalPpn menambah & totalPph23 memotong grand
+        // total (dihitung backend refresh_totals). ===
+        ppn: parseFloat(fPpn) || 0,
+        ppnApplicable: fPpnApplicable,
+        pph23: parseFloat(fPph23) || 0,
+        pph23Applicable: fPph23Applicable,
         details,
         biayaTambahan: biaya.length > 0 ? biaya : undefined
       };
@@ -1312,7 +1401,7 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
     } finally {
       setSubmitting(false);
     }
-  }, [editId, fPelangganId, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fBulan, fTahun, fDiskonGlobal, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
+  }, [editId, fPelangganId, fTanggal, fBerlakuHingga, fSyaratBayarId, fAlamatPengiriman, fKeterangan, fBulan, fTahun, fDiskonGlobal, fPpn, fPpnApplicable, fPph23, fPph23Applicable, fDetail, fBiayaTambahan, subPage, activeTabId, closeTab, refreshListTab]);
 
   const loading = ddLoading || editLoading;
 
@@ -1353,6 +1442,21 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
                 <span>Grand Total:</span>
                 <span className="font-mono font-semibold text-foreground">{formatRp(editGrandTotal)}</span>
               </div>
+              {/* === Update #066 — rincian pajak tersimpan (hanya bila > 0):
+                  grand total backend SUDAH termasuk keduanya — tidak
+                  dihitung ulang di sini. === */}
+              {editTotalPpn > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>+ PPN:</span>
+                  <span className="font-mono font-semibold text-foreground">{formatRp(editTotalPpn)}</span>
+                </div>
+              )}
+              {editTotalPph23 > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>− PPh23:</span>
+                  <span className="font-mono font-semibold text-foreground">{formatRp(editTotalPph23)}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1419,7 +1523,11 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               ) : (
                 <p className="text-xs text-muted-foreground">Belum ada Sales Order aktif dari penawaran ini — nilai penuh {formatRp(editGrandTotal)} masih tersedia sebagai sisa.</p>
               )}
-              <p className="text-[11px] text-muted-foreground">Update #042 — penawaran &amp; SO adalah dokumen nilai PENUH tanpa PPN &amp; tanpa DP. DP bertahap &amp; pelunasan ditagih lewat pembuatan Invoice (bisa berkali-kali) atas SO turunan penawaran ini dengan field DP/Pelunasan. Sisa dihitung otomatis dan berubah mengikuti status SO.</p>
+              {/* === Update #066 — catatan diperbarui: penawaran kini BOLEH
+                  memasang PPN & PPh23 opsional (kartu Pajak; grand total
+                  sudah termasuk keduanya — rincian tampil di atas bila > 0).
+                  Alur DP bertahap / pelunasan lewat Invoice tidak berubah. === */}
+              <p className="text-[11px] text-muted-foreground">Update #066 — penawaran boleh memasang PPN &amp; PPh23 opsional (kartu Pajak; grand total sudah termasuk keduanya — rincian tampil di atas bila nilainya &gt; 0). DP bertahap &amp; pelunasan tetap ditagih lewat pembuatan Invoice (bisa berkali-kali) atas SO turunan penawaran ini dengan field DP/Pelunasan. Sisa dihitung otomatis dan berubah mengikuti status SO.</p>
             </div>
           )}
 
@@ -1593,14 +1701,50 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               <Label className="text-xs font-medium">Diskon Global %</Label>
               <Input type="number" className="h-9 text-xs" value={fDiskonGlobal} min={0} max={100} onChange={(e) => setFDiskonGlobal(e.target.value)} disabled={readOnly} />
             </div>
-            {/* === Update #042 — field PPN % DIHAPUS dari form penawaran
-                (dokumen nilai penuh tanpa PPN; pajak hanya di INVOICE). === */}
           </div>
-          {/* === Update #042 — alur baru (menggantikan petunjuk PPN lama):
-              penawaran dibuat nilai PENUH tanpa PPN — grand total = subtotal
-              − diskon + biaya; DP bertahap & pelunasan ditagih lewat
-              pembuatan Invoice atas SO turunan (field DP/Pelunasan). === */}
-          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} totalBiayaTambahan={formTotalBiaya} />
+          {/* === Update #066 — kartu Pajak terpadu (mirror form PO & Invoice
+              Pembelian): PPN dan PPh23 masing-masing BISA DIKLIK aktif/
+              nonaktif — boleh dua-duanya, salah satu saja, atau tidak sama
+              sekali. Tarif PPN terkunci (Referensi → Perpajakan); tarif PPh23
+              ber-default dari Perpajakan dan bisa disesuaikan per jenis jasa
+              (2%/4%/6%). disabled saat readOnly (form edit non-DRAFT). === */}
+          <div className="space-y-3 rounded-md border p-4">
+            <div>
+              <Label className="text-xs font-medium">Pajak (PPN / PPh23)</Label>
+              <p className="text-[11px] text-muted-foreground">Pilih pajak yang diterapkan — boleh dua-duanya, salah satu saja, atau tidak sama sekali. PPh23 memotong grand total (potongan oleh pelanggan saat bayar). Tarif PPN terkunci (Referensi → Perpajakan); tarif PPh23 ber-default dari Perpajakan — dapat disesuaikan per jenis jasa (mis. 2%, 4%, 6%).</p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${fPpnApplicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                <Checkbox aria-checked={fPpnApplicable} className="mt-0.5" checked={fPpnApplicable} onCheckedChange={(checked) => setFPpnApplicable(checked === true)} disabled={readOnly} />
+                <span className="min-w-0 flex-1 space-y-2 text-sm leading-snug">
+                  <span className="block font-medium">PPN</span>
+                  {fPpnApplicable && (
+                    <span className="flex items-center gap-2">
+                      {/* Tarif PPN readOnly: terpusat di Referensi → Perpajakan
+                          (RATE_PPN) — mirror form PO. */}
+                      <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPN (persen)" className="h-8 w-24 text-xs bg-muted/60 font-medium" value={fPpn} readOnly aria-readonly="true" title="Tarif PPN terkunci — atur di Referensi → Perpajakan" />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </span>
+                  )}
+                </span>
+              </label>
+              <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${fPph23Applicable ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}>
+                <Checkbox aria-checked={fPph23Applicable} className="mt-0.5" checked={fPph23Applicable} onCheckedChange={(checked) => setFPph23Applicable(checked === true)} disabled={readOnly} />
+                <span className="min-w-0 flex-1 space-y-2 text-sm leading-snug">
+                  <span className="block font-medium">PPh23</span>
+                  {fPph23Applicable && (
+                    <span className="flex items-center gap-2">
+                      {/* Tarif PPh23 bisa disesuaikan per jenis jasa
+                          (default RATE_PPH23) — mirror form PO. */}
+                      <Input type="number" step="any" min={0} max={100} aria-label="Tarif PPh23 (persen)" className="h-8 w-24 text-xs" value={fPph23} onChange={(e) => setFPph23(e.target.value)} disabled={readOnly} title="Default dari Referensi → Perpajakan — sesuaikan bila jenis jasa berbeda" />
+                      <span className="text-xs text-muted-foreground">%</span>
+                    </span>
+                  )}
+                </span>
+              </label>
+            </div>
+          </div>
+          <TotalsBreakdown subtotal={formSubtotal} diskonGlobalPct={parseFloat(fDiskonGlobal) || 0} ppnPct={fPpnApplicable ? parseFloat(fPpn) || 0 : 0} totalBiayaTambahan={formTotalBiaya} pph23Pct={fPph23Applicable ? parseFloat(fPph23) || 0 : 0} />
           <div className="space-y-1.5">
             <Label className="text-xs font-medium">Keterangan</Label>
             <Textarea className="text-xs min-h-[60px]" value={fKeterangan} onChange={(e) => setFKeterangan(e.target.value)} placeholder="Catatan tambahan..." disabled={readOnly} />
@@ -1657,9 +1801,16 @@ function mapPenawaranData(d: PenawaranResponse): PenawaranData {
       nama: b.nama || '',
       jumlah: Number(b.jumlah) || 0
     })),
-    diskonGlobal: Number(d.diskonGlobal) || 0
-    // === Update #042 — ppn dihapus dari response penawaran (cetakan tanpa
-    // baris PPN; grand total = subtotal − diskon + biaya). ===
+    diskonGlobal: Number(d.diskonGlobal) || 0,
+    // === Update #066 — pajak penawaran opsional (mirror cetakan PO): flag +
+    // tarif + total pajak TERSIMPAN (string Decimal → Number) — baris PPN (+)
+    // & PPh23 (−) di cetakan hanya tampil bila flag aktif & nilai > 0. ===
+    ppn: Number(d.ppn) || 0,
+    ppnApplicable: d.ppnApplicable ?? true,
+    pph23: Number(d.pph23) || 0,
+    pph23Applicable: d.pph23Applicable ?? false,
+    totalPpn: Number(d.totalPpn) || 0,
+    totalPph23: Number(d.totalPph23) || 0
   };
 }
 

@@ -85,6 +85,9 @@ const subPageLabels: Record<string, string> = {
   'permintaan-barang': 'Permintaan Barang',
   'pemindahan-barang': 'Pemindahan Barang',
   penyesuaian: 'Penyesuaian',
+  // === Update #066 — LPPB & Penerimaan pindah menu ke modul Persediaan.
+  // ('penerimaan' sudah dipetakan di atas — label sama untuk semua modul.) ===
+  lppb: 'LPPB',
   'barang-jasa': 'Barang & Jasa',
   gudang: 'Gudang',
   'stok-kartu': 'Stok Kartu / Valuasi',

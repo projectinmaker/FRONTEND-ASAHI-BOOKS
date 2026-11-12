@@ -1108,9 +1108,14 @@ export interface PenawaranCreate {
   customerCode?: string | null;
   mataUang?: string;
   diskonGlobal?: number;
-  // === Update #042 — PPN DIHAPUS dari Penawaran (mirror SO): dokumen nilai
-  // penuh tanpa PPN — grand total = subtotal − diskon + biaya; pajak hanya
-  // dihitung di INVOICE. ===
+  // === Update #066 — PPN & PPh23 OPSIONAL (mirror Purchase Order):
+  // flag dari checkbox form; totalPpn menambah & totalPph23 memotong grand
+  // total (dihitung backend refresh_totals). Kosong = default backend
+  // (PPN 11% aktif, PPh23 nonaktif). ===
+  ppn?: number;
+  ppnApplicable?: boolean;
+  pph23?: number;
+  pph23Applicable?: boolean;
   // === Update #031 — No Quotation: user hanya input bulan & tahun; nomor
   // urut otomatis per pelanggan (reset tahunan), singkatan dari master. ===
   bulan?: number;
@@ -1147,8 +1152,15 @@ export interface PenawaranResponse {
   customerCode?: string | null;
   mataUang: string;
   diskonGlobal: string;
-  // === Update #042 — ppn/totalPpn DIHAPUS dari response penawaran (kolom
-  // model di-drop backend; grand total = subtotal − diskon + biaya). ===
+  // === Update #066 — pajak penawaran opsional (mirror PO): flag + tarif
+  // (prefill edit) dan total pajak (grandTotal sudah termasuk keduanya).
+  // Runtime bisa string Decimal — form memakai trimDecimalString. ===
+  ppn?: number | string;
+  ppnApplicable?: boolean;
+  pph23?: number | string;
+  pph23Applicable?: boolean;
+  totalPpn: string;
+  totalPph23: string;
   subTotal: string;
   totalDiskon: string;
   totalBiayaTambahan: string;
@@ -2014,6 +2026,11 @@ export interface PengirimanBarangDetailCreate {
   satuanId?: string | null;
   // === Phase 4 — source-line trace (optional, kalau di-set dari SO line) ===
   salesOrderDetailId?: string | null;
+  // === Update #066 — snapshot harga & diskon % line SO (kolom nominal di
+  // form/daftar/detail DO). Kosong → backend mengambil dari line SO; murni
+  // informatif — tidak memengaruhi stok/HPP/jurnal. ===
+  harga?: number;
+  diskon?: number;
 }
 
 export interface PengirimanBarangDetailResponse extends PengirimanBarangDetailCreate {

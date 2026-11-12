@@ -297,6 +297,9 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
   // bayar ditarik bila party punya default; PO juga menarik mata uang default
   // supplier (bila valid di daftar mata uang). Field tetap bisa disunting
   // setelahnya untuk kasus khusus.
+  // === Update #066 — PO: PIC & No. Hp juga terisi otomatis dari MASTER
+  // SUPPLIER saat supplier dipilih (snapshot untuk cetak PO); centang gudang
+  // tujuan tetap menimpa dengan PIC gudang (perilaku lama). ===
   const handlePartyChange = (value: string, masterOverride?: PelangganDropdown | SupplierDropdown | null) => {
     setField(partyKey, value);
     // Update #007: masterOverride dipakai quick-add — baris master hasil create
@@ -311,6 +314,12 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
         if (!original) next.customerCode = (master && 'singkatan' in master ? master.singkatan : '') || '';
       } else {
         next.alamat = master?.alamat || '';
+        // === Update #066 — PIC & No. Hp terisi otomatis dari MASTER SUPPLIER
+        // saat supplier dipilih (sebelumnya hanya dari gudang tujuan).
+        // Tetap bisa diubah manual — snapshot untuk cetak PO; mencentang
+        // gudang tujuan tetap MENIMPA dengan PIC gudang (perilaku lama). ===
+        next.picGudang = master?.kontakPerson || '';
+        next.picGudangTelepon = master?.telepon || '';
         const supplierCurrency = master && 'currency' in master ? master.currency : null;
         if (supplierCurrency && supplierCurrency !== prev.currency && currencyOptions.some((option) => option.id === supplierCurrency)) {
           next.currency = supplierCurrency;
@@ -898,12 +907,15 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                       </div>
                     )}
                     {/* Update #003 / #054: PIC + No. Hp (sebelumnya "PIC Gudang")
-                      — snapshot untuk cetak PO (checkbox PPIC dihapus). */}
+                      — snapshot untuk cetak PO (checkbox PPIC dihapus).
+                      === Update #066 — terisi otomatis dari MASTER SUPPLIER saat
+                      supplier dipilih; centang gudang tujuan MENIMPA dengan PIC
+                      gudang. Tetap bisa diubah manual. === */}
                     <div className="grid gap-4 sm:grid-cols-2">
                       {input('picGudang', 'PIC', 'text', 100)}
                       {input('picGudangTelepon', 'No. Hp', 'text', 50)}
                     </div>
-                    <p className="text-xs text-muted-foreground">Terisi otomatis dari gudang terpilih — masih bisa diubah.</p>
+                    <p className="text-xs text-muted-foreground">Terisi otomatis dari supplier terpilih (centang gudang tujuan akan menimpa dengan PIC gudang) — masih bisa diubah.</p>
                   </div>
                 )}
 

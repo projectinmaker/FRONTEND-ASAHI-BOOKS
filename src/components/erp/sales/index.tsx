@@ -455,6 +455,53 @@ function TotalsBreakdown({ subtotal, diskonGlobalPct, ppnPct, totalBiayaTambahan
   );
 }
 
+// ─── Update #066 — helper nominal & qty baris DO ────────────────────────────
+
+// Parse harga baris (string form-state / number API / null) → number | null.
+// null = tanpa snapshot harga (baris manual / DO lama) → ditampilkan "-".
+function parseDoHarga(harga: number | string | null | undefined): number | null {
+  if (harga === null || harga === undefined || harga === '') return null;
+  const n = Number(harga);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Nominal baris DO = harga × qty × (1 − diskon %). harga null → null ("-").
+function doLineNominal(harga: number | string | null | undefined, qty: number | string | null | undefined, diskon: number | string | null | undefined): number | null {
+  const h = parseDoHarga(harga);
+  if (h === null) return null;
+  return h * (Number(qty) || 0) * (1 - (Number(diskon) || 0) / 100);
+}
+
+// Σ qty seluruh baris DO (daftar DO & footer form edit).
+function doTotalQty(details: { qty: number | string | null | undefined }[] | null | undefined): number {
+  return (details || []).reduce((s, x) => s + (Number(x.qty) || 0), 0);
+}
+
+// Σ nominal seluruh baris DO; null bila TIDAK ADA baris bersnapshot harga
+// (DO lama sebelum #066) → kolom daftar menampilkan "-".
+function doTotalNominal(details: { harga?: number | string | null; qty: number | string | null | undefined; diskon?: number | string | null }[] | null | undefined): number | null {
+  let total = 0;
+  let ada = false;
+  for (const x of details || []) {
+    const n = doLineNominal(x.harga, x.qty, x.diskon);
+    if (n !== null) {
+      ada = true;
+      total += n;
+    }
+  }
+  return ada ? total : null;
+}
+
+// Format Σ qty tanpa nol desimal berlebih (3 → "3"; 2,5 → "2,5").
+function formatQtyTampil(val: number): string {
+  return (Number.isFinite(val) ? val : 0).toLocaleString('id-ID', { maximumFractionDigits: 3 });
+}
+
+// Format nominal nullable ("-" bila tanpa snapshot harga).
+function formatRpNullable(val: number | null): string {
+  return val === null ? '-' : formatRp(val);
+}
+
 // ─── Detail Table Simple (for Pengiriman form) ──────────────────────────────
 
 function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, onBarangCreated, onSatuanCreated, locked = false }: { rows: FormDetailRow[]; setRows: Dispatch<SetStateAction<FormDetailRow[]>>; barangOptions: BarangDropdown[]; satuanOptions: SatuanResponse[]; onBarangCreated?: (barang: BarangResponse) => void; onSatuanCreated?: (satuan: SatuanResponse) => void; locked?: boolean }) {
@@ -505,12 +552,11 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, onBara
     [setRows, barangOptions, satuanOptions, applyBarang]
   );
 
+  // === Update #066 — Total Qty & Total Nominal footer form DO (Update #004
+  // yang dulu menyembunyikan total dikembalikan, kini dengan nominal:
+  // nominal baris = harga × qty × (1 − diskon %); baris tanpa harga = 0). ===
   const totalQty = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
-  const jumlahBarang = rows.length;
-  // Update #004: Total Kuantitas & Jumlah Barang tidak lagi ditampilkan di form DO
-  // (disimpan hanya untuk kompatibilitas linter; tidak dirender).
-  void totalQty;
-  void jumlahBarang;
+  const totalNominal = rows.reduce((s, r) => s + (doLineNominal(r.harga, r.qty, r.diskon) ?? 0), 0);
 
   return (
     <div className="space-y-3">
@@ -522,84 +568,105 @@ function DetailTableSimple({ rows, setRows, barangOptions, satuanOptions, onBara
               <TableHead className="min-w-[200px]">Nama Barang</TableHead>
               <TableHead className="w-[80px] text-right">Qty</TableHead>
               <TableHead className="w-[120px]">Satuan</TableHead>
+              {/* === Update #066 — kolom Harga (snapshot line SO) & Nominal per
+                  baris (readonly; nominal = harga × qty × (1 − diskon %)). === */}
+              <TableHead className="w-[110px] text-right">Harga</TableHead>
+              <TableHead className="w-[130px] text-right">Nominal</TableHead>
               <TableHead className="w-[40px]" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell className="font-mono text-xs">
-                  {/* Update #041 — baris item bebas (SO manufaktur/jasa/custom). */}
-                  {row.bebas ? <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-600">item bebas</span> : row.kodeBarang || '-'}
-                  {row.salesOrderDetailId && (
-                    <span className="ml-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700" title="Baris ter-link ke line Sales Order">
-                      SO
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {/* Update #041 — baris item bebas: nama diketik manual (bukan dropdown master). */}
-                  {row.bebas ? (
-                    <Input aria-label="Nama item bebas" placeholder="Nama item / manufaktur (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} disabled={rowLocked(row)} />
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact disabled={rowLocked(row)} />
-                      {/* Update #007: quick add barang langsung di baris */}
-                      {!rowLocked(row) && (
-                        <QuickAddBarangButton
-                          compact
-                          onCreated={(b) => {
-                            const drop = toBarangDropdown(b);
-                            onBarangCreated?.(b);
-                            applyBarang(row.id, b.id, drop, b.satuan?.nama);
-                          }}
-                        />
-                      )}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} step={1} aria-invalid={(row.bebas || !!row.barangId) && (!Number.isInteger(Number(row.qty)) || Number(row.qty) < 1)} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} disabled={rowLocked(row)} />
-                </TableCell>
-                <TableCell>
-                  {/* Update #041 — baris item bebas: satuan teks bebas (bukan dropdown master). */}
-                  {row.bebas ? (
-                    <Input aria-label="Satuan item bebas" placeholder="mis. UNIT / JOB" className="h-8 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} disabled={rowLocked(row)} />
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <SearchableDropdown className="min-w-0 flex-1" value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact disabled={rowLocked(row)} />
-                      {/* Update #007: quick add satuan langsung di baris */}
-                      {!rowLocked(row) && (
-                        <QuickAddSatuanButton
-                          compact
-                          onCreated={(s) => {
-                            onSatuanCreated?.(s);
-                            updateRow(row.id, 'satuanId', s.id);
-                          }}
-                        />
-                      )}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {/* Update #045 — tombol hapus disembunyikan utk baris terkunci. */}
-                  {!rowLocked(row) && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+            {rows.map((row) => {
+              // === Update #066 — Harga (snapshot line SO) & Nominal baris. ===
+              const hargaNum = parseDoHarga(row.harga);
+              return (
+                <TableRow key={row.id}>
+                  <TableCell className="font-mono text-xs">
+                    {/* Update #041 — baris item bebas (SO manufaktur/jasa/custom). */}
+                    {row.bebas ? <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-600">item bebas</span> : row.kodeBarang || '-'}
+                    {row.salesOrderDetailId && (
+                      <span className="ml-1.5 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700" title="Baris ter-link ke line Sales Order">
+                        SO
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {/* Update #041 — baris item bebas: nama diketik manual (bukan dropdown master). */}
+                    {row.bebas ? (
+                      <Input aria-label="Nama item bebas" placeholder="Nama item / manufaktur (bebas)" className="h-8 text-xs" value={row.itemNama || ''} onChange={(e) => updateRow(row.id, 'itemNama', e.target.value)} maxLength={200} disabled={rowLocked(row)} />
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <SearchableDropdown className="min-w-0 flex-1" value={row.barangId} onValueChange={(v) => updateRow(row.id, 'barangId', v)} options={barangOptions.map((b) => ({ id: b.id, label: b.nama, subtitle: b.kode }))} placeholder="Pilih barang..." compact disabled={rowLocked(row)} />
+                        {/* Update #007: quick add barang langsung di baris */}
+                        {!rowLocked(row) && (
+                          <QuickAddBarangButton
+                            compact
+                            onCreated={(b) => {
+                              const drop = toBarangDropdown(b);
+                              onBarangCreated?.(b);
+                              applyBarang(row.id, b.id, drop, b.satuan?.nama);
+                            }}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Input type="number" className="h-8 text-right text-xs" value={row.qty} min={1} step={1} aria-invalid={(row.bebas || !!row.barangId) && (!Number.isInteger(Number(row.qty)) || Number(row.qty) < 1)} onChange={(e) => updateRow(row.id, 'qty', e.target.value)} disabled={rowLocked(row)} />
+                  </TableCell>
+                  <TableCell>
+                    {/* Update #041 — baris item bebas: satuan teks bebas (bukan dropdown master). */}
+                    {row.bebas ? (
+                      <Input aria-label="Satuan item bebas" placeholder="mis. UNIT / JOB" className="h-8 text-xs" value={row.itemSatuan || ''} onChange={(e) => updateRow(row.id, 'itemSatuan', e.target.value)} maxLength={50} disabled={rowLocked(row)} />
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <SearchableDropdown className="min-w-0 flex-1" value={row.satuanId} onValueChange={(v) => updateRow(row.id, 'satuanId', v)} options={satuanOptions.map((s) => ({ id: s.id, label: s.nama }))} placeholder="Pilih..." compact disabled={rowLocked(row)} />
+                        {/* Update #007: quick add satuan langsung di baris */}
+                        {!rowLocked(row) && (
+                          <QuickAddSatuanButton
+                            compact
+                            onCreated={(s) => {
+                              onSatuanCreated?.(s);
+                              updateRow(row.id, 'satuanId', s.id);
+                            }}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </TableCell>
+                  {/* === Update #066 — Harga & Nominal readonly (baris tarikan SO
+                    menampilkan snapshot line SO; baris manual tanpa harga "-"). === */}
+                  <TableCell className="whitespace-nowrap text-right font-mono text-xs">{hargaNum === null ? '-' : formatRp(hargaNum)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-right font-mono text-xs font-medium">{formatRpNullable(doLineNominal(row.harga, row.qty, row.diskon))}</TableCell>
+                  <TableCell>
+                    {/* Update #045 — tombol hapus disembunyikan utk baris terkunci. */}
+                    {!rowLocked(row) && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => removeRow(row.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="h-16 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="h-16 text-center text-muted-foreground">
                   Belum ada item. Klik "+ Tambah Baris" untuk menambahkan.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+      </div>
+      {/* === Update #066 — footer Total Qty & Total Nominal baris DO. === */}
+      <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-1 text-xs">
+        <span className="text-muted-foreground">
+          Total Qty: <span className="font-mono font-semibold text-foreground">{formatQtyTampil(totalQty)}</span>
+        </span>
+        <span className="text-muted-foreground">
+          Total Nominal: <span className="font-mono font-semibold text-foreground">{formatRp(totalNominal)}</span>
+        </span>
       </div>
       {/* === Update #045 — tombol "Tambah Baris" TIDAK DITAMPILKAN saat menarik
           data dari Sales Order (baris mengikuti SO terpilih). === */}
@@ -675,7 +742,11 @@ function BiayaTambahanTable({ rows, setRows }: { rows: FormBiayaRow[]; setRows: 
 
 // ─── Shared Dropdown Loader ─────────────────────────────────────────────────
 
-function useDropdowns() {
+// === Update #066 — opsi gudangIncludeInactive: form Pengiriman (DO)
+// menawarkan SEMUA gudang (aktif + non-aktif — endpoint
+// /master/gudang?include_inactive=true) karena DO dapat terkait gudang yang
+// kini non-aktif; modul lain (Retur dsb.) tetap hanya gudang AKTIF. ===
+function useDropdowns({ gudangIncludeInactive = false }: { gudangIncludeInactive?: boolean } = {}) {
   const [pelangganOptions, setPelangganOptions] = useState<PelangganDropdown[]>([]);
   const [syaratBayarOptions, setSyaratBayarOptions] = useState<SyaratBayarResponse[]>([]);
   const [barangOptions, setBarangOptions] = useState<BarangDropdown[]>([]);
@@ -691,7 +762,7 @@ function useDropdowns() {
     async function load() {
       setLoading(true);
       try {
-        const [pelanggan, syaratBayar, barang, satuan, soRes, invRes, pengRes, gudang] = await Promise.all([api.get<PelangganDropdown[]>('/master/pelanggan-dropdown'), api.get<SyaratBayarResponse[]>('/master/syarat-bayar'), api.get<BarangDropdown[]>('/master/barang-dropdown'), api.get<SatuanResponse[]>('/master/satuan'), api.get<PaginatedResponse<SalesOrderResponse>>('/penjualan/sales-order?limit=200'), api.get<PaginatedResponse<SalesInvoiceResponse>>('/penjualan/sales-invoice?limit=200'), api.get<PaginatedResponse<PengirimanBarangResponse>>('/penjualan/pengiriman?limit=200'), api.get<GudangResponse[]>('/master/gudang')]);
+        const [pelanggan, syaratBayar, barang, satuan, soRes, invRes, pengRes, gudang] = await Promise.all([api.get<PelangganDropdown[]>('/master/pelanggan-dropdown'), api.get<SyaratBayarResponse[]>('/master/syarat-bayar'), api.get<BarangDropdown[]>('/master/barang-dropdown'), api.get<SatuanResponse[]>('/master/satuan'), api.get<PaginatedResponse<SalesOrderResponse>>('/penjualan/sales-order?limit=200'), api.get<PaginatedResponse<SalesInvoiceResponse>>('/penjualan/sales-invoice?limit=200'), api.get<PaginatedResponse<PengirimanBarangResponse>>('/penjualan/pengiriman?limit=200'), api.get<GudangResponse[]>(gudangIncludeInactive ? '/master/gudang?include_inactive=true' : '/master/gudang')]);
         if (cancelled) return;
         setPelangganOptions(pelanggan);
         setSyaratBayarOptions(syaratBayar);
@@ -711,7 +782,7 @@ function useDropdowns() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [gudangIncludeInactive]);
 
   return { pelangganOptions, setPelangganOptions, syaratBayarOptions, setSyaratBayarOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, salesOrderOptions, invoiceOptions, pengirimanOptions, gudangOptions, setGudangOptions, loading };
 }
@@ -735,13 +806,18 @@ interface SoTersediaItem {
   // dari backend: grand_total − Σ nilai-tagih invoice non-batal). Dipakai
   // label dropdown supaya user melihat SO masih punya sisa (belum lunas)
   // → boleh difakturkan lagi berkali-kali sampai sisa habis. ===
+  // === Update #066 — TIDAK lagi dipakai label dropdown (label kini nomor
+  // dokumen saja); sisa tagihan tetap tampil di hint kecil bawah field SO
+  // (soSisaInfo dari endpoint /sisa) setelah SO dipilih. ===
   sisaNilai?: number | null;
 }
 
-// === Update #065 — label opsi SO form Invoice: "SO ASI/… · sisa Rp …"
-// (null / 0 → nomor saja; fallback daftar penuh juga nomor saja). ===
+// === Update #065 — label opsi SO form Invoice dulu "SO ASI/… · sisa Rp …". ===
+// === Update #066 — label opsi SO form Invoice CUKUP NOMOR DOKUMEN
+// ("SO ASI/2026/001", tanpa suffix sisa); sisa tagihan tetap ditampilkan
+// sebagai hint kecil terpisah (soSisaInfo) di bawah field SO. ===
 function soTersediaLabel(so: SoTersediaItem): string {
-  return typeof so.sisaNilai === 'number' && so.sisaNilai > 0 ? `${so.noPesanan} · sisa ${formatRp(so.sisaNilai)}` : so.noPesanan;
+  return so.noPesanan;
 }
 
 interface DoTersediaItem {
@@ -868,7 +944,7 @@ function PesananPenjualanEditForm({ editId, subPage }: { editId: string; subPage
 
 function PengirimanCreateForm({ subPage }: { subPage: string }) {
   const { error: stockError, clearError: clearStockError, handleError: handleStockError } = useStockOperationError('pengiriman_barang');
-  const { pelangganOptions, setPelangganOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, salesOrderOptions, gudangOptions, setGudangOptions, loading: ddLoading } = useDropdowns();
+  const { pelangganOptions, setPelangganOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, salesOrderOptions, gudangOptions, setGudangOptions, loading: ddLoading } = useDropdowns({ gudangIncludeInactive: true });
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -1010,7 +1086,11 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
     if (!fSalesOrderId) errs.salesOrderId = 'Sales Order wajib diisi';
     if (!fPelangganId) errs.pelangganId = 'Pelanggan wajib diisi';
     if (!fTanggal) errs.tanggal = 'Tanggal wajib diisi';
-    if (!fGudangId) errs.gudangId = 'Gudang wajib diisi';
+    // === Update #066 — gudang wajib HANYA bila ada baris barang master (baris
+    // yang menggerakkan stok saat finish); DO yang seluruh barisnya item
+    // bebas (jasa/manufaktur/custom) boleh tanpa gudang — paritas aturan
+    // validasi backend. ===
+    if (!fGudangId && fDetail.some((r) => !r.bebas && !!r.barangId)) errs.gudangId = 'Gudang wajib diisi untuk pengiriman yang memuat barang master';
     const detailError = stockLineError(fDetail);
     if (detailError) errs.detail = detailError;
     if (Object.keys(errs).length) {
@@ -1035,7 +1115,12 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
           itemSatuan: r.bebas ? (r.itemSatuan || '').trim() || null : null,
           qty: Number(r.qty),
           satuanId: r.bebas ? null : r.satuanId || null,
-          salesOrderDetailId: r.salesOrderDetailId || null
+          salesOrderDetailId: r.salesOrderDetailId || null,
+          // === Update #066 — snapshot harga & diskon % line SO ikut tersimpan
+          // di baris DO (dipakai kolom nominal form edit/daftar/detail);
+          // kosong → backend mengambil snapshot dari line SO. ===
+          harga: r.harga !== '' && Number.isFinite(Number(r.harga)) ? Number(r.harga) : undefined,
+          diskon: r.diskon !== '' && Number.isFinite(Number(r.diskon)) ? Number(r.diskon) : undefined
         }));
       const body: PengirimanBarangCreate = {
         tanggal: fTanggal,
@@ -1057,6 +1142,10 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
       setSubmitting(false);
     }
   }, [fSalesOrderId, fPelangganId, fGudangId, fTanggal, fAlamatPengiriman, fKeterangan, fDetail, subPage, activeTabId, closeTab, refreshListTab, handleStockError]);
+
+  // === Update #066 — status "gudang wajib": ada baris barang master (stok)?
+  // Dipakai label */placeholder/tombol simpan form DO. ===
+  const gudangWajib = fDetail.some((r) => !r.bebas && !!r.barangId);
 
   if (ddLoading) {
     return (
@@ -1115,10 +1204,13 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
             </div>
             <div className="space-y-1.5" id="dof-gudangId">
               <Label className="text-xs font-medium">
-                Gudang <span className="text-destructive">*</span>
+                {/* === Update #066 — tanda * hanya bila ada baris barang master. === */}
+                Gudang {gudangWajib && <span className="text-destructive">*</span>}
               </Label>
               <div className="flex items-start gap-1.5">
-                <SearchableDropdown className="min-w-0 flex-1" value={fGudangId} onValueChange={setFGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
+                {/* === Update #066 — dropdown menawarkan SEMUA gudang (aktif +
+                    non-aktif; label diberi tanda "(non-aktif)"). === */}
+                <SearchableDropdown className="min-w-0 flex-1" value={fGudangId} onValueChange={setFGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama + (g.status !== 'AKTIF' ? ' (non-aktif)' : '') }))} placeholder={gudangWajib ? 'Pilih gudang (wajib)...' : 'Pilih gudang (opsional)...'} />
                 {/* Update #007: quick add gudang */}
                 <QuickAddGudangButton
                   onCreated={(g) => {
@@ -1128,6 +1220,8 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
                   }}
                 />
               </div>
+              {/* === Update #066 — aturan gudang fleksibel (paritas backend). === */}
+              <p className="text-[11px] text-muted-foreground">Wajib bila ada baris barang master (menggerakkan stok); DO yang seluruh barisnya item bebas (jasa/manufaktur/custom) boleh tanpa gudang.</p>
               {formErrors.gudangId && <p className="text-xs text-destructive">{formErrors.gudangId}</p>}
             </div>
           </div>
@@ -1175,7 +1269,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
             <Button variant="outline" size="sm" onClick={() => activeTabId && closeTab(activeTabId)} disabled={submitting}>
               Batal
             </Button>
-            <Button size="sm" onClick={handleSubmit} disabled={submitting || !fGudangId}>
+            <Button size="sm" onClick={handleSubmit} disabled={submitting || (gudangWajib && !fGudangId)}>
               {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Truck className="mr-1.5 h-4 w-4" />}
               {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
@@ -1193,7 +1287,7 @@ function PengirimanCreateForm({ subPage }: { subPage: string }) {
 
 function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatus }: { editId: string; subPage: string; initialNoSuratJalan?: string; initialStatus?: string }) {
   const { error: stockError, clearError: clearStockError, handleError: handleStockError } = useStockOperationError('pengiriman_barang');
-  const { pelangganOptions, setPelangganOptions, salesOrderOptions, gudangOptions, setGudangOptions, loading: ddLoading } = useDropdowns();
+  const { pelangganOptions, setPelangganOptions, salesOrderOptions, gudangOptions, setGudangOptions, loading: ddLoading } = useDropdowns({ gudangIncludeInactive: true });
   const activeTabId = useTabStore((s) => s.activeTabId);
   const closeTab = useTabStore((s) => s.closeTab);
   const refreshListTab = useTabStore((s) => s.refreshListTab);
@@ -1267,8 +1361,19 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
       toast.error('Pelanggan wajib diisi');
       return;
     }
-    if (!editGudangId || !editTanggal || recordError) {
-      toast.error(recordError || 'Tanggal dan gudang wajib diisi');
+    // === Update #066 — gudang wajib HANYA bila detail tersimpan memuat baris
+    // barang master (menggerakkan stok); DO semua-item-bebas boleh tanpa
+    // gudang — paritas aturan validasi backend. ===
+    if (recordError) {
+      toast.error(recordError);
+      return;
+    }
+    if (!editTanggal) {
+      toast.error('Tanggal wajib diisi');
+      return;
+    }
+    if (!editGudangId && editDetails.some((d) => !!d.barangId)) {
+      toast.error('Gudang wajib diisi untuk pengiriman yang memuat barang master');
       return;
     }
     setEditSubmitting(true);
@@ -1290,7 +1395,13 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
     } finally {
       setEditSubmitting(false);
     }
-  }, [editId, editPelangganId, editGudangId, editTanggal, editSalesOrderId, editAlamatPengiriman, editKeterangan, subPage, activeTabId, closeTab, refreshListTab, recordError, handleStockError]);
+  }, [editId, editPelangganId, editGudangId, editTanggal, editSalesOrderId, editAlamatPengiriman, editKeterangan, editDetails, subPage, activeTabId, closeTab, refreshListTab, recordError, handleStockError]);
+
+  // === Update #066 — status "gudang wajib" (detail tersimpan ada baris
+  // barang master) + Σ qty & Σ nominal detail tersimpan (footer form edit). ===
+  const editGudangWajib = editDetails.some((d) => !!d.barangId);
+  const editTotalQty = doTotalQty(editDetails);
+  const editTotalNominal = doTotalNominal(editDetails);
 
   return (
     <FormTabShell title="Edit Pengiriman Barang">
@@ -1355,10 +1466,13 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">
-                    Gudang <span className="text-destructive">*</span>
+                    {/* === Update #066 — tanda * hanya bila DO memuat baris
+                        barang master; dropdown menawarkan SEMUA gudang (yang
+                        non-aktif diberi tanda "(non-aktif)"). === */}
+                    Gudang {editGudangWajib && <span className="text-destructive">*</span>}
                   </Label>
                   <div className="flex items-start gap-1.5">
-                    <SearchableDropdown className="min-w-0 flex-1" value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama }))} placeholder="Pilih gudang (wajib)..." />
+                    <SearchableDropdown className="min-w-0 flex-1" value={editGudangId} onValueChange={setEditGudangId} options={gudangOptions.map((g) => ({ id: g.id, label: g.kode + ' - ' + g.nama + (g.status !== 'AKTIF' ? ' (non-aktif)' : '') }))} placeholder={editGudangWajib ? 'Pilih gudang (wajib)...' : 'Pilih gudang (opsional)...'} />
                     {/* Update #007: quick add gudang */}
                     <QuickAddGudangButton
                       onCreated={(g) => {
@@ -1367,6 +1481,8 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                       }}
                     />
                   </div>
+                  {/* === Update #066 — aturan gudang fleksibel (paritas backend). === */}
+                  <p className="text-[11px] text-muted-foreground">Wajib bila DO memuat baris barang master (menggerakkan stok); DO yang seluruh barisnya item bebas boleh tanpa gudang.</p>
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -1384,31 +1500,53 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                     <TableHeader>
                       <TableRow>
                         <TableHead>Barang</TableHead>
-                        <TableHead>Qty</TableHead>
+                        {/* === Update #066 — kolom Harga (snapshot) & Nominal
+                            detail tersimpan + Qty rata kanan. === */}
+                        <TableHead className="text-right">Qty</TableHead>
                         <TableHead>Satuan</TableHead>
+                        <TableHead className="text-right">Harga</TableHead>
+                        <TableHead className="text-right">Nominal</TableHead>
                         <TableHead>Line SO</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {editDetails.map((line) => (
-                        <TableRow key={line.id}>
-                          {/* Update #041 — baris item bebas (SO manufaktur/custom). */}
-                          <TableCell>{line.barang?.nama || line.itemNama || line.barangId}</TableCell>
-                          <TableCell className={Number(line.qty) <= 0 ? 'text-destructive' : undefined}>{line.qty}</TableCell>
-                          <TableCell>{line.satuan?.nama || line.itemSatuan || line.satuanId}</TableCell>
-                          <TableCell>
-                            {line.salesOrderDetailId ? (
-                              <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700" title={`Terkait line SO ${line.salesOrderDetailId}`}>
-                                SO ✓
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {editDetails.map((line) => {
+                        // === Update #066 — harga & nominal dari detail tersimpan
+                        // (harga null = DO lama tanpa snapshot → tampil "-"). ===
+                        const hargaNum = parseDoHarga(line.harga);
+                        const nominal = doLineNominal(line.harga, line.qty, line.diskon);
+                        return (
+                          <TableRow key={line.id}>
+                            {/* Update #041 — baris item bebas (SO manufaktur/custom). */}
+                            <TableCell>{line.barang?.nama || line.itemNama || line.barangId}</TableCell>
+                            <TableCell className={`whitespace-nowrap text-right font-mono text-xs${Number(line.qty) <= 0 ? ' text-destructive' : ''}`}>{line.qty}</TableCell>
+                            <TableCell>{line.satuan?.nama || line.itemSatuan || line.satuanId}</TableCell>
+                            <TableCell className="whitespace-nowrap text-right font-mono text-xs">{hargaNum === null ? '-' : formatRp(hargaNum)}</TableCell>
+                            <TableCell className="whitespace-nowrap text-right font-mono text-xs font-medium">{formatRpNullable(nominal)}</TableCell>
+                            <TableCell>
+                              {line.salesOrderDetailId ? (
+                                <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700" title={`Terkait line SO ${line.salesOrderDetailId}`}>
+                                  SO ✓
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
+                </div>
+                {/* === Update #066 — footer Total Qty & Total Nominal detail
+                    tersimpan (nominal "-" bila DO lama tanpa snapshot harga). === */}
+                <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-1 text-xs">
+                  <span className="text-muted-foreground">
+                    Total Qty: <span className="font-mono font-semibold text-foreground">{formatQtyTampil(editTotalQty)}</span>
+                  </span>
+                  <span className="text-muted-foreground">
+                    Total Nominal: <span className="font-mono font-semibold text-foreground">{formatRpNullable(editTotalNominal)}</span>
+                  </span>
                 </div>
                 <p className="text-xs text-muted-foreground">Detail tersimpan hanya dapat dilihat pada form ini. Perubahan qty/detail belum didukung. Baris berlabel SO ✓ ter-link ke line Sales Order (validasi over-delivery aktif).</p>
               </div>
@@ -1420,7 +1558,7 @@ function PengirimanEditForm({ editId, subPage, initialNoSuratJalan, initialStatu
                 <Button variant="outline" size="sm" onClick={() => activeTabId && closeTab(activeTabId)} disabled={editSubmitting}>
                   Batal
                 </Button>
-                <Button size="sm" onClick={handleEditSubmit} disabled={editSubmitting || !editGudangId || !!recordError}>
+                <Button size="sm" onClick={handleEditSubmit} disabled={editSubmitting || (editGudangWajib && !editGudangId) || !!recordError}>
                   {editSubmitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Pencil className="mr-1.5 h-4 w-4" />}
                   {editSubmitting ? 'Menyimpan...' : 'Simpan Perubahan'}
                 </Button>
@@ -1927,6 +2065,13 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
                   No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
                 </div>
               )}
+              {/* === Update #066 — hint kecil sisa tagihan SO (terpisah dari
+                  label dropdown yang kini nomor dokumen saja). === */}
+              {fSalesOrderId && soSisaInfo && (
+                <p className="text-[11px] text-muted-foreground">
+                  Sisa tagihan {soSisaInfo.noPesanan}: <span className="font-mono font-medium text-foreground">{formatRp(soSisaInfo.sisaNilai)}</span>
+                </p>
+              )}
             </div>
             {/* === Update #004: No DO — tarik data DO seperti No SO; baris DO
                 masuk ke table invoice (link deliveryDetailId). === */}
@@ -2418,6 +2563,13 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                       <span className="mx-1.5">·</span>
                       No PO: <span className="font-mono font-medium text-foreground">{soRefInfo.customerPoNumber || '-'}</span>
                     </div>
+                  )}
+                  {/* === Update #066 — hint kecil sisa tagihan SO (terpisah dari
+                      label dropdown yang kini nomor dokumen saja). === */}
+                  {editSalesOrderId && soSisaInfo && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Sisa tagihan {soSisaInfo.noPesanan}: <span className="font-mono font-medium text-foreground">{formatRp(soSisaInfo.sisaNilai)}</span>
+                    </p>
                   )}
                 </div>
                 <div className="space-y-1.5">
@@ -3594,7 +3746,12 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
                     <TableHead className="w-[140px]">No Pengiriman</TableHead>
                     <TableHead className="w-[100px]">Tanggal</TableHead>
                     <TableHead>Pelanggan</TableHead>
+                    {/* === Update #066 — kolom Gudang asal pengiriman + Σ qty &
+                        Σ nominal baris DO. === */}
+                    <TableHead>Gudang</TableHead>
                     <TableHead>Alamat</TableHead>
+                    <TableHead className="w-[90px] text-right">Qty</TableHead>
+                    <TableHead className="w-[130px] text-right">Nominal</TableHead>
                     <TableHead className="w-[110px] text-center">Status</TableHead>
                     {/* Update #043 — kolom Workflow dihapus (DO langsung final). */}
                     <TableHead className="w-[100px] text-center">Aksi</TableHead>
@@ -3602,10 +3759,10 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={6} />
+                    <SkeletonRows cols={9} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground">
                         Tidak ada data pengiriman.
                       </TableCell>
                     </TableRow>
@@ -3615,7 +3772,13 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
                         <TableCell className="font-mono text-xs font-medium">{d.noSuratJalan}</TableCell>
                         <TableCell className="text-xs">{formatDate(d.tanggal)}</TableCell>
                         <TableCell className="text-xs">{d.pelanggan?.nama || '-'}</TableCell>
+                        {/* === Update #066 — gudang asal pengiriman. === */}
+                        <TableCell className="text-xs">{d.gudang?.nama || '-'}</TableCell>
                         <TableCell className="text-xs">{d.alamatPengiriman || '-'}</TableCell>
+                        {/* === Update #066 — Σ qty & Σ nominal baris DO (harga null
+                            pada DO lama → nominal "-"). === */}
+                        <TableCell className="whitespace-nowrap text-right font-mono text-xs">{formatQtyTampil(doTotalQty(d.details))}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right font-mono text-xs font-medium">{formatRpNullable(doTotalNominal(d.details))}</TableCell>
                         <TableCell className="text-center">
                           <StatusBadge status={d.status} />
                         </TableCell>
