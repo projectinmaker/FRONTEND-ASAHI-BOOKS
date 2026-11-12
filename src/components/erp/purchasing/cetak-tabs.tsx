@@ -47,9 +47,12 @@ function mapPembelianData(d: PurchaseOrderResponse): PembelianData {
     tanggalKirim: d.tanggalKirim || '',
     kepada: d.supplier?.nama || '',
     alamat: d.alamat || '',
-    // Update ASAHI (cetak PO): kontak supplier di bawah "Nama Pemasok"
-    kontakPerson: d.supplier?.kontakPerson || '',
-    noContact: d.supplier?.telepon || '',
+    // Update ASAHI (cetak PO): kontak supplier di bawah "Nama Pemasok".
+    // === Update #067 — pakai SNAPSHOT PIC Supplier & No. HP per-PO (field
+    // aktif di form PO saat ini); PO lama yang belum punya snapshot fallback
+    // ke Kontak Person / Telepon live master supplier (tampilan lama tetap). ===
+    kontakPerson: d.picSupplier || d.supplier?.kontakPerson || '',
+    noContact: d.picSupplierTelepon || d.supplier?.telepon || '',
     // Update ASAHI #3: mata uang pilihan saat input PO + alamat pengiriman
     mataUang: d.currency || 'IDR',
     alamatPengiriman: d.alamatPengiriman || '',

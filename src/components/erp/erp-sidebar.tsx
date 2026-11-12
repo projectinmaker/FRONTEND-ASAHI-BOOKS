@@ -135,15 +135,17 @@ const modules: NavModule[] = [
     label: 'Persediaan',
     icon: Warehouse,
     subPages: [
-      { id: 'permintaan-barang', label: 'Permintaan Barang', icon: ClipboardList },
-      { id: 'pemindahan-barang', label: 'Pemindahan Barang', icon: ArrowLeftRight },
-      { id: 'penyesuaian', label: 'Penyesuaian', icon: Scale },
-      // === Update #066 — LPPB & Penerimaan dipindahkan dari modul Pembelian
-      // (dokumen barang masuk dikelola bersama stok di modul Persediaan).
-      // id subPage & permission tetap sama seperti di modul Pembelian. ===
+      // === Update #067 — LPPB & Penerimaan naik ke PALING ATAS menu
+      // Persediaan (sebelumnya setelah Penyesuaian sejak #066): urutan
+      // LPPB → Penerimaan → Permintaan Barang → dst. Alur terima barang
+      // (QC → masuk gudang) adalah pekerjaan harian gudang, jadi
+      // diletakkan paling depan. id subPage & permission tetap sama. ===
       // Update ASAHI #005 — LPPB: inspeksi QC barang masuk (sebelum diterima ke gudang)
       { id: 'lppb', label: 'LPPB', icon: ClipboardCheck },
       { id: 'penerimaan', label: 'Penerimaan', icon: Package },
+      { id: 'permintaan-barang', label: 'Permintaan Barang', icon: ClipboardList },
+      { id: 'pemindahan-barang', label: 'Pemindahan Barang', icon: ArrowLeftRight },
+      { id: 'penyesuaian', label: 'Penyesuaian', icon: Scale },
       { id: 'barang-jasa', label: 'Barang & Jasa', icon: Package },
       { id: 'gudang', label: 'Gudang', icon: Warehouse },
       { id: 'stok-kartu', label: 'Stok Kartu / Valuasi', icon: Calculator }

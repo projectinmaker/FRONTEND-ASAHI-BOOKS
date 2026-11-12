@@ -110,7 +110,10 @@ const salesKeys = ['pelangganId', 'customerCode', 'tanggalPengiriman', 'alamatPe
 // Update #003: ppic dihapus dari form PO.
 // Update ASAHI (PPh23/PPN opsional): pilihan pajak hanya untuk PO — boleh
 // keduanya, salah satu, atau tidak sama sekali.
-const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppn', 'ppnApplicable', 'pph23Applicable', 'pph23', 'picGudang', 'picGudangTelepon'] as const;
+// Update #067: picSupplier/picSupplierTelepon — kontak pihak SUPPLIER (field
+// aktif saat buat PO; terisi otomatis dari master, bisa disunting per PO).
+// picGudang/picGudangTelepon tetap seperti versi sebelumnya (PIC internal).
+const purchaseKeys = ['supplierId', 'tanggalKirim', 'alamat', 'alamatPengirimanId', 'ppn', 'ppnApplicable', 'pph23Applicable', 'pph23', 'picGudang', 'picGudangTelepon', 'picSupplier', 'picSupplierTelepon'] as const;
 
 // ── Update #002 — jenis belanja per baris PO (dasar posting COA) ──
 export const JENIS_PEMBELIAN_OPTIONS = [
@@ -158,10 +161,11 @@ export function serializeOrderHeader(kind: OrderKind, header: OrderHeader) {
     } else if (key === 'ppnApplicable' || key === 'pph23Applicable') {
       // Update ASAHI PPh23-PPN: boolean fields (bukan string).
       result[key] = header[key] === 'true';
-    } else if (key === 'picGudang' || key === 'picGudangTelepon') {
+    } else if (key === 'picGudang' || key === 'picGudangTelepon' || key === 'picSupplier' || key === 'picSupplierTelepon') {
       // Update #002: kirim string kosong (BUKAN null) — null dianggap "tidak
       // dikirim" oleh backend sehingga pengosongan PIC saat update tidak
       // diproses; '' benar-benar menghapus nilai (strip → None di server).
+      // Update #067: PIC Supplier & No. HP Supplier memakai perilaku yang sama.
       result[key] = header[key].trim();
     } else result[key] = header[key].trim() || null;
   }
@@ -190,7 +194,7 @@ export function buildOrderUpdate(kind: OrderKind, header: OrderHeader, lines: Or
   return payload;
 }
 export function orderSaveMismatches(kind: OrderKind, requested: Record<string, unknown>, saved: OrderResponse): string[] {
-  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppn: 'Tarif PPN', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23', picGudang: 'PIC', picGudangTelepon: 'No. Hp' };
+  const labels: Record<string, string> = { customerPoNumber: 'Customer PO Number', customerPoDate: 'Customer PO Date', customerCode: 'Singkatan Customer', currency: 'Currency', syaratBayarId: 'Syarat Bayar', alamatPengirimanId: 'Alamat Pengiriman', ppn: 'Tarif PPN', ppnApplicable: 'PPN', pph23Applicable: 'PPh23', pph23: 'Tarif PPh23', picGudang: 'PIC', picGudangTelepon: 'No. Hp', picSupplier: 'PIC Supplier', picSupplierTelepon: 'No. HP Supplier' };
   const actual = serializeOrderHeader(kind, orderHeaderFromResponse(saved));
   const issues: string[] = [];
   for (const [key, value] of Object.entries(requested)) {

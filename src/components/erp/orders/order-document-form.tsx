@@ -148,6 +148,18 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
             const master = findPartyMaster(partyData, nextHeader.supplierId);
             if (master?.alamat) nextHeader.alamat = master.alamat;
           }
+          // === Update #067 — mirror #048 untuk PIC Supplier & No. HP: PO lama
+          // / draft hasil alur Detail ROP & Part Stok Menipis belum menyimpan
+          // snapshot. Saat form dibuka dan masih kosong → tarik otomatis dari
+          // Kontak Person / Telepon master supplier; ikut tersimpan permanen
+          // saat PO disimpan (user tetap bisa mengosongkan/mengubah manual). ===
+          if (!isSales && nextHeader.supplierId) {
+            const master = findPartyMaster(partyData, nextHeader.supplierId);
+            if (master && 'kontakPerson' in master) {
+              if (!nextHeader.picSupplier && master.kontakPerson) nextHeader.picSupplier = master.kontakPerson;
+              if (!nextHeader.picSupplierTelepon && master.telepon) nextHeader.picSupplierTelepon = master.telepon;
+            }
+          }
           setHeader(nextHeader);
           setLines(orderLinesFromResponse(order));
         }
@@ -320,6 +332,12 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
         // gudang tujuan tetap MENIMPA dengan PIC gudang (perilaku lama). ===
         next.picGudang = master?.kontakPerson || '';
         next.picGudangTelepon = master?.telepon || '';
+        // === Update #067 — PIC Supplier & No. HP SUPPLIER (field aktif,
+        // tambahan terpisah dari PIC internal di atas): terisi otomatis dari
+        // Kontak Person / Telepon master supplier saat supplier dipilih;
+        // perganti supplier mengganti nilai; tetap bisa diubah per PO. ===
+        next.picSupplier = master?.kontakPerson || '';
+        next.picSupplierTelepon = master?.telepon || '';
         const supplierCurrency = master && 'currency' in master ? master.currency : null;
         if (supplierCurrency && supplierCurrency !== prev.currency && currencyOptions.some((option) => option.id === supplierCurrency)) {
           next.currency = supplierCurrency;
@@ -857,6 +875,15 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                         <Textarea id="order-alamat" rows={2} value={header.alamat} onChange={(event) => setField('alamat', event.target.value)} disabled={disabled} />
                         <p className="text-xs text-muted-foreground">{AUTOFILL_HINT.supplier}</p>
                       </div>
+                      {/* === Update #067 — PIC Supplier & No. HP SUPPLIER: field
+                        AKTIF saat pembuatan PO (tambahan — terpisah dari PIC
+                        internal yang tetap seperti versi sebelumnya di bagian
+                        Alamat Pengiriman). Terisi otomatis dari master Supplier
+                        (Kontak Person / Telepon) saat supplier dipilih; tetap
+                        bisa diubah per PO. === */}
+                      {input('picSupplier', 'PIC Supplier', 'text', 150)}
+                      {input('picSupplierTelepon', 'No. HP Supplier', 'text', 30)}
+                      <p className="text-xs text-muted-foreground md:col-span-2">PIC & No. HP supplier terisi otomatis dari master Supplier — masih bisa diubah sesuai kontak PO ini.</p>
                     </>
                   )}
                 </div>

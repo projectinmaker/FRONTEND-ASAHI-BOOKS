@@ -2136,6 +2136,10 @@ export interface PurchaseOrderCreate {
   // === Update #002 — snapshot PIC gudang untuk cetak PO ===
   picGudang?: string | null;
   picGudangTelepon?: string | null;
+  // === Update #067 — snapshot PIC Supplier & No. HP (kontak pihak SUPPLIER;
+  // field aktif di form PO — kosong = pakai fallback master saat cetak). ===
+  picSupplier?: string | null;
+  picSupplierTelepon?: string | null;
 
   tanggal: string;
   supplierId: string;
@@ -2163,6 +2167,9 @@ export interface PurchaseOrderUpdate {
   // === Update #002 — snapshot PIC gudang (string kosong = hapus) ===
   picGudang?: string | null;
   picGudangTelepon?: string | null;
+  // === Update #067 — PIC Supplier (string kosong = hapus, mirror PIC Gudang) ===
+  picSupplier?: string | null;
+  picSupplierTelepon?: string | null;
   details?: PurchaseOrderDetailCreate[];
 
   tanggal?: string;
@@ -2191,6 +2198,10 @@ export interface PurchaseOrderResponse {
   // === Update #002 — snapshot PIC gudang untuk cetak PO ===
   picGudang?: string | null;
   picGudangTelepon?: string | null;
+  // === Update #067 — snapshot PIC Supplier untuk cetak PO (kosong pada PO
+  // lama — cetak fallback ke Kontak Person/Telepon master supplier). ===
+  picSupplier?: string | null;
+  picSupplierTelepon?: string | null;
 
   id: string;
   noPesanan: string;
