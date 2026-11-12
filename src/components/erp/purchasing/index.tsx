@@ -727,21 +727,46 @@ function PesananEditForm({ editId }: { editId: string }) {
 // TIDAK PERNAH muncul di daftar lama — user jadi tidak bisa memilih invoice
 // yang baru dibuat untuk dihubungkan ke penerimaan (penyebab pesan
 // "hubungkan manual lewat Edit Penerimaan" tidak bisa dijalankan). ===
+// ── === Update #064 — daftar kini dari endpoint "tersedia-link": hanya
+// invoice yang BELUM dipakai penerimaan lain (kelanjutan permintaan user:
+// "alur yang menarik data — yang sudah terpakai sebelumnya jangan
+// ditampilkan lagi", diterapkan ke dokumen Penerimaan & Invoice). Invoice
+// yang baru dibuat tetap tampil (tujuan #049 preserved); invoice yang
+// sedang tertaut di form edit tetap tampil lewat pola re-insert existing.
+// Fallback ke daftar penuh lama bila endpoint belum ada (backend lama).
+// Catatan: satu invoice boleh terhubung ke beberapa penerimaan (alur GRNI
+// #048) — penghubungan multi tetap tersedia lewat panel "Penerimaan
+// Barang" di form Invoice; filter ini hanya menyaring PENAWARAN di sisi
+// form Penerimaan. ===
 function useSupplierInvoiceOptions(supplierId: string | null, refreshKey?: number) {
   const [state, setState] = useState<{ supplierId: string; attempt: number; options: PurchaseInvoiceResponse[]; error: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!supplierId) return;
     let active = true;
-    const params = new URLSearchParams({ supplier_id: supplierId, limit: '200' });
+    const loadFullList = () => {
+      const params = new URLSearchParams({ supplier_id: supplierId, limit: '200' });
+      return api
+        .get<PaginatedResponse<PurchaseInvoiceResponse>>(`/pembelian/purchase-invoice?${params}`)
+        .then((res) => {
+          if (active) setState({ supplierId, attempt, options: (res.data || []).filter((inv) => inv.status !== 'DIBATALKAN'), error: '' });
+        })
+        .catch((error) => {
+          if (active) setState({ supplierId, attempt, options: [], error: error instanceof Error ? error.message : 'Gagal memuat invoice' });
+        });
+    };
     api
-      .get<PaginatedResponse<PurchaseInvoiceResponse>>(`/pembelian/purchase-invoice?${params}`)
+      .get<PurchaseInvoiceResponse[]>(`/pembelian/purchase-invoice/tersedia-link?supplier_id=${supplierId}`)
       .then((res) => {
-        if (active) setState({ supplierId, attempt, options: (res.data || []).filter((inv) => inv.status !== 'DIBATALKAN'), error: '' });
+        if (active) {
+          if (Array.isArray(res)) {
+            setState({ supplierId, attempt, options: res.filter((inv) => inv.status !== 'DIBATALKAN'), error: '' });
+          } else {
+            return loadFullList();
+          }
+        }
       })
-      .catch((error) => {
-        if (active) setState({ supplierId, attempt, options: [], error: error instanceof Error ? error.message : 'Gagal memuat invoice' });
-      });
+      .catch(() => loadFullList());
     return () => {
       active = false;
     };
@@ -781,13 +806,18 @@ function usePostedInvoiceOptions(supplierId: string | null) {
 // purchase_invoice_id"); alur baru: penerimaan tampil di form Invoice, yang
 // dicentang otomatis di-link saat invoice disimpan (bila backend sudah
 // auto-link, dideteksi & dilaporkan saja).
+// === Update #064 — penerimaan yang sudah terhubung ke invoice LAIN tidak
+// ditampilkan lagi di panel ("yang sudah terpakai sebelumnya jangan
+// ditampilkan lagi", kelanjutan permintaan user untuk dokumen Penerimaan &
+// Invoice). Penerimaan milik invoice yang sedang dibuka/diedit tetap tampil
+// (badge "Invoice ini") lewat opts.currentInvoiceId. ===
 // ═════════════════════════════════════════════════════════════════════════════
 function usePoPenerimaanLink() {
   const [list, setList] = useState<PenerimaanBarangResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
 
-  const fetchForPo = useCallback(async (poId: string, supplierId?: string, opts?: { preserveChecks?: boolean }) => {
+  const fetchForPo = useCallback(async (poId: string, supplierId?: string, opts?: { preserveChecks?: boolean; currentInvoiceId?: string }) => {
     if (!poId) {
       setList([]);
       setCheckedIds([]);
@@ -802,7 +832,14 @@ function usePoPenerimaanLink() {
       // purchaseOrderId supaya hasilnya benar di semua versi.
       params.set('purchase_order_id', poId);
       const res = await api.get<PaginatedResponse<PenerimaanBarangResponse>>(`/pembelian/penerimaan?${params}`);
-      const rows = (res.data || []).filter((pb) => pb.purchaseOrderId === poId && pb.status !== 'DIBATALKAN');
+      const rows = (res.data || []).filter(
+        (pb) =>
+          pb.purchaseOrderId === poId &&
+          pb.status !== 'DIBATALKAN' &&
+          // === Update #064 — sembunyikan penerimaan yang sudah dipakai invoice
+          // lain; milik invoice ini (mode edit) tetap tampil. ===
+          (!pb.purchaseInvoiceId || pb.purchaseInvoiceId === opts?.currentInvoiceId)
+      );
       setList(rows);
       const linkable = rows.filter((pb) => !pb.purchaseInvoiceId).map((pb) => pb.id);
       setCheckedIds((prev) => (opts?.preserveChecks ? Array.from(new Set([...prev.filter((id) => linkable.includes(id)), ...linkable])) : linkable));
@@ -2376,12 +2413,14 @@ function InvoiceEditForm({ editId }: { editId: string }) {
   }, [editId]);
 
   // === Update #048 — daftar penerimaan PO invoice ini (panel link GRNI):
-  // dimuat ulang saat PO / supplier berubah (termasuk saat record termuat). ===
+  // dimuat ulang saat PO / supplier berubah (termasuk saat record termuat).
+  // === Update #064 — currentInvoiceId: penerimaan yang terhubung ke invoice
+  // LAIN disembunyikan; milik invoice ini tetap tampil (badge "Invoice ini"). ===
   useEffect(() => {
     if (recordLoading) return;
-    if (editPurchaseOrderId) penerimaanLink.fetchForPo(editPurchaseOrderId, editSupplierId || undefined);
+    if (editPurchaseOrderId) penerimaanLink.fetchForPo(editPurchaseOrderId, editSupplierId || undefined, { currentInvoiceId: editId });
     else penerimaanLink.fetchForPo('');
-  }, [recordLoading, editPurchaseOrderId, editSupplierId, penerimaanLink.fetchForPo]);
+  }, [recordLoading, editPurchaseOrderId, editSupplierId, editId, penerimaanLink.fetchForPo]);
 
   const handleEditSubmit = async () => {
     if (!savedInvoice) return;
@@ -2515,7 +2554,7 @@ function InvoiceEditForm({ editId }: { editId: string }) {
                 loading={penerimaanLink.loading}
                 checkedIds={penerimaanLink.checkedIds}
                 onToggle={penerimaanLink.toggleChecked}
-                onRefresh={() => penerimaanLink.fetchForPo(editPurchaseOrderId, editSupplierId || undefined, { preserveChecks: true })}
+                onRefresh={() => penerimaanLink.fetchForPo(editPurchaseOrderId, editSupplierId || undefined, { preserveChecks: true, currentInvoiceId: editId })}
                 onBuatPenerimaan={() =>
                   openFormTab({
                     title: 'Buat Penerimaan Barang',

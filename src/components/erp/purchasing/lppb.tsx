@@ -374,18 +374,39 @@ export function LppbForm({ lppbId }: { lppbId?: string }) {
   const activeTabId = useTabStore((s) => s.activeTabId);
 
   // ── Dropdown PO (self-loaded) ──
+  // === Update #064 — daftar PO kini dari endpoint "tersedia" (untuk=lppb):
+  // hanya PO yang BELUM dipakai LPPB mana pun (kelanjutan permintaan user:
+  // "alur yang menarik data — yang sudah terpakai sebelumnya jangan
+  // ditampilkan lagi", kini diterapkan ke dokumen LPPB). PO yang sedang
+  // dipakai LPPB ini (mode edit) tidak ada dalam daftar, tapi otomatis
+  // disisipkan kembali lewat pola re-insert di dropdown supaya labelnya
+  // tetap tampil. Fallback ke daftar penuh bila endpoint belum tersedia
+  // (backend belum di-update). ===
   const [poOptions, setPoOptions] = useState<{ id: string; noPesanan: string; supplierNama?: string | null }[]>([]);
   const [poOptionsLoading, setPoOptionsLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
+    const loadFullList = () =>
+      api
+        .get<PaginatedResponse<PurchaseOrderResponse>>('/pembelian/purchase-order?limit=200')
+        .then((res) => {
+          if (!cancelled) setPoOptions(res.data.map((p) => ({ id: p.id, noPesanan: p.noPesanan, supplierNama: p.supplier?.nama || p.supplierNameSnapshot || null })));
+        })
+        .catch(() => {
+          /* dropdown kosong */
+        });
     api
-      .get<PaginatedResponse<PurchaseOrderResponse>>('/pembelian/purchase-order?limit=200')
+      .get<{ id: string; noPesanan: string; supplierNama?: string | null }[]>('/pembelian/purchase-order/tersedia?untuk=lppb')
       .then((res) => {
-        if (!cancelled) setPoOptions(res.data.map((p) => ({ id: p.id, noPesanan: p.noPesanan, supplierNama: p.supplier?.nama || p.supplierNameSnapshot || null })));
+        if (!cancelled) {
+          if (Array.isArray(res)) {
+            setPoOptions(res.map((p) => ({ id: p.id, noPesanan: p.noPesanan, supplierNama: p.supplierNama || null })));
+          } else {
+            return loadFullList();
+          }
+        }
       })
-      .catch(() => {
-        /* dropdown kosong */
-      })
+      .catch(() => loadFullList())
       .finally(() => {
         if (!cancelled) setPoOptionsLoading(false);
       });
