@@ -792,6 +792,46 @@ function useTersediaDoOptions(fallback: { id: string; noSuratJalan: string; pela
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// === Update #063 — opsi Invoice untuk form Retur Penjualan: hanya invoice
+// yang masih punya sisa retur (yang barisnya sudah diretur penuh tidak
+// ditawarkan lagi — kelanjutan permintaan "yang sudah terpakai sebelumnya
+// jangan ditampilkan lagi" ke semua modul yang alurnya menarik data).
+// Endpoint /penjualan/sales-invoice/tersedia-retur (backend #063);
+// fallback ke daftar penuh bila endpoint belum tersedia. Invoice yang
+// sedang dipilih (draft dipulihkan) tetap disisipkan supaya label tampil.
+// ═════════════════════════════════════════════════════════════════════════════
+interface InvoiceTersediaReturItem {
+  id: string;
+  noInvoice: string;
+}
+
+function useTersediaReturInvoiceOptions(fallback: { id: string; noInvoice: string }[], currentId?: string) {
+  const [rows, setRows] = useState<InvoiceTersediaReturItem[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<InvoiceTersediaReturItem[]>('/penjualan/sales-invoice/tersedia-retur')
+      .then((r) => {
+        if (!cancelled && Array.isArray(r)) setRows(r);
+      })
+      .catch(() => {
+        /* endpoint belum ada (backend belum di-update) → pakai daftar penuh */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return useMemo(() => {
+    const base = rows ?? fallback;
+    if (currentId && !base.some((o) => o.id === currentId)) {
+      const label = fallback.find((o) => o.id === currentId)?.noInvoice || currentId;
+      return [{ id: currentId, noInvoice: label }, ...base];
+    }
+    return base;
+  }, [rows, fallback, currentId]);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // FORM: Pesanan Penjualan Create
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -2469,6 +2509,9 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
 
   const [fInvoiceId, setFInvoiceId] = useState('');
   const source = useSalesReturnSource(fInvoiceId);
+  // === Update #063 — dropdown Invoice difilter "masih punya sisa retur";
+  // invoice terpilih (draft dipulihkan) tetap disisipkan agar label tampil. ===
+  const tersediaReturInvoiceOptions = useTersediaReturInvoiceOptions(invoiceOptions, fInvoiceId || undefined);
   const fPelangganId = source.invoice?.pelangganId || '';
   const [quantities, setQuantities] = useState<ReturnQuantities>({});
   const [createdReturn, setCreatedReturn] = useState<SalesReturResponse | null>(null);
@@ -2666,7 +2709,7 @@ function ReturPenjualanCreateForm({ subPage }: { subPage: string }) {
                   setFPengirimanId('');
                   setFormErrors({});
                 }}
-                options={invoiceOptions.map((inv) => ({ id: inv.id, label: inv.noInvoice }))}
+                options={tersediaReturInvoiceOptions.map((inv) => ({ id: inv.id, label: inv.noInvoice }))}
                 placeholder="Pilih invoice..."
               />
               {formErrors.invoiceId && <p className="text-xs text-destructive mt-1">{formErrors.invoiceId}</p>}

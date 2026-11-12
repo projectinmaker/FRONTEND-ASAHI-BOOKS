@@ -9,7 +9,7 @@
 // sales/index.tsx TIDAK disentuh.
 // ═════════════════════════════════════════════════════════════════════════════
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -636,7 +636,12 @@ export function TukarFakturCreateForm() {
   const [fKeterangan, setFKeterangan] = useState('');
 
   // ── Dropdown invoice + preview invoice terpilih ──
-  const [invoiceOptions, setInvoiceOptions] = useState<SalesInvoiceResponse[]>([]);
+  // === Update #063 — opsi invoice kini dari endpoint "tersedia tukar
+  // faktur": hanya invoice yang BELUM dipakai Tukar Faktur lain (yang sudah
+  // terpakai disembunyikan — kelanjutan permintaan "yang sudah terpakai
+  // sebelumnya jangan ditampilkan lagi" ke semua modul tarik data). Bentuk
+  // ringan {id, noInvoice, pelangganNama}; preview tetap ditarik per id. ===
+  const [invoiceOptions, setInvoiceOptions] = useState<{ id: string; noInvoice: string; pelangganNama?: string | null }[]>([]);
   const [ddLoading, setDdLoading] = useState(true);
   const [preview, setPreview] = useState<SalesInvoiceResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -692,12 +697,20 @@ export function TukarFakturCreateForm() {
     async function load() {
       setDdLoading(true);
       try {
-        const res = await api.get<PaginatedResponse<SalesInvoiceResponse>>('/penjualan/sales-invoice?limit=200');
+        const res = await api.get<{ id: string; noInvoice: string; pelangganNama?: string | null }[]>('/penjualan/sales-invoice/tersedia-tukar-faktur');
         if (cancelled) return;
-        // Exclude invoice DIBATALKAN — tidak bisa jadi sumber tukar faktur.
-        setInvoiceOptions((res.data || []).filter((inv) => inv.status !== 'DIBATALKAN'));
+        setInvoiceOptions(Array.isArray(res) ? res : []);
       } catch {
-        // Silently fail — dropdown akan kosong
+        // Endpoint belum ada (backend belum di-update) → daftar penuh lama.
+        try {
+          const res = await api.get<PaginatedResponse<SalesInvoiceResponse>>('/penjualan/sales-invoice?limit=200');
+          if (cancelled) return;
+          // Exclude invoice DIBATALKAN — tidak bisa jadi sumber tukar faktur.
+          setInvoiceOptions((res.data || []).filter((inv) => inv.status !== 'DIBATALKAN').map((inv) => ({ id: inv.id, noInvoice: inv.noInvoice, pelangganNama: inv.pelanggan?.nama || null })));
+        } catch {
+          // Silently fail — dropdown akan kosong
+          if (!cancelled) setInvoiceOptions([]);
+        }
       } finally {
         if (!cancelled) setDdLoading(false);
       }
@@ -707,6 +720,17 @@ export function TukarFakturCreateForm() {
       cancelled = true;
     };
   }, []);
+
+  // === Update #063 — invoice terpilih (mis. dipulihkan dari draft, atau
+  // kebetulan sudah dipakai TF lain) disisipkan supaya labelnya tetap tampil
+  // dan preview tetap bisa ditarik per id. ===
+  const tfInvoiceDropdownOptions = useMemo(() => {
+    const opts = invoiceOptions.map((inv) => ({ id: inv.id, label: inv.noInvoice, subtitle: inv.pelangganNama || undefined }));
+    if (fSalesInvoiceId && !invoiceOptions.some((o) => o.id === fSalesInvoiceId)) {
+      return [{ id: fSalesInvoiceId, label: fSalesInvoiceId, subtitle: 'Invoice terpilih — tidak ada dalam daftar tersedia' }, ...opts];
+    }
+    return opts;
+  }, [invoiceOptions, fSalesInvoiceId]);
 
   // Ganti invoice → muat ulang panel preview.
   useEffect(() => {
@@ -798,7 +822,7 @@ export function TukarFakturCreateForm() {
                   setFSalesInvoiceId(v);
                   setFormErrors((p) => ({ ...p, salesInvoiceId: '' }));
                 }}
-                options={invoiceOptions.map((inv) => ({ id: inv.id, label: inv.noInvoice, subtitle: inv.pelanggan?.nama || undefined }))}
+                options={tfInvoiceDropdownOptions}
                 placeholder="Pilih invoice..."
               />
               {formErrors.salesInvoiceId && <p className="text-xs text-destructive mt-1">{formErrors.salesInvoiceId}</p>}

@@ -72,9 +72,22 @@ export async function loadReceiptInvoiceOptions(supplierId: string): Promise<Pur
  * Invoice pembelian supplier yang SUDAH di-POST (status SELESAI).
  * Dipakai form retur pembelian — backend menolak posting retur tanpa link
  * purchaseInvoiceId (hutang invoice harus bisa diperbarui saat post).
+ *
+ * === Update #063 — hanya invoice yang masih punya sisa retur. Sebelumnya
+ * daftar = SEMUA invoice SELESAI supplier → invoice yang barisnya sudah
+ * diretur penuh tetap ditawarkan (permintaan user: "yang sudah terpakai
+ * sebelumnya jangan ditampilkan lagi" — diterapkan ke semua alur tarik data).
+ * Endpoint /purchase-invoice/tersedia-retur (backend #063) yang menyaring;
+ * bila endpoint belum ada (backend lama) → fallback ke daftar lama. ===
  */
 export async function loadPostedInvoiceOptions(supplierId: string): Promise<PurchaseInvoiceResponse[]> {
   if (!supplierId) return [];
+  try {
+    const tersedia = await api.get<PurchaseInvoiceResponse[]>(`/pembelian/purchase-invoice/tersedia-retur?supplier_id=${encodeURIComponent(supplierId)}`);
+    if (Array.isArray(tersedia)) return tersedia;
+  } catch {
+    /* endpoint belum ada (backend belum di-update) → pakai daftar lama */
+  }
   const query = new URLSearchParams({ supplier_id: supplierId, status: 'SELESAI', skip: '0', limit: '50' });
   const page = await api.get<PaginatedResponse<PurchaseInvoiceResponse>>(`/pembelian/purchase-invoice?${query}`);
   return page.data;

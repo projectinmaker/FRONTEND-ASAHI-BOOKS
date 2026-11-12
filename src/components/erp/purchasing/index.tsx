@@ -652,6 +652,49 @@ function usePurchasingDropdowns() {
   return { supplierOptions, setSupplierOptions, barangOptions, setBarangOptions, satuanOptions, setSatuanOptions, purchaseOrderOptions, gudangOptions, setGudangOptions, loading };
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// === Update #063 — opsi PO yang MASIH PUNYA SISA (mirror pola "tersedia"
+// modul Penjualan #047). Permintaan user: "alur yang menarik data — yang
+// sudah terpakai sebelumnya jangan ditampilkan lagi", diterapkan ke semua
+// modul dengan alur tarik data:
+//   - PO di form Penerimaan → /pembelian/purchase-order/tersedia?untuk=penerimaan
+//   - PO di form Invoice    → /pembelian/purchase-order/tersedia?untuk=invoice
+// Fallback ke daftar penuh bila endpoint belum tersedia (backend lama);
+// PO yang sedang dipilih selalu disisipkan supaya labelnya tetap tampil
+// (mis. PO yang kebetulan sudah diterima penuh oleh penerimaan yg diedit).
+// ═════════════════════════════════════════════════════════════════════════════
+interface PoTersediaItem {
+  id: string;
+  noPesanan: string;
+  supplierId?: string | null;
+}
+
+function useTersediaPoOptions(untuk: 'penerimaan' | 'invoice', fallback: { id: string; noPesanan: string }[], currentId?: string, currentLabel?: string) {
+  const [rows, setRows] = useState<PoTersediaItem[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<PoTersediaItem[]>(`/pembelian/purchase-order/tersedia?untuk=${untuk}`)
+      .then((r) => {
+        if (!cancelled && Array.isArray(r)) setRows(r);
+      })
+      .catch(() => {
+        /* endpoint belum ada (backend belum di-update) → pakai daftar penuh */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [untuk]);
+  return useMemo(() => {
+    const base = rows ?? fallback;
+    if (currentId && !base.some((o) => o.id === currentId)) {
+      const label = fallback.find((o) => o.id === currentId)?.noPesanan || currentLabel || currentId;
+      return [{ id: currentId, noPesanan: label }, ...base];
+    }
+    return base;
+  }, [rows, fallback, currentId, currentLabel]);
+}
+
 // ─── Props Interface ────────────────────────────────────────────────────────
 
 interface PurchasingPageProps {
@@ -947,6 +990,10 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
   // dipilih sejak penerimaan dibuat. ===
   const { options: supplierInvoiceOptions, loading: invoiceOptionsLoading, error: invoiceOptionsError, retry: retryInvoiceOptions } = useSupplierInvoiceOptions(fSupplierId || null);
   const [poLoading, setPoLoading] = useState(false);
+  // === Update #063 — dropdown PO hanya menawarkan PO yang masih punya sisa
+  // terima (yang sudah diterima penuh disembunyikan); PO terpilih (mis. dari
+  // alur GRNI / draft) tetap disisipkan agar labelnya tampil. ===
+  const tersediaPoOptions = useTersediaPoOptions('penerimaan', purchaseOrderOptions, fPurchaseOrderId || undefined);
   // === Update #049 — scope pencarian anchor field wajib (navigasi otomatis). ===
   const formRef = useRef<HTMLDivElement>(null);
 
@@ -1182,7 +1229,7 @@ function PenerimaanCreateForm({ initialPurchaseOrderId }: { initialPurchaseOrder
                 <Label className="text-xs font-medium">
                   Purchase Order <span className="text-destructive">*</span>
                 </Label>
-                <SearchableDropdown value={fPurchaseOrderId} onValueChange={handlePurchaseOrderChange} options={purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO..." disabled={poLoading} />
+                <SearchableDropdown value={fPurchaseOrderId} onValueChange={handlePurchaseOrderChange} options={tersediaPoOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO..." disabled={poLoading} />
                 {poLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa PO...</p>}
                 {formErrors.purchaseOrderId && <p className="text-xs text-destructive mt-1">{formErrors.purchaseOrderId}</p>}
               </div>
@@ -1359,6 +1406,10 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
   // tetap bisa diubah — memungkinkan menghubungkan penerimaan final ke invoice
   // sesuai pesan error alur GRNI. ===
   const selesaiLocked = editStatus === 'SELESAI';
+  // === Update #063 — dropdown PO difilter "masih punya sisa terima"
+  // (paritas form create); PO penerimaan yang sedang diedit disisipkan
+  // otomatis lewat currentId supaya label tetap tampil. ===
+  const tersediaPoOptions = useTersediaPoOptions('penerimaan', purchaseOrderOptions, editPurchaseOrderId || undefined);
   // === Update #049 — scope pencarian anchor field wajib (navigasi otomatis). ===
   const formRef = useRef<HTMLDivElement>(null);
 
@@ -1508,7 +1559,7 @@ function PenerimaanEditForm({ editId }: { editId: string }) {
                 <Label className="text-xs font-medium">
                   Purchase Order <span className="text-destructive">*</span> {selesaiLocked && <Lock className="inline h-3 w-3 text-muted-foreground" aria-hidden />}
                 </Label>
-                <SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO (wajib)..." disabled={selesaiLocked} />
+                <SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={tersediaPoOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO (wajib)..." disabled={selesaiLocked} />
               </div>
               <div className="space-y-1.5" id="field-supplierId">
                 <Label className="text-xs font-medium">
@@ -1689,6 +1740,10 @@ function InvoiceCreateForm() {
   // === Update #048 — daftar Penerimaan Barang untuk PO terpilih (alur GRNI):
   // penerimaan yang dicentang otomatis di-link ke invoice ini saat disimpan. ===
   const penerimaanLink = usePoPenerimaanLink();
+  // === Update #063 — dropdown PO difilter "masih punya sisa faktur"
+  // (yang sudah terfaktur penuh disembunyikan); PO terpilih (mis. dari
+  // draft) tetap disisipkan agar labelnya tampil. ===
+  const tersediaPoOptions = useTersediaPoOptions('invoice', purchaseOrderOptions, fPurchaseOrderId || undefined, savedInvoice?.purchaseOrder?.noPesanan);
 
   // ── Draft otomatis (form create; dipulihkan saat kembali ke form ini) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -2003,7 +2058,7 @@ function InvoiceCreateForm() {
               membingungkan). Form kini langsung dimulai dari pilihan PO. === */}
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Purchase Order (opsional)</Label>
-              <SearchableDropdown value={fPurchaseOrderId} onValueChange={handlePurchaseOrderChange} options={[...(fPurchaseOrderId && !purchaseOrderOptions.some((po) => po.id === fPurchaseOrderId) ? [{ id: fPurchaseOrderId, label: savedInvoice?.purchaseOrder?.noPesanan || fPurchaseOrderId }] : []), ...purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))]} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} disabled={poLoading} />
+              <SearchableDropdown value={fPurchaseOrderId} onValueChange={handlePurchaseOrderChange} options={tersediaPoOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} disabled={poLoading} />
               {poLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa PO...</p>}
             </div>
             {/* === Update #4 (Q2): panel info status penerimaan PO (read-only) === */}
@@ -2259,6 +2314,10 @@ function InvoiceEditForm({ editId }: { editId: string }) {
   // === Update #048 — panel Penerimaan (link GRNI) + tombol buat penerimaan. ===
   const openFormTab = useTabStore((s) => s.openFormTab);
   const penerimaanLink = usePoPenerimaanLink();
+  // === Update #063 — dropdown PO difilter "masih punya sisa faktur"
+  // (paritas form create); PO invoice yang sedang diedit disisipkan
+  // otomatis lewat currentId supaya label tetap tampil. ===
+  const tersediaPoOptions = useTersediaPoOptions('invoice', purchaseOrderOptions, editPurchaseOrderId || undefined, savedInvoice?.purchaseOrder?.noPesanan);
   // === Update #049 — scope pencarian anchor field wajib (navigasi otomatis). ===
   const formRef = useRef<HTMLDivElement>(null);
 
@@ -2425,7 +2484,7 @@ function InvoiceEditForm({ editId }: { editId: string }) {
               create); nilai tersimpan tetap dipertahankan saat disimpan. === */}
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Purchase Order (opsional)</Label>
-              <SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={[...(editPurchaseOrderId && !purchaseOrderOptions.some((po) => po.id === editPurchaseOrderId) ? [{ id: editPurchaseOrderId, label: savedInvoice?.purchaseOrder?.noPesanan || editPurchaseOrderId }] : []), ...purchaseOrderOptions.map((po) => ({ id: po.id, label: po.noPesanan }))]} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} />
+              <SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={tersediaPoOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} />
             </div>
             <p className="text-sm text-muted-foreground">Perbarui data header invoice (detail barang tidak dapat diubah)</p>
             <div className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-4 py-3">
