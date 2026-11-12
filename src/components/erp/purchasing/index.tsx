@@ -667,6 +667,18 @@ interface PoTersediaItem {
   id: string;
   noPesanan: string;
   supplierId?: string | null;
+  // === Update #065 — estimasi sisa NILAI yang belum difakturkan (hanya
+  // mode invoice; null di mode penerimaan/lppb & fallback daftar penuh).
+  // Dipakai label dropdown PO di form Invoice Pembelian: "PO ASI/… · sisa
+  // Rp …" — PO boleh difakturkan BERKALI-KALI (potong qty per faktur);
+  // PO tetap tampil selama masih ada qty belum terfaktur (#063) dan
+  // hilang setelah seluruh qty terfaktur (lunas). ===
+  sisaNilai?: number | null;
+}
+
+// === Update #065 — label opsi PO form Invoice: tampilkan sisa nilai. ===
+function poTersediaLabel(po: PoTersediaItem): string {
+  return typeof po.sisaNilai === 'number' && po.sisaNilai > 0 ? `${po.noPesanan} · sisa ${formatRp(po.sisaNilai)}` : po.noPesanan;
 }
 
 function useTersediaPoOptions(untuk: 'penerimaan' | 'invoice', fallback: { id: string; noPesanan: string }[], currentId?: string, currentLabel?: string) {
@@ -2095,7 +2107,7 @@ function InvoiceCreateForm() {
               membingungkan). Form kini langsung dimulai dari pilihan PO. === */}
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Purchase Order (opsional)</Label>
-              <SearchableDropdown value={fPurchaseOrderId} onValueChange={handlePurchaseOrderChange} options={tersediaPoOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} disabled={poLoading} />
+              <SearchableDropdown value={fPurchaseOrderId} onValueChange={handlePurchaseOrderChange} options={tersediaPoOptions.map((po) => ({ id: po.id, label: poTersediaLabel(po) }))} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} disabled={poLoading} />
               {poLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa PO...</p>}
             </div>
             {/* === Update #4 (Q2): panel info status penerimaan PO (read-only) === */}
@@ -2523,7 +2535,7 @@ function InvoiceEditForm({ editId }: { editId: string }) {
               create); nilai tersimpan tetap dipertahankan saat disimpan. === */}
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Purchase Order (opsional)</Label>
-              <SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={tersediaPoOptions.map((po) => ({ id: po.id, label: po.noPesanan }))} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} />
+              <SearchableDropdown value={editPurchaseOrderId} onValueChange={setEditPurchaseOrderId} options={tersediaPoOptions.map((po) => ({ id: po.id, label: poTersediaLabel(po) }))} placeholder="Pilih PO (opsional)" allOption={{ id: '', label: 'Tanpa PO' }} />
             </div>
             <p className="text-sm text-muted-foreground">Perbarui data header invoice (detail barang tidak dapat diubah)</p>
             <div className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-4 py-3">

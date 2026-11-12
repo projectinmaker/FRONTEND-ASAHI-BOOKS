@@ -731,6 +731,17 @@ interface SoTersediaItem {
   id: string;
   noPesanan: string;
   pelangganId?: string | null;
+  // === Update #065 — sisa tagihan NILAI SO (hanya mode invoice; estimasi
+  // dari backend: grand_total − Σ nilai-tagih invoice non-batal). Dipakai
+  // label dropdown supaya user melihat SO masih punya sisa (belum lunas)
+  // → boleh difakturkan lagi berkali-kali sampai sisa habis. ===
+  sisaNilai?: number | null;
+}
+
+// === Update #065 — label opsi SO form Invoice: "SO ASI/… · sisa Rp …"
+// (null / 0 → nomor saja; fallback daftar penuh juga nomor saja). ===
+function soTersediaLabel(so: SoTersediaItem): string {
+  return typeof so.sisaNilai === 'number' && so.sisaNilai > 0 ? `${so.noPesanan} · sisa ${formatRp(so.sisaNilai)}` : so.noPesanan;
 }
 
 interface DoTersediaItem {
@@ -1906,7 +1917,7 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Sales Order</Label>
-              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={soOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
+              <SearchableDropdown value={fSalesOrderId} onValueChange={handleSalesOrderChange} options={soOptions.map((so) => ({ id: so.id, label: soTersediaLabel(so) }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
               {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
               {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
               {soRefInfo && (
@@ -2398,7 +2409,7 @@ function InvoicePenjualanEditForm({ editId, subPage, initialNoInvoice, initialSt
                   {/* === Update #046 — label "Link ke Sales Order" → "Sales Order"
                       (paritas form create; permintaan user). === */}
                   <Label className="text-xs font-medium">Sales Order</Label>
-                  <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={soOptions.map((so) => ({ id: so.id, label: so.noPesanan }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
+                  <SearchableDropdown value={editSalesOrderId} onValueChange={handleEditSalesOrderChange} options={soOptions.map((so) => ({ id: so.id, label: soTersediaLabel(so) }))} allOption={{ id: '', label: 'Tidak ada' }} placeholder="Pilih Sales Order (opsional)..." disabled={soLoading} />
                   {soLoading && <p className="text-xs text-muted-foreground mt-1">Memuat sisa SO...</p>}
                   {/* Update #4 (C4): info read-only nomor SO & PO customer terpilih */}
                   {soRefInfo && (

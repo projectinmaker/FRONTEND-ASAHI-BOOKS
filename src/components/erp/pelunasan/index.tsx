@@ -141,7 +141,9 @@ function parseRupiahInput(v: string): string {
 // ─── === Update #044 — Mode Penerimaan Piutang (alur Kas & Bank, poin 5) === ───
 // Penerimaan Penuh / Sebagian → Voucher Penerimaan Bank/Kas (PenerimaanKas);
 // Gagal Tagih → Voucher Memorial (Adjustment) — penghapusan piutang non-kas.
-// Selector hanya muncul untuk piutang; hutang (pembayaran) tidak berubah.
+// === Update #065 — selector kini tampil untuk KEDUA jenis: piutang
+// (Penuh/Sebagian/Gagal Tagih) & hutang (Pembayaran Penuh/Sebagian —
+// permintaan user: "bayar sebagian, tidak harus langsung lunas"). ===
 
 type ModePenerimaan = 'penuh' | 'sebagian' | 'gagal';
 
@@ -163,6 +165,29 @@ const MODE_PENERIMAAN_OPTIONS: { value: ModePenerimaan; title: string; descripti
     title: 'Gagal Tagih',
     description: 'Sisa tagihan dihapusbukukan (non-kas) → Voucher Memorial: Dr Beban Penghapusan Piutang, Cr Piutang Usaha.',
     icon: BookX
+  }
+];
+
+// ─── === Update #065 — Mode Pembayaran Hutang (Pembayaran Pemasok /
+// Pelunasan Invoice Pembelian): Pembayaran Penuh / Pembayaran Sebagian.
+// Permintaan user: "pembayaran pemasok atau pelunasan invoice harus bisa
+// kondisi bayar sebagian — nominal tidak harus langsung lunas."
+// Backend settlement hutang sejak awal menerima 0 < nilai ≤ sisa
+// (settlement_service.prepare — kunci hanya ada di UI #042); kini mode
+// Sebagian dibuka lewat pilihan mode, paritas piutang #044. Gagal Tagih
+// TIDAK tersedia untuk hutang (penghapusan hanya untuk piutang). ───
+const MODE_HUTANG_OPTIONS: { value: ModePenerimaan; title: string; description: string; icon: typeof CircleCheck }[] = [
+  {
+    value: 'penuh',
+    title: 'Pembayaran Penuh',
+    description: 'Nominal per invoice terkunci = sisa tagihan — melunasi invoice pemasok sekaligus.',
+    icon: CircleCheck
+  },
+  {
+    value: 'sebagian',
+    title: 'Pembayaran Sebagian',
+    description: 'Nominal per invoice dapat diedit (≤ sisa tagihan) — invoice menjadi PARSIAL; sisanya dibayar di kemudian hari.',
+    icon: Split
   }
 ];
 
@@ -205,8 +230,11 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   // Voucher Memorial non-kas, bukan penerimaan kas/bank. ──
   const [modePenerimaan, setModePenerimaan] = useState<ModePenerimaan>('penuh');
   const isGagalTagih = isPiutang && modePenerimaan === 'gagal';
-  // Nominal per invoice terkunci hanya pada mode Penuh (dan hutang #042).
-  const nominalTerKunci = !isPiutang || modePenerimaan === 'penuh';
+  // === Update #065 — nominal per invoice terkunci HANYA pada mode Penuh
+  // (piutang & hutang sama — hutang kini punya mode Pembayaran Sebagian;
+  // kebijakan lama "hutang selalu terkunci penuh" #042 digantikan pilihan
+  // mode, paritas piutang #044). ===
+  const nominalTerKunci = modePenerimaan === 'penuh';
 
   // ── Update #044 — akun beban penghapusan piutang (mode Gagal Tagih;
   // opsional — kosong = default Setting Akun BEBAN_PENGHAPUSAN_PIUTANG) ──
@@ -366,9 +394,10 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   }, []);
 
   // === Update #044 — nominal alokasi: terkunci HANYA pada mode Penerimaan
-  // Penuh (dan hutang — kebijakan #042). Mode Sebagian / Gagal Tagih:
-  // nominal dapat diedit (0 < nilai <= sisa tagihan; diskon tetap
-  // bisa diisi pada mode Sebagian). ===
+  // Penuh. Mode Sebagian / Gagal Tagih: nominal dapat diedit
+  // (0 < nilai <= sisa tagihan; diskon tetap bisa diisi pada mode Sebagian).
+  // === Update #065 — hutang kini sama: mode Pembayaran Sebagian membuka
+  // edit nominal (kunci "hutang selalu penuh" #042 digantikan). ===
   const updateAllocation = useCallback(
     (invoiceId: string, val: string) => {
       if (nominalTerKunci) {
@@ -551,7 +580,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     if (d.mataUang) setMataUang(d.mataUang);
     if (d.nilaiTukar) setNilaiTukar(d.nilaiTukar);
     // === Update #044 — mode Penerimaan Piutang + akun beban Gagal Tagih ===
-    if (isPiutang && d.modePenerimaan) setModePenerimaan(d.modePenerimaan);
+    // === Update #065 — hutang: mode tersimpan ikut dipulihkan (hanya
+    // penuh/sebagian; nilai lain dari draft lama → fallback penuh). ===
+    if (d.modePenerimaan) setModePenerimaan(isPiutang ? d.modePenerimaan : d.modePenerimaan === 'sebagian' ? 'sebagian' : 'penuh');
     if (d.akunBebanId) setAkunBebanId(d.akunBebanId);
   }, []);
 
@@ -572,12 +603,14 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       // disinkronkan ulang ke sisaTagihan terbaru (nilai tersimpan mungkin
       // stale — sisa berubah bila ada pembayaran lain). ===
       // === Update #044 — mode Sebagian/Gagal: pulihkan nominal TERSIMPAN
-      // (bisa < sisa); mode Penuh & hutang tetap sinkron ke sisa terbaru. ===
+      // (bisa < sisa); mode Penuh tetap sinkron ke sisa terbaru.
+      // === Update #065 — hutang mode Sebagian juga memulihkan nominal
+      // tersimpan (paritas piutang). ===
       if (inv) {
         const sisaNow = parseNum(inv.sisaTagihan);
         const savedNilai = parseNum(parseRupiahInput(a.nilaiDisplay));
         const modeDraft = (d.modePenerimaan || 'penuh') as ModePenerimaan;
-        const pakaiTersimpan = isPiutang && (modeDraft === 'sebagian' || modeDraft === 'gagal') && savedNilai > 0 && savedNilai <= sisaNow;
+        const pakaiTersimpan = (modeDraft === 'sebagian' || (isPiutang && modeDraft === 'gagal')) && savedNilai > 0 && savedNilai <= sisaNow;
         const nilaiRestore = pakaiTersimpan ? sanitizeRupiahInput(String(savedNilai)) : sisaNow > 0 ? sanitizeRupiahInput(String(sisaNow)) : '';
         restored[a.invoiceId] = { invoice: inv, nilaiDisplay: nilaiRestore, diskonDisplay: a.diskonDisplay || '', noBuktiPotong: a.noBuktiPotong || '', masaPajak: a.masaPajak || '' };
       }
@@ -615,7 +648,8 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       mataUang,
       nilaiTukar,
       // === Update #044 — mode Penerimaan Piutang + akun beban Gagal Tagih ===
-      modePenerimaan: isPiutang ? modePenerimaan : undefined,
+      // === Update #065 — mode ikut tersimpan untuk hutang (penuh/sebagian). ===
+      modePenerimaan,
       akunBebanId,
       alokasi: selectedList.map((r) => ({ invoiceId: r.invoice.invoiceId, nilaiDisplay: r.nilaiDisplay, diskonDisplay: r.diskonDisplay || '', noBuktiPotong: r.noBuktiPotong || '', masaPajak: r.masaPajak || '' }))
     });
@@ -675,8 +709,9 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         break;
       }
       const sisa = parseNum(row.invoice.sisaTagihan);
-      // === Update #044 — nominal: mode Penuh (dan hutang) terkunci == sisa
-      // (#042); mode Sebagian / Gagal Tagih boleh 0 < n <= sisa. ===
+      // === Update #044 — nominal: mode Penuh terkunci == sisa (#042);
+      // mode Sebagian / Gagal Tagih boleh 0 < n <= sisa.
+      // === Update #065 — aturan sama untuk piutang & hutang. ===
       if (nominalTerKunci ? n !== sisa : n > sisa + 0.01) {
         hasOver = true;
         break;
@@ -690,7 +725,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     }
     const nilaiLabel = isGagalTagih ? 'penghapusan' : 'pembayaran';
     if (hasInvalid) e.alokasi = `Semua nilai ${nilaiLabel} harus lebih dari 0`;
-    if (!e.alokasi && hasOver) e.alokasi = nominalTerKunci ? `Nilai ${nilaiLabel} terkunci dan harus sama dengan sisa tagihan invoice terkait (mode Penerimaan Penuh)` : `Nilai ${nilaiLabel} tidak boleh melebihi sisa tagihan invoice terkait`;
+    if (!e.alokasi && hasOver) e.alokasi = nominalTerKunci ? `Nilai ${nilaiLabel} terkunci dan harus sama dengan sisa tagihan invoice terkait (mode ${isPiutang ? 'Penerimaan' : 'Pembayaran'} Penuh)` : `Nilai ${nilaiLabel} tidak boleh melebihi sisa tagihan invoice terkait`;
     if (!e.alokasi && hasDiskonOver) e.alokasi = 'Diskon tidak boleh melebihi nilai pembayaran invoice terkait';
     // Update #5 — penalti (tidak relevan untuk Gagal Tagih — non-kas)
     if (!isGagalTagih && penaltiNum < 0) e.penalti = 'Penalti tidak boleh negatif';
@@ -1134,58 +1169,61 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
           </CardHeader>
           <CardContent className="space-y-5">
             {/* === Update #044 — Mode Penerimaan Piutang (Penuh / Sebagian /
-                Gagal Tagih; hanya piutang — hutang tidak berubah). === */}
-            {isPiutang && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  Mode Penerimaan Piutang <span className="text-destructive">*</span>
-                </Label>
-                <div role="radiogroup" aria-label="Mode Penerimaan Piutang" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {MODE_PENERIMAAN_OPTIONS.map((opt) => {
-                    const active = modePenerimaan === opt.value;
-                    const Icon = opt.icon;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        onClick={() => {
-                          if (modePenerimaan === opt.value) return;
-                          setModePenerimaan(opt.value);
-                          // === Update #044 — pindah ke mode Penuh: sinkronkan
-                          // ulang nominal terpilih ke sisa tagihan terbaru
-                          // (nilai mode Sebagian/Gagal bisa < sisa). ===
-                          if (opt.value === 'penuh') {
-                            setSelected((prev) => {
-                              const next: Record<string, AllocationRow> = {};
-                              for (const [key, row] of Object.entries(prev)) {
-                                const sisaNow = parseNum(row.invoice.sisaTagihan);
-                                next[key] = { ...row, nilaiDisplay: sisaNow > 0 ? sanitizeRupiahInput(String(sisaNow)) : '' };
-                              }
-                              return next;
-                            });
-                          }
-                        }}
-                        className={'flex h-full flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors ' + (active ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500' : 'border-border bg-background hover:border-emerald-300 hover:bg-emerald-50/40')}>
-                        <span className="flex items-center gap-2">
-                          <span className={'flex h-7 w-7 items-center justify-center rounded-md ' + (active ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground')}>
-                            <Icon className="h-4 w-4" aria-hidden="true" />
-                          </span>
-                          <span className={'text-sm font-semibold ' + (active ? 'text-emerald-700' : 'text-foreground')}>{opt.title}</span>
+                Gagal Tagih).
+                === Update #065 — selector kini juga tampil untuk HUTANG
+                (Pembayaran Pemasok / Pelunasan Invoice Pembelian) dengan 2
+                pilihan: Pembayaran Penuh / Pembayaran Sebagian — nominal
+                bayar tidak harus langsung lunas. Gagal Tagih tetap khusus
+                piutang (penghapusan piutang non-kas). === */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">
+                Mode {isPiutang ? 'Penerimaan Piutang' : 'Pembayaran Hutang'} <span className="text-destructive">*</span>
+              </Label>
+              <div role="radiogroup" aria-label={isPiutang ? 'Mode Penerimaan Piutang' : 'Mode Pembayaran Hutang'} className={`grid grid-cols-1 gap-3 ${isPiutang ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                {(isPiutang ? MODE_PENERIMAAN_OPTIONS : MODE_HUTANG_OPTIONS).map((opt) => {
+                  const active = modePenerimaan === opt.value;
+                  const Icon = opt.icon;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => {
+                        if (modePenerimaan === opt.value) return;
+                        setModePenerimaan(opt.value);
+                        // === Update #044 — pindah ke mode Penuh: sinkronkan
+                        // ulang nominal terpilih ke sisa tagihan terbaru
+                        // (nilai mode Sebagian/Gagal bisa < sisa). ===
+                        if (opt.value === 'penuh') {
+                          setSelected((prev) => {
+                            const next: Record<string, AllocationRow> = {};
+                            for (const [key, row] of Object.entries(prev)) {
+                              const sisaNow = parseNum(row.invoice.sisaTagihan);
+                              next[key] = { ...row, nilaiDisplay: sisaNow > 0 ? sanitizeRupiahInput(String(sisaNow)) : '' };
+                            }
+                            return next;
+                          });
+                        }
+                      }}
+                      className={'flex h-full flex-col items-start gap-1.5 rounded-lg border p-3 text-left transition-colors ' + (active ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500' : 'border-border bg-background hover:border-emerald-300 hover:bg-emerald-50/40')}>
+                      <span className="flex items-center gap-2">
+                        <span className={'flex h-7 w-7 items-center justify-center rounded-md ' + (active ? 'bg-emerald-100 text-emerald-700' : 'bg-muted text-muted-foreground')}>
+                          <Icon className="h-4 w-4" aria-hidden="true" />
                         </span>
-                        <span className="text-[11px] leading-snug text-muted-foreground">{opt.description}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {isGagalTagih && (
-                  <p className="text-xs text-amber-700">
-                    Mode <strong>Gagal Tagih</strong> tidak menyetor kas — sisa tagihan dihapusbukukan lewat <strong>Voucher Memorial (Adjustment)</strong> dengan jurnal Dr Beban Penghapusan Piutang, Cr Piutang Usaha. Invoice terkait menjadi lunas tanpa penerimaan kas/bank.
-                  </p>
-                )}
+                        <span className={'text-sm font-semibold ' + (active ? 'text-emerald-700' : 'text-foreground')}>{opt.title}</span>
+                      </span>
+                      <span className="text-[11px] leading-snug text-muted-foreground">{opt.description}</span>
+                    </button>
+                  );
+                })}
               </div>
-            )}
+              {isGagalTagih && (
+                <p className="text-xs text-amber-700">
+                  Mode <strong>Gagal Tagih</strong> tidak menyetor kas — sisa tagihan dihapusbukukan lewat <strong>Voucher Memorial (Adjustment)</strong> dengan jurnal Dr Beban Penghapusan Piutang, Cr Piutang Usaha. Invoice terkait menjadi lunas tanpa penerimaan kas/bank.
+                </p>
+              )}
+            </div>
 
             {/* Info banner */}
             <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 p-3">
@@ -1343,11 +1381,13 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
             {/* Allocation table */}
             <div className="space-y-2" id="pay-alokasi">
               <Label className="text-sm font-medium">{isGagalTagih ? 'Rincian Penghapusan Piutang' : 'Rincian Alokasi Pembayaran'}</Label>
-              {/* === Update #044 — nominal per invoice: mode Penuh (dan hutang)
-                  TERKUNCI = sisa tagihan (#042); mode Sebagian / Gagal Tagih
-                  dapat diedit (≤ sisa). Gagal Tagih: tanpa PPh 23 / bukti
-                  potong / diskon (non-kas). === */}
-              <p className="text-xs text-muted-foreground">{nominalTerKunci ? `Nilai ${isGagalTagih ? 'penghapusan' : 'pembayaran'} per invoice terkunci otomatis sebesar sisa tagihan (tidak dapat diedit).${!isPiutang ? ' Bukti potong, masa pajak dan diskon tetap dapat diisi.' : ' Bukti potong dan masa pajak tetap dapat diisi.'}` : `Nilai ${isGagalTagih ? 'penghapusan' : 'penerimaan'} per invoice dapat diedit — maksimal sebesar sisa tagihan (mode ${isGagalTagih ? 'Gagal Tagih' : 'Penerimaan Sebagian'}).`}</p>
+              {/* === Update #044 — nominal per invoice: mode Penuh TERKUNCI
+                  = sisa tagihan (#042); mode Sebagian / Gagal Tagih dapat
+                  diedit (≤ sisa). Gagal Tagih: tanpa PPh 23 / bukti
+                  potong / diskon (non-kas).
+                  === Update #065 — hutang: mode Pembayaran Penuh terkunci,
+                  Pembayaran Sebagian dapat diedit (bayar sebagian). === */}
+              <p className="text-xs text-muted-foreground">{nominalTerKunci ? `Nilai ${isGagalTagih ? 'penghapusan' : 'pembayaran'} per invoice terkunci otomatis sebesar sisa tagihan (tidak dapat diedit).${!isPiutang ? ' Bukti potong, masa pajak dan diskon tetap dapat diisi.' : ' Bukti potong dan masa pajak tetap dapat diisi.'}` : `Nilai ${isGagalTagih ? 'penghapusan' : isPiutang ? 'penerimaan' : 'pembayaran'} per invoice dapat diedit — maksimal sebesar sisa tagihan (mode ${isGagalTagih ? 'Gagal Tagih' : isPiutang ? 'Penerimaan Sebagian' : 'Pembayaran Sebagian'}); tidak harus langsung lunas.`}</p>
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
@@ -1372,7 +1412,8 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                       const sisa = parseNum(row.invoice.sisaTagihan);
                       const n = parseNum(parseRupiahInput(row.nilaiDisplay));
                       // Update #044 — nominal: terkunci (== sisa) hanya mode
-                      // Penuh & hutang; Sebagian/Gagal boleh ≤ sisa.
+                      // Penuh; Sebagian/Gagal boleh ≤ sisa. Hutang pun sejak
+                      // #065 punya mode Pembayaran Sebagian.
                       const over = nominalTerKunci ? n !== sisa : n > sisa + 0.01;
                       const sisaSetelah = sisa - n;
                       const disk = parseNum(parseRupiahInput(row.diskonDisplay || ''));
@@ -1384,9 +1425,11 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
                           <TableCell className="text-right font-mono text-xs">{formatRp(sisa)}</TableCell>
                           <TableCell className="text-right">
                             {/* === Update #044 — input nilai: READ-ONLY hanya pada
-                                mode terkunci (Penuh/hutang — #042); mode Sebagian /
-                                Gagal Tagih dapat diedit (≤ sisa). === */}
-                            {nominalTerKunci ? <Input type="text" inputMode="numeric" value={row.nilaiDisplay} readOnly aria-readonly="true" title="Nilai terkunci — otomatis sebesar sisa tagihan invoice (mode Penerimaan Penuh)" onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className="text-right font-mono h-8 text-sm bg-muted/50 text-muted-foreground cursor-not-allowed focus-visible:ring-0" /> : <Input type="text" inputMode="numeric" value={row.nilaiDisplay} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${over ? 'border-destructive' : ''}`} aria-label={`Nilai ${isGagalTagih ? 'penghapusan' : 'penerimaan'} ${row.invoice.noDokumen}`} />}
+                                mode terkunci (Penuh — #042); mode Sebagian /
+                                Gagal Tagih dapat diedit (≤ sisa).
+                                === Update #065 — berlaku juga untuk hutang
+                                (mode Pembayaran Sebagian). === */}
+                            {nominalTerKunci ? <Input type="text" inputMode="numeric" value={row.nilaiDisplay} readOnly aria-readonly="true" title={`Nilai terkunci — otomatis sebesar sisa tagihan invoice (mode ${isPiutang ? 'Penerimaan' : 'Pembayaran'} Penuh)`} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className="text-right font-mono h-8 text-sm bg-muted/50 text-muted-foreground cursor-not-allowed focus-visible:ring-0" /> : <Input type="text" inputMode="numeric" value={row.nilaiDisplay} onChange={(e) => updateAllocation(row.invoice.invoiceId, e.target.value)} className={`text-right font-mono h-8 text-sm ${over ? 'border-destructive' : ''}`} aria-label={`Nilai ${isGagalTagih ? 'penghapusan' : isPiutang ? 'penerimaan' : 'pembayaran'} ${row.invoice.noDokumen}`} />}
                             {over ? <p className="mt-1 text-[11px] leading-tight text-destructive">{nominalTerKunci ? 'Nilai harus sama dengan sisa tagihan' : 'Tidak boleh melebihi sisa tagihan'}</p> : sisaSetelah <= 0 ? <p className="mt-1 text-[11px] leading-tight text-emerald-700">{isGagalTagih ? 'Dihapus penuh' : 'Lunas'}</p> : <p className="mt-1 text-[11px] leading-tight text-amber-700">Sisa setelah ini: {formatRp(sisaSetelah)}</p>}
                           </TableCell>
                           {/* === Update #053 — sel input PPh 23 + tombol 2%
