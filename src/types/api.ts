@@ -1292,6 +1292,11 @@ export interface SalesOrderSisaResponse {
   // atas field DP/Pelunasan invoice berikutnya atas SO ini. ===
   sisaNilai: number;
   details: SalesOrderSisaDetail[];
+  // === Update #068 — baris biaya tambahan SO (prefill tabel biaya di form
+  // Invoice; opsional — backend lama tidak mengirimnya). Tanpa ini biaya SO
+  // tidak pernah ikut difakturkan → SO tidak pernah "tertagih penuh" dan
+  // statusnya nyangkut di Diproses. ===
+  biayaTambahan?: { nama: string; nilai: number }[];
 }
 
 // ── Update #004: sisa DO (tarik No DO di form Invoice — mirror pola No SO) ──

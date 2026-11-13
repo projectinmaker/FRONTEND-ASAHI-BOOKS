@@ -693,29 +693,39 @@ function poTersediaLabel(po: PoTersediaItem): string {
 }
 
 function useTersediaPoOptions(untuk: 'penerimaan' | 'invoice', fallback: { id: string; noPesanan: string }[], currentId?: string, currentLabel?: string) {
-  const [rows, setRows] = useState<PoTersediaItem[] | null>(null);
+  // === Update #068 — hardening "flash daftar penuh": sebelumnya, selama
+  // request tersedia masih berjalan (rows === null), dropdown memakai
+  // DAFTAR PENUH (fallback) — PO yang sudah dipakai sempat tampil sesaat
+  // (atau selamanya bila request lambat/gagal senyap), sehingga terkesan
+  // filter "yang sudah dipakai jangan tampil" tidak berlaku. Kini:
+  // - PENDING → tampilkan hanya PO yang sedang dipilih (bukan daftar penuh);
+  // - GAGAL (endpoint belum ada di backend lama) → fallback daftar penuh. ===
+  const [state, setState] = useState<{ rows: PoTersediaItem[] | null; failed: boolean }>({ rows: null, failed: false });
   useEffect(() => {
     let cancelled = false;
+    setState({ rows: null, failed: false });
     api
       .get<PoTersediaItem[]>(`/pembelian/purchase-order/tersedia?untuk=${untuk}`)
       .then((r) => {
-        if (!cancelled && Array.isArray(r)) setRows(r);
+        if (!cancelled && Array.isArray(r)) setState({ rows: r, failed: false });
+        else if (!cancelled) setState({ rows: null, failed: true });
       })
       .catch(() => {
         /* endpoint belum ada (backend belum di-update) → pakai daftar penuh */
+        if (!cancelled) setState({ rows: null, failed: true });
       });
     return () => {
       cancelled = true;
     };
   }, [untuk]);
   return useMemo(() => {
-    const base = rows ?? fallback;
+    const base = state.failed ? fallback : (state.rows ?? []);
     if (currentId && !base.some((o) => o.id === currentId)) {
       const label = fallback.find((o) => o.id === currentId)?.noPesanan || currentLabel || currentId;
       return [{ id: currentId, noPesanan: label }, ...base];
     }
     return base;
-  }, [rows, fallback, currentId, currentLabel]);
+  }, [state, fallback, currentId, currentLabel]);
 }
 
 // ─── Props Interface ────────────────────────────────────────────────────────
@@ -3725,6 +3735,32 @@ export function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, p
     }
   }, [reverseTarget, reverseReason, fetchData]);
 
+  // ── === Update #068 — "Selesaikan" penerimaan DIPROSES (pemulihan). ===
+  // Penerimaan tertinggal di Diproses bila finalisasi otomatis saat pembuatan
+  // gagal (mis. setting GRNI belum ada, harga perolehan tak unik, periode
+  // ditutup). Qty-nya sudah "diterima" (PO-nya disembunyikan dari dropdown)
+  // tetapi penerimaan tidak pernah Selesai → PO tidak akan pernah naik
+  // status. Tombol ini memfinalisasi ulang lewat endpoint baru
+  // POST /penerimaan/{id}/selesaikan (mirror pola LPPB).
+  const [finishTarget, setFinishTarget] = useState<PenerimaanBarangResponse | null>(null);
+  const [finishing, setFinishing] = useState(false);
+
+  const handleFinish = useCallback(async () => {
+    if (!finishTarget) return;
+    setFinishing(true);
+    try {
+      await api.post<PenerimaanBarangResponse>(`/pembelian/penerimaan/${finishTarget.id}/selesaikan`);
+      toast.success(`Penerimaan ${finishTarget.noForm} selesai — stok & jurnal diproses`);
+      setFinishTarget(null);
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.detail : e instanceof Error ? e.message : 'Gagal menyelesaikan penerimaan';
+      toast.error('Penerimaan belum bisa diselesaikan', { description: msg, duration: 8000 });
+    } finally {
+      setFinishing(false);
+    }
+  }, [finishTarget, fetchData]);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -3927,6 +3963,15 @@ export function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, p
                                 <Undo2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
+                            {/* === Update #068 — tombol "Selesaikan" untuk
+                                penerimaan yang tertinggal di DIPROSES
+                                (finalisasi saat pembuatan gagal): tambah
+                                stok + jurnal GRNI + sinkronisasi status PO. === */}
+                            {d.status === 'DIPROSES' && (
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-emerald-600 hover:text-emerald-700" onClick={() => setFinishTarget(d)} title="Selesaikan penerimaan (tambah stok + jurnal)" disabled={finishing}>
+                                <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Selesaikan
+                              </Button>
+                            )}
                             {(d.status === 'DRAFT' || d.status === 'DIPROSES') && (
                               <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
                                 Batal
@@ -4000,6 +4045,38 @@ export function PenerimaanTab({ supplierOptions, barangOptions, satuanOptions, p
         submitting={cancelSubmitting}
         onConfirm={(r) => handleCancel(r)}
       />
+
+      {/* === Update #068 — dialog "Selesaikan" penerimaan DIPROSES. === */}
+      <AlertDialog
+        open={!!finishTarget}
+        onOpenChange={(open) => {
+          if (!open && !finishing) setFinishTarget(null);
+        }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Selesaikan Penerimaan {finishTarget?.noForm}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Penerimaan ini masih berstatus <span className="font-medium">Diproses</span> — finalisasi otomatis saat pembuatannya gagal, sehingga stok belum ditambah dan PO sumbernya tidak bisa naik status. Menyelesaikan sekarang akan:
+              <br />• Menambah stok barang ke gudang + mencatat jurnalnya
+              <br />• Mengubah status penerimaan menjadi Selesai
+              <br />• Menyinkronkan status PO sumber (bila rantainya sudah lengkap)
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={finishing}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleFinish();
+              }}
+              disabled={finishing}
+              className="bg-emerald-600 text-white hover:bg-emerald-700 gap-2">
+              {finishing && <Loader2 className="h-4 w-4 animate-spin" />}
+              Ya, Selesaikan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

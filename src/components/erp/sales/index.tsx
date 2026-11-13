@@ -24,7 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableDropdown, type SearchableDropdownOption } from '@/components/ui/searchable-dropdown';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2, Package, Type } from 'lucide-react';
+import { FileText, Truck, Receipt, RotateCcw, Plus, Trash2, ShoppingCart, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Info, Printer, Undo2, Package, Type, CheckCircle2 } from 'lucide-react';
 import { formatRp, formatDate } from '@/lib/pdf-utils';
 // === Update #050 — navigasi otomatis ke field wajib yang terlewat. ===
 import { focusFormError } from '@/lib/form-error-focus';
@@ -827,55 +827,66 @@ interface DoTersediaItem {
 }
 
 function useTersediaSoOptions(untuk: 'pengiriman' | 'invoice', fallback: { id: string; noPesanan: string }[], currentId?: string, currentLabel?: string) {
-  const [rows, setRows] = useState<SoTersediaItem[] | null>(null);
+  // === Update #068 — hardening "flash daftar penuh" (paritas purchasing):
+  // PENDING → hanya SO yang sedang dipilih; GAGAL (backend lama tanpa
+  // endpoint) → fallback daftar penuh. Sebelumnya daftar penuh dipakai
+  // selama request berjalan sehingga SO yang sudah terpakai sempat tampil. ===
+  const [state, setState] = useState<{ rows: SoTersediaItem[] | null; failed: boolean }>({ rows: null, failed: false });
   useEffect(() => {
     let cancelled = false;
+    setState({ rows: null, failed: false });
     api
       .get<SoTersediaItem[]>(`/penjualan/sales-order/tersedia?untuk=${untuk}`)
       .then((r) => {
-        if (!cancelled && Array.isArray(r)) setRows(r);
+        if (!cancelled && Array.isArray(r)) setState({ rows: r, failed: false });
+        else if (!cancelled) setState({ rows: null, failed: true });
       })
       .catch(() => {
         /* endpoint belum ada (backend belum di-update) → pakai daftar penuh */
+        if (!cancelled) setState({ rows: null, failed: true });
       });
     return () => {
       cancelled = true;
     };
   }, [untuk]);
   return useMemo(() => {
-    const base = rows ?? fallback;
+    const base = state.failed ? fallback : (state.rows ?? []);
     if (currentId && !base.some((o) => o.id === currentId)) {
       const label = fallback.find((o) => o.id === currentId)?.noPesanan || currentLabel || currentId;
       return [{ id: currentId, noPesanan: label }, ...base];
     }
     return base;
-  }, [rows, fallback, currentId, currentLabel]);
+  }, [state, fallback, currentId, currentLabel]);
 }
 
 function useTersediaDoOptions(fallback: { id: string; noSuratJalan: string; pelangganId: string }[], currentId?: string, currentLabel?: string) {
-  const [rows, setRows] = useState<DoTersediaItem[] | null>(null);
+  // === Update #068 — hardening "flash daftar penuh" (paritas SO/PO). ===
+  const [state, setState] = useState<{ rows: DoTersediaItem[] | null; failed: boolean }>({ rows: null, failed: false });
   useEffect(() => {
     let cancelled = false;
+    setState({ rows: null, failed: false });
     api
       .get<DoTersediaItem[]>('/penjualan/pengiriman/tersedia')
       .then((r) => {
-        if (!cancelled && Array.isArray(r)) setRows(r);
+        if (!cancelled && Array.isArray(r)) setState({ rows: r, failed: false });
+        else if (!cancelled) setState({ rows: null, failed: true });
       })
       .catch(() => {
         /* endpoint belum ada (backend belum di-update) → pakai daftar penuh */
+        if (!cancelled) setState({ rows: null, failed: true });
       });
     return () => {
       cancelled = true;
     };
   }, []);
   return useMemo(() => {
-    const base = rows ?? fallback;
+    const base = state.failed ? fallback : (state.rows ?? []);
     if (currentId && !base.some((o) => o.id === currentId)) {
       const cur = fallback.find((o) => o.id === currentId);
       return [{ id: currentId, noSuratJalan: cur?.noSuratJalan || currentLabel || currentId, pelangganId: cur?.pelangganId || '' }, ...base];
     }
     return base;
-  }, [rows, fallback, currentId, currentLabel]);
+  }, [state, fallback, currentId, currentLabel]);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -893,29 +904,33 @@ interface InvoiceTersediaReturItem {
 }
 
 function useTersediaReturInvoiceOptions(fallback: { id: string; noInvoice: string }[], currentId?: string) {
-  const [rows, setRows] = useState<InvoiceTersediaReturItem[] | null>(null);
+  // === Update #068 — hardening "flash daftar penuh" (paritas SO/PO/DO). ===
+  const [state, setState] = useState<{ rows: InvoiceTersediaReturItem[] | null; failed: boolean }>({ rows: null, failed: false });
   useEffect(() => {
     let cancelled = false;
+    setState({ rows: null, failed: false });
     api
       .get<InvoiceTersediaReturItem[]>('/penjualan/sales-invoice/tersedia-retur')
       .then((r) => {
-        if (!cancelled && Array.isArray(r)) setRows(r);
+        if (!cancelled && Array.isArray(r)) setState({ rows: r, failed: false });
+        else if (!cancelled) setState({ rows: null, failed: true });
       })
       .catch(() => {
         /* endpoint belum ada (backend belum di-update) → pakai daftar penuh */
+        if (!cancelled) setState({ rows: null, failed: true });
       });
     return () => {
       cancelled = true;
     };
   }, []);
   return useMemo(() => {
-    const base = rows ?? fallback;
+    const base = state.failed ? fallback : (state.rows ?? []);
     if (currentId && !base.some((o) => o.id === currentId)) {
       const label = fallback.find((o) => o.id === currentId)?.noInvoice || currentId;
       return [{ id: currentId, noInvoice: label }, ...base];
     }
     return base;
-  }, [rows, fallback, currentId]);
+  }, [state, fallback, currentId]);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1652,12 +1667,22 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
   // baris yang ditarik (bila > 0 → prefill min(sisaNilai, Σ); selain itu
   // sisaNilai) — dipakai saat SO dipilih (baris dari SO) / auto-link dari
   // No DO (baris dari DO). autoFill=false → hanya mengisi info tanpa
-  // mengubah fDpPelunasan (dipakai saat draft dipulihkan). ===
-  const applySoSisaInfo = useCallback(async (soId: string, penuhNilaiBaris: number, autoFill: boolean) => {
+  // mengubah fDpPelunasan (dipakai saat draft dipulihkan).
+  // === Update #068 — BIAYA TAMBAHAN SO di-prefill ke tabel biaya invoice
+  // (prefillBiaya=true saat pemilihan SO/DO baru). Nilai-tagih invoice kini
+  // = DP + Σ biaya (backend #068), jadi auto-DP TETAP min(sisaNilai, Σ nilai
+  // baris) — biaya ditagih lewat baris biaya, BUKAN di dalam DP (mencegah
+  // dobel hitung: grand_total invoice mode DP = dp + PPN + biaya). ===
+  const applySoSisaInfo = useCallback(async (soId: string, penuhNilaiBaris: number, autoFill: boolean, prefillBiaya = false) => {
     try {
       const sisa = await api.get<SalesOrderSisaResponse>(`/penjualan/sales-order/${soId}/sisa`);
       const sisaNilai = Number(sisa.sisaNilai) || 0;
       setSoSisaInfo({ noPesanan: sisa.noPesanan || '', sisaNilai });
+      // === Update #068 — baris biaya SO (backend #068; backend lama → kosong). ===
+      const biayaRows = Array.isArray(sisa.biayaTambahan) ? sisa.biayaTambahan : [];
+      if (prefillBiaya) {
+        setFBiayaTambahan(biayaRows.map((b) => ({ id: crypto.randomUUID(), nama: b.nama || 'Biaya', jumlah: String(Number(b.nilai) || 0) })));
+      }
       if (autoFill) {
         const autoDp = penuhNilaiBaris > 0 ? Math.min(sisaNilai, penuhNilaiBaris) : sisaNilai;
         setFDpPelunasan(autoDp > 0 ? String(autoDp) : '');
@@ -1803,6 +1828,13 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         const rows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
         // === Update #042 — sisa tagihan NILAI SO + auto-isi DP/Pelunasan:
         // min(sisaNilai, Σ nilai penuh baris yang ditarik). ===
+        // === Update #068 — baris BIAYA TAMBAHAN SO di-prefill ke tabel biaya
+        // invoice (ditagih sebagai baris biaya; nilai-tagih invoice kini
+        // = DP + Σ biaya di backend #068). Auto-DP TETAP min(sisaNilai,
+        // Σ nilai baris) — biaya TIDAK dimasukkan ke DP supaya tidak dobel
+        // (grand_total invoice mode DP = dp + PPN + biaya). ===
+        const biayaRows = Array.isArray(sisa.biayaTambahan) ? sisa.biayaTambahan : [];
+        setFBiayaTambahan(biayaRows.map((b) => ({ id: crypto.randomUUID(), nama: b.nama || 'Biaya', jumlah: String(Number(b.nilai) || 0) })));
         const sisaNilai = Number(sisa.sisaNilai) || 0;
         setSoSisaInfo({ noPesanan: sisa.noPesanan || '', sisaNilai });
         const penuhBaris = rows.reduce((s, d) => s + (Number(d.sisaFaktur) || 0) * (Number(d.harga) || 0), 0);
@@ -1863,13 +1895,16 @@ function InvoicePenjualanCreateForm({ subPage }: { subPage: string }) {
         // Auto-link header SO dari DO (No SO & No PO customer ikut tercetak).
         // === Update #042 — SO auto-link juga memuat info sisa tagihan NILAI SO
         // (untuk hint + validasi DP/Pelunasan) dan meng-auto-isi nilai DP dari
-        // sisa SO (min(sisaNilai, Σ nilai penuh baris DO yang ditarik)). ===
+        // sisa SO (min(sisaNilai, Σ nilai penuh baris DO yang ditarik)).
+        // === Update #068 — prefillBiaya=true: biaya tambahan SO ikut
+        // di-prefill ke tabel biaya invoice (ditagih sebagai baris biaya;
+        // auto-DP tetap tanpa biaya — paritas jalur pilih SO langsung). ===
         const doRows = (sisa.details || []).filter((d) => Number(d.sisaFaktur) > 0);
         const penuhBaris = doRows.reduce((s, d) => s + (Number(d.sisaFaktur) || 0) * (Number(d.harga) || 0), 0);
         if (sisa.salesOrderId) {
           setFSalesOrderId(sisa.salesOrderId);
           await loadSoRefInfo(sisa.salesOrderId);
-          await applySoSisaInfo(sisa.salesOrderId, penuhBaris, true);
+          await applySoSisaInfo(sisa.salesOrderId, penuhBaris, true, true);
         } else {
           setFSalesOrderId('');
           setSoRefInfo(null);
@@ -3644,6 +3679,31 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
     }
   }, [reverseTarget, reverseReason, fetchData]);
 
+  // ── === Update #068 — "Selesaikan" DO DIPROSES (pemulihan; mirror
+  // Penerimaan di modul Pembelian). DO tertinggal di Diproses bila
+  // finalisasi otomatis saat pembuatan gagal (mis. stok tidak cukup,
+  // periode ditutup) — qty-nya sudah dihitung "terkirim" tetapi DO tidak
+  // pernah Selesai. Tombol ini memfinalisasi ulang lewat endpoint baru
+  // POST /pengiriman/{id}/selesaikan. ===
+  const [finishTarget, setFinishTarget] = useState<PengirimanBarangResponse | null>(null);
+  const [finishing, setFinishing] = useState(false);
+
+  const handleFinish = useCallback(async () => {
+    if (!finishTarget) return;
+    setFinishing(true);
+    try {
+      await api.post<PengirimanBarangResponse>(`/penjualan/pengiriman/${finishTarget.id}/selesaikan`);
+      toast.success(`Pengiriman ${finishTarget.noSuratJalan} selesai — stok & jurnal diproses`);
+      setFinishTarget(null);
+      fetchData();
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.detail : e instanceof Error ? e.message : 'Gagal menyelesaikan pengiriman';
+      toast.error('Pengiriman belum bisa diselesaikan', { description: msg, duration: 8000 });
+    } finally {
+      setFinishing(false);
+    }
+  }, [finishTarget, fetchData]);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -3832,6 +3892,15 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
                                 <Undo2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
+                            {/* === Update #068 — tombol "Selesaikan" untuk DO
+                                yang tertinggal di DIPROSES (finalisasi saat
+                                pembuatan gagal): kurangi stok + jurnal HPP
+                                + perbarui status pemenuhan SO. === */}
+                            {d.status === 'DIPROSES' && (
+                              <Button variant="ghost" size="sm" className="h-7 text-xs text-emerald-600 hover:text-emerald-700" onClick={() => setFinishTarget(d)} title="Selesaikan pengiriman (kurangi stok + jurnal)" disabled={finishing}>
+                                <CheckCircle2 className="mr-1 h-3.5 w-3.5" /> Selesaikan
+                              </Button>
+                            )}
                             {(d.status === 'DRAFT' || d.status === 'DIPROSES') && (
                               <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setCancelTarget(d.id)}>
                                 Batal
@@ -3850,6 +3919,38 @@ function PengirimanTab({ pelangganOptions, barangOptions, satuanOptions, salesOr
           {!error && <Pagination skip={skip} total={total} onPrev={() => setSkip((p) => Math.max(0, p - PAGE_SIZE))} onNext={() => setSkip((p) => p + PAGE_SIZE)} />}
         </CardContent>
       </Card>
+
+      {/* === Update #068 — dialog "Selesaikan" DO DIPROSES. === */}
+      <AlertDialog
+        open={!!finishTarget}
+        onOpenChange={(open) => {
+          if (!open && !finishing) setFinishTarget(null);
+        }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Selesaikan Pengiriman {finishTarget?.noSuratJalan}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Pengiriman ini masih berstatus <span className="font-medium">Diproses</span> — finalisasi otomatis saat pembuatannya gagal, sehingga stok belum dikurangi dan baris SO tidak berubah menjadi terpenuhi. Menyelesaikan sekarang akan:
+              <br />• Mengurangi stok barang dari gudang + mencatat jurnalnya
+              <br />• Mengubah status pengiriman menjadi Selesai
+              <br />• Memperbarui status pemenuhan SO sumber
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={finishing}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleFinish();
+              }}
+              disabled={finishing}
+              className="bg-emerald-600 text-white hover:bg-emerald-700 gap-2">
+              {finishing && <Loader2 className="h-4 w-4 animate-spin" />}
+              Ya, Selesaikan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Reverse confirmation dialog — Phase 4 */}
       <AlertDialog
