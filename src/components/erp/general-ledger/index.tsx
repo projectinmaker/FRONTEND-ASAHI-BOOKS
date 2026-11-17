@@ -26,8 +26,9 @@ import { toast } from 'sonner';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import type { JurnalUmumListResponse, JurnalUmumDetailResponse, JurnalManualCreate, COADropdownResponse, RefModule, StatusJurnal, WorkflowResponse } from '@/types/api';
 import { BookOpen, Search, ChevronLeft, ChevronRight, Eye, ArrowUpRight, ArrowDownRight, Loader2, Plus, Trash2, FilePlus, Pencil, FileSpreadsheet } from 'lucide-react';
-import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
+import { WorkflowStateBadge, WorkflowActionsCell, WorkflowBadgeWithHistory } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
+import { useAccessStore } from '@/store/access-store';
 import { workflowApi } from '@/lib/workflow-api';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -1254,20 +1255,27 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
   const totalDebit = data.reduce((s, d) => s + Number(d.totalDebit), 0);
   const totalKredit = data.reduce((s, d) => s + Number(d.totalKredit), 0);
 
-  // === Update ASAHI #026 — hanya poll workflow untuk jurnal MANUAL ===
+  // === Update ASAHI #026 + Update #071 — status persetujuan jurnal MANUAL ===
   // Jurnal sistem (auto-posting dari modul Penjualan/Pembelian/Kas&Bank/
   // Produksi/dll.) dan jurnal reversal TIDAK punya dokumen workflow —
-  // backend menolaknya dengan 404 "Dokumen workflow tidak ditemukan"
-  // (workflow_service.get_document, aturan by-design). Mem-poll status
-  // workflow untuk SEMUA baris menghasilkan deretan request 404 per
-  // halaman (terlihat merah di console/Network). Kolom Workflow bagi
-  // jurnal sistem memang selalu tampil "—" (hook tanpa state), jadi cukup
-  // filter di sini — hilang sama sekali request 404-nya.
+  // hanya jurnal MANUAL yang di-fetch. Update #071:
+  //  • Persetujuan jurnal_umum AKTIF (Preferensi ▸ Persetujuan) → kolom
+  //    "Persetujuan" tampil; SEMUA jurnal manual di-fetch (SATU request batch).
+  //  • NON-AKTIF (default) → kolom tersembunyi; hanya jurnal manual NON-FINAL
+  //    (status DRAFT — dokumen lama yang masih menggantung) yang di-fetch —
+  //    normalnya kosong (nol request). Jika ada, kolom muncul otomatis sebagai
+  //    pengaman agar dokumen lama tetap bisa diselesaikan.
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('jurnal_umum'));
   const wfStates = useWorkflowStates(
     'jurnal_umum',
-    data.filter((d) => d.refModule === 'MANUAL' && !d.reversalOfId).map((d) => d.id),
+    data
+      .filter((d) => d.refModule === 'MANUAL' && !d.reversalOfId)
+      .filter((d) => approvalOn || d.status === 'DRAFT')
+      .map((d) => d.id),
     refreshKey
   );
+  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
+  const tableCols = showApprovalCol ? 10 : 9;
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -1399,7 +1407,9 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
                     <TableHead className="text-right">Total Debit</TableHead>
                     <TableHead className="text-right">Total Kredit</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-center">Workflow</TableHead>
+                    {/* === Update #071 — kolom "Persetujuan" (dulu "Workflow")
+                        tampil kondisional mengikuti konfigurasi persetujuan. === */}
+                    {showApprovalCol && <TableHead className="text-center">Persetujuan</TableHead>}
                     <TableHead className="hidden md:table-cell">Ref Module</TableHead>
                     <TableHead className="hidden xl:table-cell">Dibuat Oleh</TableHead>
                     <TableHead className="w-[80px]">Aksi</TableHead>
@@ -1407,10 +1417,10 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <SkeletonRows cols={10} />
+                    <SkeletonRows cols={tableCols} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={tableCols} className="text-center py-8 text-muted-foreground">
                         Tidak ada data jurnal umum.
                       </TableCell>
                     </TableRow>
@@ -1435,18 +1445,29 @@ function GeneralLedgerList({ subPage: propsSubPage, refreshKey }: { subPage?: st
                         <TableCell>
                           <StatusBadge status={d.status} />
                         </TableCell>
-                        <TableCell className="text-center">
-                          {(() => {
-                            const w = wfStates.states[d.id];
-                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                            return (
-                              <div className="flex flex-col items-center gap-1">
-                                <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={wfStates.refresh} />
-                              </div>
-                            );
-                          })()}
-                        </TableCell>
+                        {showApprovalCol && (
+                          <TableCell className="text-center">
+                            {(() => {
+                              const w = wfStates.states[d.id];
+                              if (!w) return <span className="text-xs text-muted-foreground">—</span>;
+                              return (
+                                <div className="flex flex-col items-center gap-1">
+                                  <WorkflowBadgeWithHistory state={w.state} documentType={w.documentType} documentId={w.documentId} />
+                                  <WorkflowActionsCell
+                                    documentType={w.documentType}
+                                    documentId={w.documentId}
+                                    version={w.version}
+                                    availableActions={w.availableActions}
+                                    onDone={() => {
+                                      wfStates.refresh();
+                                      void fetchData();
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
+                        )}
                         <TableCell className="hidden md:table-cell">
                           <RefModuleBadge module={d.refModule} lookup={refModuleLookup} />
                         </TableCell>

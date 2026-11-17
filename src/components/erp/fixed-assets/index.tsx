@@ -28,8 +28,9 @@ import { toast } from 'sonner';
 import type { AsetTetapResponse, AsetTetapCreate, AsetTetapUpdate, KategoriAsetResponse, KategoriAsetCreate, KategoriAsetUpdate, COADropdownResponse, MetodePenyusutan, AsetTransaksiCreate, AsetTransaksiResponse, JenisAsetTransaksi, JurnalUmumListResponse, AcquisitionSourceType } from '@/types/api';
 import { ACQUISITION_SOURCE_TYPE_OPTIONS } from '@/types/api';
 import { Building2, TrendingDown, Plus, Package, Search, Pencil, Info, Loader2, ChevronLeft, ChevronRight, Wrench, Trash2, RotateCcw, Scale, ArrowLeftRight } from 'lucide-react';
-import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
+import { WorkflowStateBadge, WorkflowActionsCell, WorkflowBadgeWithHistory } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
+import { useAccessStore } from '@/store/access-store';
 import { getCOAOptions, type COAOption } from '@/lib/master-data';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -2026,8 +2027,15 @@ function TransaksiAsetList({ refreshKey }: { refreshKey?: number }) {
     fetchData();
   }, [fetchData, refreshKey]);
 
-  const transaksiIds = (data || []).map((d) => d.id);
+  // === Update #071 — kolom "Persetujuan" (dulu "Workflow") kondisional:
+  // tampil bila asset_event diaktifkan di Preferensi ▸ Persetujuan, ATAU
+  // ada baris non-final (status DRAFT — dokumen lama yang belum final;
+  // status dokumen aset hanya berubah saat approve → POSTED / batal). ===
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('asset_event'));
+  const transaksiIds = approvalOn ? (data || []).map((d) => d.id) : (data || []).filter((d) => d.status === 'DRAFT').map((d) => d.id);
   const wfTransaksiStates = useWorkflowStates('asset_event', transaksiIds, refreshKey);
+  const showApprovalCol = approvalOn || Object.keys(wfTransaksiStates.states).length > 0;
+  const tableCols = showApprovalCol ? 6 : 5;
 
   return (
     <>
@@ -2087,28 +2095,27 @@ function TransaksiAsetList({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="whitespace-nowrap">Status</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Total</TableHead>
                   <TableHead className="whitespace-nowrap">Aset</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Workflow</TableHead>
+                  {showApprovalCol && <TableHead className="whitespace-nowrap text-center">Persetujuan</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <SkeletonRows cols={6} />
+                  <SkeletonRows cols={tableCols} />
                 ) : error ? (
                   <TableRow>
-                    <TableCell colSpan={6}>
+                    <TableCell colSpan={tableCols}>
                       <ErrorCard message={error} onRetry={fetchData} />
                     </TableCell>
                   </TableRow>
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                    <TableCell colSpan={tableCols} className="text-center py-12 text-muted-foreground">
                       Belum ada data transaksi aset. Klik &quot;Tambah Transaksi&quot; untuk membuat baru.
                     </TableCell>
                   </TableRow>
                 ) : (
                   data.map((row) => {
                     const aset = asetOptions.find((a) => a.id === row.asetId);
-                    const w = wfTransaksiStates.states[row.id];
                     return (
                       <TableRow key={row.id}>
                         <TableCell className="whitespace-nowrap text-xs">{formatDate(row.tanggal)}</TableCell>
@@ -2118,25 +2125,29 @@ function TransaksiAsetList({ refreshKey }: { refreshKey?: number }) {
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right font-mono text-xs">{formatRp(Number(row.total))}</TableCell>
                         <TableCell className="whitespace-nowrap text-xs">{aset ? `${aset.kode} — ${aset.nama}` : row.asetId}</TableCell>
-                        <TableCell className="whitespace-nowrap text-center">
-                          {w ? (
-                            <div className="flex flex-col items-center gap-1">
-                              <WorkflowStateBadge state={w.state} />
-                              <WorkflowActionsCell
-                                documentType={w.documentType}
-                                documentId={w.documentId}
-                                version={w.version}
-                                availableActions={w.availableActions}
-                                onDone={() => {
-                                  fetchData();
-                                  wfTransaksiStates.refresh();
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
+                        {showApprovalCol && (
+                          <TableCell className="whitespace-nowrap text-center">
+                            {(() => {
+                              const w = wfTransaksiStates.states[row.id];
+                              if (!w) return <span className="text-xs text-muted-foreground">—</span>;
+                              return (
+                                <div className="flex flex-col items-center gap-1">
+                                  <WorkflowBadgeWithHistory state={w.state} documentType={w.documentType} documentId={w.documentId} />
+                                  <WorkflowActionsCell
+                                    documentType={w.documentType}
+                                    documentId={w.documentId}
+                                    version={w.version}
+                                    availableActions={w.availableActions}
+                                    onDone={() => {
+                                      fetchData();
+                                      wfTransaksiStates.refresh();
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })

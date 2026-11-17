@@ -2,7 +2,9 @@ import { create } from 'zustand';
 
 // === Update ASAHI #019 — ModuleId tambah 'preferensi' (modul Preferensi baru). ===
 // === Update ASAHI #020 — ModuleId hapus 'organisasi' (fitur dihapus). ===
-export type ModuleId = 'dashboard' | 'cash-bank' | 'sales' | 'purchasing' | 'fixed-assets' | 'inventory' | 'production' | 'general-ledger' | 'reports' | 'settings' | 'preferensi' | 'workflow-queue';
+// === Update #071 — 'workflow-queue' dihapus dari union ModuleId bersama
+//     halaman Antrean Persetujuan (pengganti: badge lonceng approval-bell). ===
+export type ModuleId = 'dashboard' | 'cash-bank' | 'sales' | 'purchasing' | 'fixed-assets' | 'inventory' | 'production' | 'general-ledger' | 'reports' | 'settings' | 'preferensi';
 
 export type SubPageId = string;
 

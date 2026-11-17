@@ -17,6 +17,8 @@ const PenjualanPembelianPage = dynamic(() => import('@/components/erp/preferensi
 const PerpajakanPage = dynamic(() => import('@/components/erp/preferensi/perpajakan-page'), { ssr: false });
 const FontPage = dynamic(() => import('@/components/erp/preferensi/font-page'), { ssr: false });
 const PenomoranPage = dynamic(() => import('@/components/erp/preferensi/penomoran-page'), { ssr: false });
+// === Update #071 — konfigurasi persetujuan per jenis dokumen (Super Admin). ===
+const PersetujuanPage = dynamic(() => import('@/components/erp/preferensi/persetujuan-page'), { ssr: false });
 
 interface PreferensiModuleProps {
   subPage?: string;
@@ -32,7 +34,7 @@ export default function PreferensiModule({ subPage, refreshKey }: PreferensiModu
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Preferensi</h1>
-        <p className="text-muted-foreground">Konfigurasi perilaku aplikasi — perusahaan, fitur, akun default, pengingat, penjualan &amp; pembelian, perpajakan, font, dan penomoran dokumen.</p>
+        <p className="text-muted-foreground">Konfigurasi perilaku aplikasi — perusahaan, fitur, akun default, pengingat, penjualan &amp; pembelian, perpajakan, font, penomoran dokumen, dan persetujuan.</p>
       </div>
       {sp === 'perusahaan' && <PerusahaanPage refreshKey={refreshKey} />}
       {sp === 'fitur' && <FiturPage refreshKey={refreshKey} />}
@@ -42,6 +44,8 @@ export default function PreferensiModule({ subPage, refreshKey }: PreferensiModu
       {sp === 'perpajakan' && <PerpajakanPage refreshKey={refreshKey} />}
       {sp === 'font' && <FontPage refreshKey={refreshKey} />}
       {sp === 'penomoran' && <PenomoranPage refreshKey={refreshKey} />}
+      {/* === Update #071 — konfigurasi persetujuan per jenis dokumen. === */}
+      {sp === 'persetujuan' && <PersetujuanPage refreshKey={refreshKey} />}
     </div>
   );
 }

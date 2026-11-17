@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 // === Update ASAHI #019 — ikon baru modul Preferensi (SlidersHorizontal) + submenu ===
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, ClipboardCheck, HandCoins, Activity, RefreshCw, Trash2, Factory, SlidersHorizontal, Bell, Type, Hash, CalendarRange, BookX } from 'lucide-react';
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, ClipboardCheck, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, HandCoins, Activity, RefreshCw, Trash2, Factory, SlidersHorizontal, Bell, Type, Hash, CalendarRange, BookX, ShieldCheck } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -45,23 +45,11 @@ interface NavModule {
 }
 
 const modules: NavModule[] = [
-  // === Update ASAHI #022 — Antrean Persetujuan dipindah ke posisi teratas
-  // (tepat setelah tombol Dashboard). Ini "kotak masuk pekerjaan" operasional
-  // harian untuk approver (pola My Inbox di SAP / Approvals di Odoo), jadi
-  // BUKAN milik area konfigurasi — dimasukkan ke Pengaturan ditolak karena
-  // Pengaturan berisi konfigurasi & master data yang jarang diakses, sementara
-  // antrean persetujuan diakses approver setiap hari. Posisi lama (sendirian
-  // di antara Buku Besar dan Laporan) terlihat nyasar. Urutan sidebar kini
-  // mengikuti area semantik: kerja personal (Dashboard, Antrean) → transaksi
-  // → analisis (Laporan) → konfigurasi (Pengaturan, Preferensi). RBAC tetap
-  // digating workflow.queue.view — tersembunyi bagi non-approver. ===
-  {
-    id: 'workflow-queue',
-    label: 'Antrean Persetujuan',
-    icon: ClipboardCheck,
-    subPages: [{ id: 'queue', label: 'Antrean Persetujuan', icon: ClipboardCheck }],
-    single: true
-  },
+  // === Update #071 — modul "Antrean Persetujuan" DIHAPUS. Dokumen yang
+  // menunggu persetujuan kini dikonfigurasi per jenis dokumen (Preferensi ▸
+  // Persetujuan) dan notifikasinya cukup lewat badge lonceng di header
+  // (approval-bell.tsx) — klik jenis dokumen membuka daftarnya; persetujuan
+  // dilakukan lewat kolom "Persetujuan" pada daftar dokumen modul terkait. ===
   {
     id: 'cash-bank',
     label: 'Kas & Bank',
@@ -164,8 +152,6 @@ const modules: NavModule[] = [
     icon: BookOpen,
     subPages: [{ id: 'jurnal-umum', label: 'Jurnal Umum', icon: Landmark }]
   },
-  // Update ASAHI #022 — modul workflow-queue dipindah ke posisi teratas
-  // (lihat komentar di awal array modules).
   {
     id: 'reports',
     label: 'Laporan',
@@ -275,7 +261,10 @@ const modules: NavModule[] = [
       { id: 'penjualan-pembelian', label: 'Penjualan & Pembelian', icon: ArrowLeftRight },
       { id: 'perpajakan', label: 'Perpajakan', icon: Percent },
       { id: 'font', label: 'Font', icon: Type },
-      { id: 'penomoran', label: 'Penomoran Dokumen', icon: Hash }
+      { id: 'penomoran', label: 'Penomoran Dokumen', icon: Hash },
+      // === Update #071 — konfigurasi persetujuan per jenis dokumen
+      //     (gating 'workflow.config.view' → hanya Super Admin). ===
+      { id: 'persetujuan', label: 'Persetujuan', icon: ShieldCheck }
     ]
   }
 ];
@@ -288,7 +277,9 @@ const modules: NavModule[] = [
 // (cash_bank.*, settlement.*, dsb.) yang tidak pernah cocok, sehingga menu
 // Kas & Bank, Laporan, dsb. tersembunyi untuk semua role kecuali Super Admin.
 const SINGLE_MODULE_PERMISSIONS: Record<string, string> = {
-  'workflow-queue': 'workflow.queue.view'
+  // === Update #071 — modul workflow-queue dihapus; permission
+  //     workflow.queue.view tetap dipakai gating badge lonceng
+  //     (approval-bell.tsx) dan endpoint /workflow/pending-summary. ===
 };
 
 /** Kode permission subPage per modul (module-id → subPage-id → code). */
@@ -382,7 +373,12 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     'penjualan-pembelian': 'master.preference.view',
     perpajakan: 'master.preference.view',
     font: 'master.preference.view',
-    penomoran: 'master.preference.view'
+    penomoran: 'master.preference.view',
+    // === Update #071 — konfigurasi persetujuan: hanya Super Admin. Kode
+    //     sengaja BUKAN kode registry (tidak diterbitkan ke role mana pun)
+    //     sehingga can() hanya lolos bagi isSuperAdmin. Backend juga
+    //     meng-gate SUPER_ADMIN pada endpoint-nya. ===
+    persetujuan: 'workflow.config.view'
   }
 };
 

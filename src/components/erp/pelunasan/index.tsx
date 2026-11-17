@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { EmptyState } from '@/components/ui/empty-state';
 import { SearchableDropdown } from '@/components/ui/searchable-dropdown';
 import { useAuthStore } from '@/store/auth-store';
+import { useAccessStore } from '@/store/access-store';
 import { useTabStore } from '@/store/tab-store';
 import { useFormDraft, draftKey } from '@/hooks/use-form-draft';
 import { DraftIndicator } from '@/components/erp/draft-indicator';
@@ -221,15 +222,18 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   const pihakLabel = isPiutang ? 'Pelanggan' : 'Supplier';
   const docLabel = isPiutang ? 'Invoice Penjualan' : 'Invoice Pembelian';
   const flowLabel = isPiutang ? 'Penerimaan Pelunasan' : 'Pembayaran Pelunasan';
-  // m-13: Administrator — dokumen kas/bank pelunasan otomatis final (direct_complete)
-  // saat dibuat; non-admin tetap lewat workflow submit → approve → post.
-  const isAdmin = useAuthStore((s) => s.user?.role === 'ADMINISTRATOR');
 
   // ── === Update #044 — mode Penerimaan Piutang: Penuh / Sebagian / Gagal
   // Tagih (hanya piutang — hutang tidak berubah). Gagal Tagih membuat
   // Voucher Memorial non-kas, bukan penerimaan kas/bank. ──
   const [modePenerimaan, setModePenerimaan] = useState<ModePenerimaan>('penuh');
   const isGagalTagih = isPiutang && modePenerimaan === 'gagal';
+  // === Update #071 — finalisasi dokumen kas/bank pelunasan kini mengikuti
+  // KONFIGURASI persetujuan (Preferensi ▸ Persetujuan), bukan role: jenis
+  // non-aktif (default) → langsung final saat dibuat; aktif → menunggu
+  // approver lewat kolom "Persetujuan" modul Kas & Bank. ===
+  const approvalKind = isGagalTagih ? 'voucher_memorial' : jenis === 'piutang' ? 'penerimaan_kas' : 'pembayaran_kas';
+  const approvalEnabled = useAccessStore((s) => s.approvalEnabled.includes(approvalKind));
   // === Update #065 — nominal per invoice terkunci HANYA pada mode Penuh
   // (piutang & hutang sama — hutang kini punya mode Pembayaran Sebagian;
   // kebijakan lama "hutang selalu terkunci penuh" #042 digantikan pilihan
@@ -748,7 +752,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         };
         const res = await voucherMemorialApi.create(payload);
         toast.success(`Voucher Memorial ${res.noBukti} dibuat`, {
-          description: isAdmin ? 'Sebagai Administrator, jurnal penghapusan piutang langsung diposting otomatis (Dr Beban Penghapusan, Cr Piutang Usaha) — invoice terkait menjadi lunas.' : 'Lakukan workflow submit → approve → post untuk memposting jurnal penghapusan piutang.',
+          description: approvalEnabled ? 'Menunggu persetujuan — setujui lewat kolom Persetujuan pada daftar Voucher Memorial (Kas & Bank) agar jurnal penghapusan piutang diposting.' : 'Jurnal penghapusan piutang langsung diposting otomatis (Dr Beban Penghapusan, Cr Piutang Usaha) — invoice terkait menjadi lunas.',
           duration: 9000
         });
         skipNextSaveRef.current = true;
@@ -802,8 +806,8 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       };
       const res = await pelunasanApi.create(jenis, payload);
       toast.success(`Draft pembayaran ${res.noBukti} dibuat`, {
-        // m-13: admin — direct_complete (tanpa langkah manual); non-admin — workflow manual.
-        description: isAdmin ? 'Sebagai Administrator, dokumen langsung diproses & diposting otomatis — tidak perlu langkah manual.' : 'Lakukan workflow submit → approve → post untuk menyelesaikan.',
+        // === Update #071 — narasi toast mengikuti konfigurasi persetujuan. ===
+        description: approvalEnabled ? 'Menunggu persetujuan — setujui lewat kolom Persetujuan pada daftar dokumen Kas & Bank.' : 'Dokumen langsung diproses & diposting otomatis — tidak perlu langkah manual.',
         duration: 8000
       });
       // Clear form + selection + refresh tagihan
@@ -837,7 +841,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     } finally {
       setSubmitting(false);
     }
-  }, [validate, selectedPihakId, pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft, embedded, onFinished, isGagalTagih, akunBebanId, isAdmin]);
+  }, [validate, selectedPihakId, pihakFilter, tanggal, kasBankId, noNukti, catatan, penaltiDisplay, akunPenaltiId, selectedList, jenis, isPiutang, noCek, tanggalCek, jumlahCek, mataUang, nilaiTukar, clearSelection, fetchTagihan, draft, embedded, onFinished, isGagalTagih, akunBebanId, approvalEnabled]);
 
   // ── Export Excel daftar tagihan (Update #5) — ikut filter aktif ──
   const handleExport = useCallback(async () => {
@@ -1213,15 +1217,14 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
             <div className="flex items-start gap-2 rounded-md bg-emerald-50 border border-emerald-200 p-3">
               <Info className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
               <p className="text-xs text-emerald-700">
-                {/* m-13: teks disesuaikan per role — admin auto-final (direct_complete), non-admin workflow manual */}
-                {isAdmin ? (
+                {/* === Update #071 — teks mengikuti konfigurasi persetujuan
+                    (Preferensi ▸ Persetujuan), bukan role pembuat. === */}
+                {approvalEnabled ? (
                   <>
-                    Sebagai <strong>Administrator</strong>, {isGagalTagih ? 'Voucher Memorial (jurnal penghapusan piutang)' : 'dokumen pembayaran'} akan langsung diproses &amp; diposting otomatis setelah dibuat (submit → approve → post berjalan dalam satu transaksi) — tidak ada langkah persetujuan manual yang perlu dilakukan.
+                    {isGagalTagih ? 'Voucher Memorial (jurnal penghapusan piutang)' : 'Dokumen pembayaran'} akan dibuat dan <strong>menunggu persetujuan</strong> — selesaikan lewat kolom <strong>Persetujuan</strong> pada daftar dokumen Kas &amp; Bank ({isGagalTagih ? 'Voucher Memorial' : jenis === 'piutang' ? 'Penerimaan' : 'Pembayaran'}); sekali disetujui, jurnal otomatis diposting.
                   </>
                 ) : (
-                  <>
-                    Draft {isGagalTagih ? 'Voucher Memorial' : 'pembayaran'} akan dibuat dengan status <strong>DRAFT</strong>. Untuk menyelesaikannya, lakukan workflow: <strong>Submit → Approve → Post</strong> melalui kolom Workflow pada daftar dokumen atau modul <strong>Antrean Persetujuan</strong>.
-                  </>
+                  <>{isGagalTagih ? 'Voucher Memorial (jurnal penghapusan piutang)' : 'Dokumen pembayaran'} akan langsung diproses &amp; diposting otomatis setelah dibuat — tidak ada langkah persetujuan manual yang perlu dilakukan.</>
                 )}
               </p>
             </div>
@@ -1491,7 +1494,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
               </div>
               <div>
                 <p className="text-sm font-medium">Belum ada invoice dipilih</p>
-                <p className="text-xs text-muted-foreground mt-1">Centang invoice pada tabel di atas untuk mulai membuat alokasi pembayaran. {isAdmin ? 'Sebagai Administrator, dokumen langsung diproses & diposting otomatis setelah dibuat.' : 'Setelah draft dibuat, lakukan workflow submit → approve → post untuk menyelesaikan pelunasan.'}</p>
+                <p className="text-xs text-muted-foreground mt-1">Centang invoice pada tabel di atas untuk mulai membuat alokasi pembayaran. {approvalEnabled ? 'Setelah dibuat, dokumen menunggu persetujuan lewat kolom Persetujuan pada daftar dokumen Kas & Bank.' : 'Dokumen langsung diproses & diposting otomatis setelah dibuat.'}</p>
               </div>
             </div>
           </CardContent>

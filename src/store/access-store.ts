@@ -41,6 +41,11 @@ interface AccessState {
   permissions: string[];
   isSuperAdmin: boolean;
   roles: RoleBrief[];
+  /** === Update #071 — jenis dokumen yang persetujuannya AKTIF
+   *  (Preferensi ▸ Persetujuan). Menempel di payload izin (refresh 5 menit
+   *  / saat window difokuskan) supaya perubahan konfigurasi oleh Super
+   *  Admin langsung menjalar ke kolom "Persetujuan" semua user. === */
+  approvalEnabled: string[];
   /** true setelah fetch pertama selesai (sukses maupun gagal — fail-closed). */
   loaded: boolean;
   loading: boolean;
@@ -54,6 +59,9 @@ interface AccessState {
   fetchPermissions: () => Promise<void>;
   can: (code: string) => boolean;
   canAny: (codes: string[]) => boolean;
+  /** === Update #071 — true bila jenis dokumen ini memerlukan persetujuan
+   *  (kolom "Persetujuan" tampil di daftar dokumen terkait). === */
+  isApprovalEnabled: (documentType: string) => boolean;
   reset: () => void;
 }
 
@@ -61,6 +69,7 @@ export const useAccessStore = create<AccessState>((set, get) => ({
   permissions: [],
   isSuperAdmin: false,
   roles: [],
+  approvalEnabled: [],
   loaded: false,
   loading: false,
   error: null,
@@ -69,7 +78,7 @@ export const useAccessStore = create<AccessState>((set, get) => ({
   fetchPermissions: async () => {
     // Jangan fetch bila belum login (tidak ada token).
     if (!hasAuthToken()) {
-      set({ permissions: [], isSuperAdmin: false, roles: [], loaded: false, loading: false, error: null, reconnecting: false });
+      set({ permissions: [], isSuperAdmin: false, roles: [], approvalEnabled: [], loaded: false, loading: false, error: null, reconnecting: false });
       return;
     }
     if (get().loading) return; // cegah fetch paralel
@@ -80,6 +89,8 @@ export const useAccessStore = create<AccessState>((set, get) => ({
         permissions: res.permissions ?? [],
         isSuperAdmin: !!res.isSuperAdmin,
         roles: res.roles ?? [],
+        // === Update #071 — konfigurasi persetujuan ikut payload izin. ===
+        approvalEnabled: res.approvalEnabled ?? [],
         loaded: true,
         loading: false,
         error: null,
@@ -108,6 +119,7 @@ export const useAccessStore = create<AccessState>((set, get) => ({
         permissions: [],
         isSuperAdmin: false,
         roles: [],
+        approvalEnabled: [],
         loaded: true,
         loading: false,
         error: 'Gagal memuat izin akses. Menu disembunyikan demi keamanan.',
@@ -129,8 +141,10 @@ export const useAccessStore = create<AccessState>((set, get) => ({
     return codes.some((c) => permissions.includes(c));
   },
 
+  isApprovalEnabled: (documentType) => get().approvalEnabled.includes(documentType),
+
   reset: () => {
-    set({ permissions: [], isSuperAdmin: false, roles: [], loaded: false, loading: false, error: null, reconnecting: false });
+    set({ permissions: [], isSuperAdmin: false, roles: [], approvalEnabled: [], loaded: false, loading: false, error: null, reconnecting: false });
   }
 }));
 

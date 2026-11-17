@@ -5,8 +5,14 @@ import { workflowApi } from '@/lib/workflow-api';
 import type { WorkflowResponse } from '@/types/api';
 
 /**
- * Fetch workflow states for a list of documents (batched in parallel).
+ * Fetch workflow states for a list of documents.
  * Returns a map of documentId -> WorkflowResponse.
+ *
+ * === Update #071 — BATCH (satu request per halaman) ===
+ * Dulu: satu request PER BARIS (N+1 — deretan request per halaman daftar).
+ * Kini: SATU request GET /workflow/states?documentType=...&ids=a,b,c —
+ * jauh lebih ringan untuk daftar besar. Riwayat lengkap TIDAK disertakan
+ * (diambil on-demand oleh popover riwayat via workflowApi.getWorkflow).
  *
  * Failures are silently skipped (the row just won't show workflow info).
  */
@@ -28,30 +34,17 @@ export function useWorkflowStates(documentType: string | null, documentIds: stri
     setLoading(true);
 
     async function load() {
-      // Bound concurrency — fetch 6 at a time
-      const results: Record<string, WorkflowResponse> = {};
-      const queue = [...documentIds];
-      const CONCURRENCY = 6;
-
-      async function worker() {
-        while (queue.length > 0) {
-          const id = queue.shift();
-          if (!id) break;
-          try {
-            const w = await workflowApi.getWorkflow(documentType!, id);
-            if (cancelled) return;
-            results[id] = w;
-          } catch {
-            // Silently skip — document may not have workflow info
-          }
-        }
-      }
-
-      const workers = Array.from({ length: Math.min(CONCURRENCY, documentIds.length) }, () => worker());
-      await Promise.all(workers);
-      if (!cancelled) {
-        setStates(results);
-        setLoading(false);
+      try {
+        const res = await workflowApi.getStates(documentType!, documentIds);
+        if (cancelled) return;
+        const map: Record<string, WorkflowResponse> = {};
+        for (const item of res?.data ?? []) map[item.documentId] = item;
+        setStates(map);
+      } catch {
+        // Silently skip — document may not have workflow info
+        if (!cancelled) setStates({});
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
 

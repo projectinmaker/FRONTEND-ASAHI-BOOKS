@@ -31,8 +31,9 @@ import StokKartuTab from '@/components/erp/inventory/stok-kartu';
 import BarangForm from '@/components/erp/inventory/barang-form';
 import { ExcelImportDialog, exportDateStamp } from '@/components/erp/excel-import-dialog';
 import { downloadExcelFile } from '@/lib/excel';
-import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
+import { WorkflowStateBadge, WorkflowActionsCell, WorkflowBadgeWithHistory } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
+import { useAccessStore } from '@/store/access-store';
 import { needsAdjustmentExpiry, adjustmentExpiryPayload } from '@/lib/phase-a';
 import { isStockItemBarang } from '@/lib/master-data';
 // === Update #066 — menu LPPB & Penerimaan pindah ke modul Persediaan (setelah
@@ -1336,11 +1337,15 @@ function PermintaanBarangTab({ refreshKey }: { refreshKey?: number }) {
     fetchDropdowns();
   }, [fetchDropdowns]);
 
-  const wfStates = useWorkflowStates(
-    'permintaan_barang',
-    data.map((d) => d.id),
-    refreshKey
-  );
+  // === Update #071 — kolom "Persetujuan" (dulu "Workflow") kondisional:
+  // tampil bila jenis dokumen ini diaktifkan di Preferensi ▸ Persetujuan,
+  // ATAU ada baris non-final (DIAJUKAN/DITOLAK — dokumen lama yang masih
+  // menggantung). Non-aktif & semua final → status tidak di-fetch (nol
+  // request); aktif → semua baris dalam SATU request batch. ===
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('permintaan_barang'));
+  const wfStates = useWorkflowStates('permintaan_barang', approvalOn ? data.map((d) => d.id) : data.filter((d) => d.status === 'DIAJUKAN' || d.status === 'DITOLAK').map((d) => d.id), refreshKey);
+  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
+  const tableCols = showApprovalCol ? 9 : 8;
 
   return (
     <>
@@ -1384,22 +1389,22 @@ function PermintaanBarangTab({ refreshKey }: { refreshKey?: number }) {
                   {/* Update #4 (Q1): kolom SO ter-link (nomor pesanan) */}
                   <TableHead className="whitespace-nowrap">SO</TableHead>
                   <TableHead className="whitespace-nowrap">Status</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Workflow</TableHead>
+                  {showApprovalCol && <TableHead className="whitespace-nowrap text-center">Persetujuan</TableHead>}
                   <TableHead className="whitespace-nowrap">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && <TableSkeletonRows cols={9} />}
+                {loading && <TableSkeletonRows cols={tableCols} />}
                 {error && (
                   <TableRow>
-                    <TableCell colSpan={9}>
+                    <TableCell colSpan={tableCols}>
                       <ErrorCard message={error} onRetry={fetchData} />
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading && !error && data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={tableCols} className="text-center py-8 text-muted-foreground">
                       Tidak ada data permintaan barang
                     </TableCell>
                   </TableRow>
@@ -1417,27 +1422,29 @@ function PermintaanBarangTab({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="whitespace-nowrap">
                         <StatusBadge status={row.status} />
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-center">
-                        {(() => {
-                          const w = wfStates.states[row.id];
-                          if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                          return (
-                            <div className="flex flex-col items-center gap-1">
-                              <WorkflowStateBadge state={w.state} />
-                              <WorkflowActionsCell
-                                documentType={w.documentType}
-                                documentId={w.documentId}
-                                version={w.version}
-                                availableActions={w.availableActions}
-                                onDone={() => {
-                                  fetchData();
-                                  wfStates.refresh();
-                                }}
-                              />
-                            </div>
-                          );
-                        })()}
-                      </TableCell>
+                      {showApprovalCol && (
+                        <TableCell className="whitespace-nowrap text-center">
+                          {(() => {
+                            const w = wfStates.states[row.id];
+                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
+                            return (
+                              <div className="flex flex-col items-center gap-1">
+                                <WorkflowBadgeWithHistory state={w.state} documentType={w.documentType} documentId={w.documentId} />
+                                <WorkflowActionsCell
+                                  documentType={w.documentType}
+                                  documentId={w.documentId}
+                                  version={w.version}
+                                  availableActions={w.availableActions}
+                                  onDone={() => {
+                                    fetchData();
+                                    wfStates.refresh();
+                                  }}
+                                />
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
+                      )}
                       <TableCell className="whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           {row.status === 'DIAJUKAN' && (
@@ -1596,11 +1603,12 @@ function PemindahanBarangTab({ refreshKey }: { refreshKey?: number }) {
     fetchDropdowns();
   }, [fetchDropdowns]);
 
-  const wfStates = useWorkflowStates(
-    'pemindahan_barang',
-    data.map((d) => d.id),
-    refreshKey
-  );
+  // === Update #071 — kolom "Persetujuan" kondisional (lihat catatan Permintaan
+  // Barang): pemindahan_barang aktif ATAU ada baris non-final. ===
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('pemindahan_barang'));
+  const wfStates = useWorkflowStates('pemindahan_barang', approvalOn ? data.map((d) => d.id) : data.filter((d) => d.status === 'DIAJUKAN' || d.status === 'DITOLAK').map((d) => d.id), refreshKey);
+  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
+  const tableCols = showApprovalCol ? 10 : 9;
 
   return (
     <>
@@ -1644,22 +1652,22 @@ function PemindahanBarangTab({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="whitespace-nowrap">Barang</TableHead>
                   <TableHead className="whitespace-nowrap text-right">Qty</TableHead>
                   <TableHead className="whitespace-nowrap">Status</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Workflow</TableHead>
+                  {showApprovalCol && <TableHead className="whitespace-nowrap text-center">Persetujuan</TableHead>}
                   <TableHead className="whitespace-nowrap">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && <TableSkeletonRows cols={10} />}
+                {loading && <TableSkeletonRows cols={tableCols} />}
                 {error && (
                   <TableRow>
-                    <TableCell colSpan={10}>
+                    <TableCell colSpan={tableCols}>
                       <ErrorCard message={error} onRetry={fetchData} />
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading && !error && data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={tableCols} className="text-center py-8 text-muted-foreground">
                       Tidak ada data pemindahan barang
                     </TableCell>
                   </TableRow>
@@ -1678,27 +1686,29 @@ function PemindahanBarangTab({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="whitespace-nowrap">
                         <StatusBadge status={row.status} />
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-center">
-                        {(() => {
-                          const w = wfStates.states[row.id];
-                          if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                          return (
-                            <div className="flex flex-col items-center gap-1">
-                              <WorkflowStateBadge state={w.state} />
-                              <WorkflowActionsCell
-                                documentType={w.documentType}
-                                documentId={w.documentId}
-                                version={w.version}
-                                availableActions={w.availableActions}
-                                onDone={() => {
-                                  fetchData();
-                                  wfStates.refresh();
-                                }}
-                              />
-                            </div>
-                          );
-                        })()}
-                      </TableCell>
+                      {showApprovalCol && (
+                        <TableCell className="whitespace-nowrap text-center">
+                          {(() => {
+                            const w = wfStates.states[row.id];
+                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
+                            return (
+                              <div className="flex flex-col items-center gap-1">
+                                <WorkflowBadgeWithHistory state={w.state} documentType={w.documentType} documentId={w.documentId} />
+                                <WorkflowActionsCell
+                                  documentType={w.documentType}
+                                  documentId={w.documentId}
+                                  version={w.version}
+                                  availableActions={w.availableActions}
+                                  onDone={() => {
+                                    fetchData();
+                                    wfStates.refresh();
+                                  }}
+                                />
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
+                      )}
                       <TableCell className="whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           {row.status === 'DIAJUKAN' && (
@@ -1897,11 +1907,12 @@ function PenyesuaianTab({ refreshKey }: { refreshKey?: number }) {
     fetchDropdowns();
   }, [fetchDropdowns]);
 
-  const wfStates = useWorkflowStates(
-    'penyesuaian_stok',
-    data.map((d) => d.id),
-    refreshKey
-  );
+  // === Update #071 — kolom "Persetujuan" kondisional (lihat catatan Permintaan
+  // Barang): penyesuaian_stok aktif ATAU ada baris non-final. ===
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('penyesuaian_stok'));
+  const wfStates = useWorkflowStates('penyesuaian_stok', approvalOn ? data.map((d) => d.id) : data.filter((d) => d.status === 'DIAJUKAN' || d.status === 'DITOLAK').map((d) => d.id), refreshKey);
+  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
+  const tableCols = showApprovalCol ? 12 : 11;
 
   return (
     <>
@@ -1947,22 +1958,22 @@ function PenyesuaianTab({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="whitespace-nowrap">Kedaluwarsa</TableHead>
                   <TableHead className="whitespace-nowrap">Alasan</TableHead>
                   <TableHead className="whitespace-nowrap">Status</TableHead>
-                  <TableHead className="whitespace-nowrap text-center">Workflow</TableHead>
+                  {showApprovalCol && <TableHead className="whitespace-nowrap text-center">Persetujuan</TableHead>}
                   <TableHead className="whitespace-nowrap">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && <TableSkeletonRows cols={12} />}
+                {loading && <TableSkeletonRows cols={tableCols} />}
                 {error && (
                   <TableRow>
-                    <TableCell colSpan={12}>
+                    <TableCell colSpan={tableCols}>
                       <ErrorCard message={error} onRetry={fetchData} />
                     </TableCell>
                   </TableRow>
                 )}
                 {!loading && !error && data.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={tableCols} className="text-center py-8 text-muted-foreground">
                       Tidak ada data penyesuaian stok
                     </TableCell>
                   </TableRow>
@@ -1985,28 +1996,30 @@ function PenyesuaianTab({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="whitespace-nowrap">
                         <StatusBadge status={row.status} />
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-center">
-                        {(() => {
-                          const w = wfStates.states[row.id];
-                          if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                          return (
-                            <div className="flex flex-col items-center gap-1">
-                              <WorkflowStateBadge state={w.state} />
-                              <WorkflowActionsCell
-                                documentType={w.documentType}
-                                documentId={w.documentId}
-                                version={w.version}
-                                availableActions={w.availableActions}
-                                onEdit={() => openFormTab({ title: 'Edit ' + row.noAdj, module: 'inventory', subPage: 'penyesuaian', formKey: 'penyesuaian-edit', formProps: { id: row.id } })}
-                                onDone={() => {
-                                  fetchData();
-                                  wfStates.refresh();
-                                }}
-                              />
-                            </div>
-                          );
-                        })()}
-                      </TableCell>
+                      {showApprovalCol && (
+                        <TableCell className="whitespace-nowrap text-center">
+                          {(() => {
+                            const w = wfStates.states[row.id];
+                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
+                            return (
+                              <div className="flex flex-col items-center gap-1">
+                                <WorkflowBadgeWithHistory state={w.state} documentType={w.documentType} documentId={w.documentId} />
+                                <WorkflowActionsCell
+                                  documentType={w.documentType}
+                                  documentId={w.documentId}
+                                  version={w.version}
+                                  availableActions={w.availableActions}
+                                  onEdit={() => openFormTab({ title: 'Edit ' + row.noAdj, module: 'inventory', subPage: 'penyesuaian', formKey: 'penyesuaian-edit', formProps: { id: row.id } })}
+                                  onDone={() => {
+                                    fetchData();
+                                    wfStates.refresh();
+                                  }}
+                                />
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
+                      )}
                       <TableCell className="whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           {row.status === 'DIAJUKAN' && (

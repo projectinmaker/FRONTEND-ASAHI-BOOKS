@@ -883,6 +883,8 @@ export interface WorkflowHistoryItem {
   fromState: string;
   toState: string;
   actorId: string | null;
+  /** === Update #071 — nama pelaku untuk tampilan riwayat persetujuan. === */
+  actorName?: string | null;
   reason: string | null;
   at: string;
 }
@@ -902,29 +904,53 @@ export interface WorkflowResponse {
   version: number;
   journalId: string | null;
   availableActions: WorkflowAction[];
-  history: WorkflowHistoryItem[];
+  /** Riwayat lengkap (GET /workflow/{type}/{id}). Endpoint batch /workflow/states
+   *  TIDAK menyertakan history — karena itu field ini opsional. */
+  history?: WorkflowHistoryItem[];
 }
 
-export interface WorkflowQueueItem {
+// === Update #071 — WorkflowQueueItem & WorkflowCapabilities DIHAPUS
+//     bersama halaman Antrean Persetujuan (GET /workflow/queue dan
+//     GET /workflow dihapus backend). Penggantinya: ===
+
+/** Ringkasan jumlah dokumen menunggu persetujuan (badge lonceng header).
+ *  Satu query agregasi — ringan, aman di-poll tiap 30 detik. */
+export interface WorkflowPendingSummary {
+  total: number;
+  perType: Record<string, number>;
+}
+
+/** Status persetujuan satu dokumen dari endpoint batch /workflow/states
+ *  (satu request untuk satu halaman daftar; tanpa history — riwayat
+ *  diambil on-demand oleh popover riwayat). */
+export type WorkflowStateLite = WorkflowResponse;
+
+// === Update #071 — konfigurasi persetujuan per jenis dokumen (Preferensi ▸
+//     Persetujuan; GET/PUT /workflow/approval-config — Super Admin). ===
+export interface ApprovalApproverEntry {
+  id: string;
+  userId: string | null;
+  userName: string | null;
+  roleCode: string | null;
+  roleName: string | null;
+}
+
+export interface ApprovalConfigItem {
   documentType: string;
-  documentId: string;
-  documentNumber: string;
-  state: WorkflowState;
-  version: number;
-  total: string;
-  createdBy: string | null;
-  tanggal: string;
+  label: string;
+  moduleGroup: string;
+  enabled: boolean;
+  approvers: ApprovalApproverEntry[];
+}
+
+export interface ApprovalConfigUpdateRequest {
+  enabled: boolean;
+  approvers: { userId?: string; roleCode?: string }[];
 }
 
 export interface WorkflowActionRequest {
   expectedVersion: number;
   reason?: string;
-}
-
-export interface WorkflowCapabilities {
-  role: string;
-  documentTypes: string[];
-  canApprove: boolean;
 }
 
 // === Update #4 — dropdown membawa data master untuk auto-fill form ===
@@ -4140,6 +4166,10 @@ export interface MePermissionsResponse {
   isSuperAdmin: boolean;
   permissions: string[];
   roles: RoleBrief[];
+  /** === Update #071 — jenis dokumen yang persetujuannya AKTIF
+   *  (Preferensi ▸ Persetujuan). Frontend memakai ini untuk menampilkan
+   *  kolom "Persetujuan" di daftar dokumen secara kondisional. === */
+  approvalEnabled?: string[];
 }
 
 /** Satu aksi permission dalam registry (GET /access/permissions). */

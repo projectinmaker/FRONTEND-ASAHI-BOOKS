@@ -37,7 +37,9 @@ const Reports = dynamic(() => import('@/components/erp/reports'), { ssr: false }
 const Settings = dynamic(() => import('@/components/erp/settings'), { ssr: false });
 // === Update ASAHI #019 — modul Preferensi (konfigurasi aplikasi terpusat) ===
 const PreferensiModule = dynamic(() => import('@/components/erp/preferensi'), { ssr: false });
-const WorkflowQueue = dynamic(() => import('@/components/erp/workflow-queue'), { ssr: false });
+// === Update #071 — badge lonceng notifikasi persetujuan (pengganti halaman
+//     Antrean Persetujuan yang dihapus). ===
+const ApprovalBell = dynamic(() => import('@/components/erp/approval-bell').then((m) => m.ApprovalBell), { ssr: false });
 // Tukar Faktur (update #4) — routing subPage 'tukar-faktur' di-render langsung di sini
 // (mirror pola Penawaran; sales/index.tsx tidak disentuh).
 const TukarFakturModule = dynamic(() => import('@/components/erp/sales/tukar-faktur').then((m) => m.TukarFakturModule), { ssr: false });
@@ -51,7 +53,6 @@ const moduleLabels: Record<string, string> = {
   inventory: 'Persediaan',
   production: 'Produksi',
   'general-ledger': 'Buku Besar',
-  'workflow-queue': 'Antrean Persetujuan',
   reports: 'Laporan',
   settings: 'Pengaturan',
   // === Update ASAHI #019 — modul Preferensi ===
@@ -199,8 +200,6 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
       return <GeneralLedger subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     case 'reports':
       return <Reports subPage={subPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
-    case 'workflow-queue':
-      return <WorkflowQueue />;
     case 'settings':
       return <Settings subPage={activeSubPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     // === Update ASAHI #019 — modul Preferensi ===
@@ -304,6 +303,12 @@ export default function HomePage() {
               )}
             </BreadcrumbList>
           </Breadcrumb>
+          {/* === Update #071 — badge lonceng notifikasi persetujuan
+              (pengganti halaman Antrean Persetujuan; hanya tampil bagi
+              pengguna dengan izin workflow.queue.view). === */}
+          <div className="ml-auto">
+            <ApprovalBell />
+          </div>
         </header>
 
         {/* Tab Bar */}

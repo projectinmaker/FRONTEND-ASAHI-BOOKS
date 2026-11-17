@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useERPStore } from '@/store/erp-store';
 import { useTabStore } from '@/store/tab-store';
+import { useAccessStore } from '@/store/access-store';
 // Dialog is only used for PDF preview (not create/edit)
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -33,7 +34,7 @@ import PembayaranForm from '@/components/erp/cash-bank/forms/pembayaran-form';
 import PenerimaanForm from '@/components/erp/cash-bank/forms/penerimaan-form';
 import TransferBankForm from '@/components/erp/cash-bank/forms/transfer-bank-form';
 import { JenisTransaksiBadge } from '@/components/erp/cash-bank/forms/jenis-transaksi-selector';
-import { WorkflowStateBadge, WorkflowActionsCell } from '@/components/erp/workflow-components';
+import { WorkflowStateBadge, WorkflowActionsCell, WorkflowBadgeWithHistory } from '@/components/erp/workflow-components';
 import { useWorkflowStates } from '@/lib/use-workflow-states';
 import type { WorkflowResponse } from '@/types/api';
 
@@ -293,7 +294,7 @@ function HistoryTable({
                   <TableHead className="whitespace-nowrap">Status</TableHead>
                   {/* Update #02 — kolom jenis transaksi */}
                   {hasJenis && <TableHead className="whitespace-nowrap">Jenis Transaksi</TableHead>}
-                  {hasWorkflow && <TableHead className="whitespace-nowrap text-center">Workflow</TableHead>}
+                  {hasWorkflow && <TableHead className="whitespace-nowrap text-center">Persetujuan</TableHead>}
                   {hasActions && <TableHead className="whitespace-nowrap text-center">Aksi</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -329,7 +330,7 @@ function HistoryTable({
                             if (!w) return <span className="text-xs text-muted-foreground">—</span>;
                             return (
                               <div className="flex flex-col items-center gap-1">
-                                <WorkflowStateBadge state={w.state} />
+                                <WorkflowBadgeWithHistory state={w.state} documentType={w.documentType} documentId={w.documentId} />
                                 <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={onWorkflowDone} />
                               </div>
                             );
@@ -562,11 +563,15 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
     [openFormTab]
   );
 
-  const wfStates = useWorkflowStates(
-    'transfer_bank',
-    data.map((d) => d.id),
-    refreshKey
-  );
+  // === Update #071 — kolom "Persetujuan" kondisional: tampil bila jenis
+  // dokumen ini diaktifkan di Preferensi ▸ Persetujuan, ATAU ada baris
+  // non-final (dokumen lama yang masih menggantung). Bila non-aktif dan
+  // semua final → status hanya di-fetch untuk baris non-final (biasanya
+  // kosong → nol request); bila aktif → semua baris (SATU request batch). ===
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('transfer_bank'));
+  const wfStates = useWorkflowStates('transfer_bank', approvalOn ? data.map((d) => d.id) : data.filter((d) => d.status === 'DRAFT' || d.status === 'DIPROSES').map((d) => d.id), refreshKey);
+  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
+  const transferCols = showApprovalCol ? 9 : 8;
 
   return (
     <div className="space-y-6">
@@ -643,16 +648,18 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
                     <TableHead className="whitespace-nowrap text-right">Nilai</TableHead>
                     <TableHead className="whitespace-nowrap text-right">Biaya</TableHead>
                     <TableHead className="whitespace-nowrap">Status</TableHead>
-                    <TableHead className="whitespace-nowrap text-center">Workflow</TableHead>
+                    {/* === Update #071 — kolom "Persetujuan" (dulu "Workflow")
+                        tampil kondisional mengikuti konfigurasi persetujuan. === */}
+                    {showApprovalCol && <TableHead className="whitespace-nowrap text-center">Persetujuan</TableHead>}
                     <TableHead className="whitespace-nowrap text-center">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableSkeletonRows cols={9} />
+                    <TableSkeletonRows cols={transferCols} />
                   ) : data.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="h-24 text-center text-muted-foreground text-sm">
+                      <TableCell colSpan={transferCols} className="h-24 text-center text-muted-foreground text-sm">
                         Belum ada data
                       </TableCell>
                     </TableRow>
@@ -668,18 +675,20 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
                         <TableCell className="whitespace-nowrap">
                           <StatusBadge status={row.status} />
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-center">
-                          {(() => {
-                            const w = wfStates.states[row.id];
-                            if (!w) return <span className="text-xs text-muted-foreground">—</span>;
-                            return (
-                              <div className="flex flex-col items-center gap-1">
-                                <WorkflowStateBadge state={w.state} />
-                                <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={wfStates.refresh} />
-                              </div>
-                            );
-                          })()}
-                        </TableCell>
+                        {showApprovalCol && (
+                          <TableCell className="whitespace-nowrap text-center">
+                            {(() => {
+                              const w = wfStates.states[row.id];
+                              if (!w) return <span className="text-xs text-muted-foreground">—</span>;
+                              return (
+                                <div className="flex flex-col items-center gap-1">
+                                  <WorkflowBadgeWithHistory state={w.state} documentType={w.documentType} documentId={w.documentId} />
+                                  <WorkflowActionsCell documentType={w.documentType} documentId={w.documentId} version={w.version} availableActions={w.availableActions} onDone={wfStates.refresh} />
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
+                        )}
                         <TableCell className="whitespace-nowrap text-center">
                           <div className="flex items-center justify-center gap-1">
                             {(row.status === 'DRAFT' || row.status === 'DIPROSES') && (
@@ -935,11 +944,11 @@ function PembayaranTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
     });
   }, [openFormTab, debouncedSearch, statusFilter, kasBankFilter, dateFrom, dateTo]);
 
-  const wfStates = useWorkflowStates(
-    'pembayaran_kas',
-    data.map((d) => d.id),
-    refreshKey
-  );
+  // === Update #071 — kolom "Persetujuan" kondisional (lihat catatan Transfer):
+  // tampil bila pembayaran_kas diaktifkan ATAU ada baris non-final. ===
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('pembayaran_kas'));
+  const wfStates = useWorkflowStates('pembayaran_kas', approvalOn ? data.map((d) => d.id) : data.filter((d) => d.status === 'DRAFT' || d.status === 'DIPROSES').map((d) => d.id), refreshKey);
+  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
 
   return (
     <div className="space-y-6">
@@ -953,7 +962,7 @@ function PembayaranTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
         </Button>
       </div>
 
-      <HistoryTable type="pembayaran" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={wfStates.states} onWorkflowDone={wfStates.refresh} jenisFilter={jenisFilter} onJenisFilterChange={setJenisFilter} />
+      <HistoryTable type="pembayaran" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={showApprovalCol ? wfStates.states : undefined} onWorkflowDone={wfStates.refresh} jenisFilter={jenisFilter} onJenisFilterChange={setJenisFilter} />
 
       {/* Cancel = Hard Delete (hapus permanen + histori) */}
       <HardDeleteCancelDialog
@@ -1126,11 +1135,11 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
     });
   }, [openFormTab, debouncedSearch, statusFilter, kasBankFilter, dateFrom, dateTo]);
 
-  const wfStates = useWorkflowStates(
-    'penerimaan_kas',
-    data.map((d) => d.id),
-    refreshKey
-  );
+  // === Update #071 — kolom "Persetujuan" kondisional (lihat catatan Transfer):
+  // tampil bila penerimaan_kas diaktifkan ATAU ada baris non-final. ===
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('penerimaan_kas'));
+  const wfStates = useWorkflowStates('penerimaan_kas', approvalOn ? data.map((d) => d.id) : data.filter((d) => d.status === 'DRAFT' || d.status === 'DIPROSES').map((d) => d.id), refreshKey);
+  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
 
   return (
     <div className="space-y-6">
@@ -1144,7 +1153,7 @@ function PenerimaanTab({ kasBankOptions, coaOptions, refreshKey }: { kasBankOpti
         </Button>
       </div>
 
-      <HistoryTable type="penerimaan" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={wfStates.states} onWorkflowDone={wfStates.refresh} jenisFilter={jenisFilter} onJenisFilterChange={setJenisFilter} />
+      <HistoryTable type="penerimaan" data={data} loading={loading} error={error} search={search} onSearchChange={setSearch} statusFilter={statusFilter} onStatusFilterChange={setStatusFilter} kasBankFilter={kasBankFilter} onKasBankFilterChange={setKasBankFilter} dateFrom={dateFrom} onDateFromChange={setDateFrom} dateTo={dateTo} onDateToChange={setDateTo} skip={skip} total={total} onPrev={() => setSkip((s) => s - PAGE_SIZE)} onNext={() => setSkip((s) => s + PAGE_SIZE)} onRetry={fetchData} kasBankOptions={kasBankOptions} onCancel={confirmCancel} onEdit={openEditTab} onCetak={openCetakTab} workflowStates={showApprovalCol ? wfStates.states : undefined} onWorkflowDone={wfStates.refresh} jenisFilter={jenisFilter} onJenisFilterChange={setJenisFilter} />
 
       {/* Cancel = Hard Delete (hapus permanen + histori) */}
       <HardDeleteCancelDialog
@@ -1581,8 +1590,13 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
 
   // ── Tab store + workflow ──
   const openFormTab = useTabStore((s) => s.openFormTab);
-  const ids = useMemo(() => data.map((d) => d.id), [data]);
+  // === Update #071 — kolom "Persetujuan" kondisional (lihat catatan Transfer):
+  // tampil bila voucher_memorial diaktifkan ATAU ada baris non-final. ===
+  const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('voucher_memorial'));
+  const ids = useMemo(() => (approvalOn ? data.map((d) => d.id) : data.filter((d) => d.status === 'DRAFT' || d.status === 'DIPROSES').map((d) => d.id)), [data, approvalOn]);
   const wfStates = useWorkflowStates('voucher_memorial', ids, refreshKey);
+  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
+  const voucherCols = showApprovalCol ? 8 : 7;
 
   // ── Debounce search ──
   useEffect(() => {
@@ -1727,7 +1741,9 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="hidden md:table-cell">Akun Beban (Dr)</TableHead>
                   <TableHead className="text-right w-[140px]">Total</TableHead>
                   <TableHead className="w-[110px] text-center">Status</TableHead>
-                  <TableHead className="w-[150px]">Workflow</TableHead>
+                  {/* === Update #071 — kolom "Persetujuan" (dulu "Workflow")
+                      tampil kondisional mengikuti konfigurasi persetujuan. === */}
+                  {showApprovalCol && <TableHead className="w-[150px]">Persetujuan</TableHead>}
                   <TableHead className="w-24 text-center">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1744,7 +1760,7 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
                   ))
                 ) : data.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-24 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={voucherCols} className="h-24 text-center text-sm text-muted-foreground">
                       Belum ada Voucher Memorial. Buat lewat <strong>Kas &amp; Bank → Penerimaan → Pelunasan Invoice → mode Gagal Tagih</strong>.
                     </TableCell>
                   </TableRow>
@@ -1759,10 +1775,22 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
                       <TableCell className="text-center">
                         <StatusBadge status={row.status} />
                       </TableCell>
-                      <TableCell>{wfStates.states[row.id] ? <WorkflowStateBadge state={wfStates.states[row.id].state} /> : <span className="text-xs text-muted-foreground">—</span>}</TableCell>
+                      {showApprovalCol && (
+                        <TableCell>
+                          {wfStates.states[row.id] ? (
+                            <div className="flex flex-col items-start gap-1">
+                              <WorkflowBadgeWithHistory state={wfStates.states[row.id].state} documentType="voucher_memorial" documentId={row.id} />
+                              <WorkflowActionsCell documentType="voucher_memorial" documentId={row.id} version={wfStates.states[row.id].version} availableActions={wfStates.states[row.id].availableActions} onDone={onWorkflowDone} />
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
                         <div className="flex items-center justify-center gap-1">
-                          {wfStates.states[row.id] && <WorkflowActionsCell documentType="voucher_memorial" documentId={row.id} version={wfStates.states[row.id].version} availableActions={wfStates.states[row.id].availableActions} onDone={onWorkflowDone} />}
+                          {/* === Update #071 — aksi persetujuan kini di kolom
+                              "Persetujuan" (bukan duplikat di Aksi). === */}
                           <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => openCetakTab(row.id)} title="Cetak Voucher Memorial" aria-label={`Cetak ${row.noBukti}`}>
                             <Printer className="h-4 w-4" />
                           </Button>
