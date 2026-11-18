@@ -126,6 +126,9 @@ const subPageLabels: Record<string, string> = {
   'kategori-barang': 'Kategori Barang',
   satuan: 'Satuan',
   'syarat-bayar': 'Syarat Pembayaran',
+  // === Update #073 — Log Aktivitas (grup Sistem dalam modul Pengaturan):
+  // pusat pantauan log untuk Admin IT / pemegang system.audit.view. ===
+  'log-aktivitas': 'Log Aktivitas',
   // === Update ASAHI #019 — subPage baru Pengaturan (grup Informasi
   // Perusahaan) + seluruh submenu Preferensi. 'profil-perusahaan' label
   // lama dipertahankan untuk tab tersimpan versi sebelumnya (di-remap

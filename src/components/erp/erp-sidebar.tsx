@@ -3,7 +3,7 @@
 import * as React from 'react';
 // === Update ASAHI #019 — ikon submenu Preferensi (kini grup dalam modul
 // Pengaturan — Update #072; SlidersHorizontal tidak lagi dipakai). ===
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, ClipboardCheck, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, HandCoins, Activity, RefreshCw, Trash2, Factory, Bell, Type, Hash, CalendarRange, BookX, ShieldCheck } from 'lucide-react';
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, ClipboardCheck, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, HandCoins, Activity, RefreshCw, Trash2, Factory, Bell, Type, Hash, CalendarRange, BookX, ShieldCheck, ScrollText } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -273,6 +273,13 @@ const modules: NavModule[] = [
           { id: 'pengguna', label: 'Pengguna', icon: Users },
           { id: 'karyawan', label: 'Karyawan', icon: UserCircle }
         ]
+      },
+      {
+        // === Update #073 — grup Sistem: Log Aktivitas (login, manajemen
+        // pengguna, perubahan akses). Digating 'system.audit.view' → tampil
+        // untuk Super Admin, Admin IT, Manajer Keuangan (pemegang izin). ===
+        label: 'Sistem',
+        items: [{ id: 'log-aktivitas', label: 'Log Aktivitas', icon: ScrollText }]
       }
     ]
   }
@@ -370,6 +377,10 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     'syarat-bayar': 'master.syarat_bayar.view',
     pengguna: 'system.users.view',
     karyawan: 'master.karyawan.view',
+    // === Update #073 — Log Aktivitas (grup Sistem): izin audit akses.
+    // Pemegang default: Super Admin (short-circuit), Admin IT, dan role
+    // dengan 'system.audit.view' eksplisit (mis. Manajer Keuangan). ===
+    'log-aktivitas': 'system.audit.view',
     // === Update #072 — submenu Preferensi pindah KE DALAM modul Pengaturan
     // (sebelumnya modul mandiri; kode permission tidak berubah). Seluruh
     // submenu digating 'master.preference.view' (view; pengeditan tetap

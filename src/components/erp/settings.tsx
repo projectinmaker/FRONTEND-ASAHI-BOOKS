@@ -25,6 +25,9 @@ const KaryawanPage = dynamic(() => import('@/components/erp/settings/karyawan-pa
 const SyaratBayarPage = dynamic(() => import('@/components/erp/settings/syarat-bayar-page'), { ssr: false });
 const KategoriBarangPage = dynamic(() => import('@/components/erp/settings/kategori-barang-page'), { ssr: false });
 const SatuanPage = dynamic(() => import('@/components/erp/settings/satuan-page'), { ssr: false });
+// === Update #073 — Log Aktivitas: pusat pantauan log (login, manajemen
+// pengguna, perubahan akses) untuk Admin IT / pemegang system.audit.view. ===
+const LogAktivitasPage = dynamic(() => import('@/components/erp/settings/log-aktivitas'), { ssr: false });
 
 interface SettingsProps {
   subPage?: string;
@@ -99,6 +102,8 @@ export default function SettingsModule({ subPage, refreshKey, formMode, formProp
       {sp === 'syarat-bayar' && <SyaratBayarPage {...pageProps} subPage={sp} />}
       {sp === 'kategori-barang' && <KategoriBarangPage {...pageProps} subPage={sp} />}
       {sp === 'satuan' && <SatuanPage {...pageProps} subPage={sp} />}
+      {/* === Update #073 — Log Aktivitas (grup Sistem). === */}
+      {sp === 'log-aktivitas' && <LogAktivitasPage />}
     </div>
   );
 }

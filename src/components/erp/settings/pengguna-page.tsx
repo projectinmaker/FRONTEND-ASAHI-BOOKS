@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, UserCog, SearchX, ShieldCheck } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight, UserCog, SearchX, ShieldCheck, Power, PowerOff } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { toast } from 'sonner';
 import { useTabStore } from '@/store/tab-store';
@@ -312,6 +312,12 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
   const [skip, setSkip] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<PenggunaResponse | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // === Update #073 — aktifkan ulang + hapus permanen + filter status ===
+  const [activateTarget, setActivateTarget] = useState<PenggunaResponse | null>(null);
+  const [activating, setActivating] = useState(false);
+  const [permanentTarget, setPermanentTarget] = useState<PenggunaResponse | null>(null);
+  const [permanentDeleting, setPermanentDeleting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'SEMUA' | 'AKTIF' | 'NONAKTIF'>('SEMUA');
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
@@ -325,7 +331,7 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
 
   useEffect(() => {
     setSkip(0);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, statusFilter]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -335,6 +341,8 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
       params.set('skip', String(skip));
       params.set('limit', String(PAGE_SIZE));
       if (debouncedSearch) params.set('search', debouncedSearch);
+      // === Update #073 — filter status (AKTIF / NONAKTIF) ===
+      if (statusFilter !== 'SEMUA') params.set('status', statusFilter);
       const res = await api.get<PaginatedResponse<PenggunaResponse>>(`/pengguna?${params.toString()}`);
       setData(res.data);
       setTotal(res.total);
@@ -347,7 +355,7 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, skip]);
+  }, [debouncedSearch, skip, statusFilter]);
 
   useEffect(() => {
     fetchData();
@@ -374,6 +382,47 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
       }
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // === Update #073 — aktifkan ulang pengguna yang dinonaktifkan ===
+  const executeActivate = async () => {
+    if (!activateTarget) return;
+    setActivating(true);
+    try {
+      await api.post<PenggunaResponse>(`/pengguna/${activateTarget.id}/activate`);
+      toast.success(`Pengguna "${activateTarget.namaLengkap}" berhasil diaktifkan kembali`);
+      setActivateTarget(null);
+      fetchData();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.detail);
+      } else {
+        toast.error('Gagal mengaktifkan pengguna');
+      }
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  // === Update #073 — hapus permanen (hard delete) ===
+  const executePermanentDelete = async () => {
+    if (!permanentTarget) return;
+    setPermanentDeleting(true);
+    try {
+      await api.delete<{ message: string }>(`/pengguna/${permanentTarget.id}/permanent`);
+      toast.success(`Pengguna "${permanentTarget.namaLengkap}" berhasil dihapus permanen`);
+      setPermanentTarget(null);
+      fetchData();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        // 409 = masih ada data historis → backend menyarankan nonaktifkan.
+        toast.error(err.detail);
+      } else {
+        toast.error('Gagal menghapus pengguna');
+      }
+    } finally {
+      setPermanentDeleting(false);
     }
   };
 
@@ -418,11 +467,27 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
 
       <Card>
         <CardContent className="p-4">
-          <div className="max-w-sm">
-            <Label className="text-xs text-muted-foreground">Cari Nama / Username / Email</Label>
-            <div className="relative mt-1.5">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari pengguna..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
+          {/* === Update #073 — pencarian + filter status berdampingan === */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="max-w-sm flex-1">
+              <Label className="text-xs text-muted-foreground">Cari Nama / Username / Email</Label>
+              <div className="relative mt-1.5">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Cari pengguna..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
+              </div>
+            </div>
+            <div className="w-full sm:w-44">
+              <Label className="text-xs text-muted-foreground">Status</Label>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'SEMUA' | 'AKTIF' | 'NONAKTIF')}>
+                <SelectTrigger className="mt-1.5" aria-label="Filter status pengguna">
+                  <SelectValue placeholder="Semua status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SEMUA">Semua Status</SelectItem>
+                  <SelectItem value="AKTIF">Aktif</SelectItem>
+                  <SelectItem value="NONAKTIF">Nonaktif</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardContent>
@@ -479,7 +544,7 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
                     const isSelf = currentUser?.id === row.id;
                     const isNonaktif = row.status === 'NONAKTIF';
                     return (
-                      <TableRow key={row.id}>
+                      <TableRow key={row.id} className={isNonaktif ? 'opacity-60' : undefined}>
                         <TableCell className="whitespace-nowrap font-medium">{row.username}</TableCell>
                         <TableCell className="whitespace-nowrap">
                           {row.namaLengkap}
@@ -489,16 +554,30 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
                         <TableCell className="whitespace-nowrap">{roleBadge(row.role)}</TableCell>
                         <TableCell className="whitespace-nowrap">{statusBadge(row.status)}</TableCell>
                         <TableCell className="whitespace-nowrap text-center">
+                          {/* === Update #073 — aksi lengkap: Role & Akses, Edit,
+                              lalu sesuai status: Nonaktifkan (aktif) atau
+                              Aktifkan (nonaktif), dan Hapus Permanen (selalu,
+                              kecuali akun sendiri). Ikon kini deskriptif:
+                              power = status, tong sampah = hapus permanen. === */}
                           <div className="inline-flex items-center gap-1">
                             {canManageAccess && (
                               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setAccessTarget(row)} aria-label={`Role & Akses ${row.namaLengkap}`} title="Role & Akses">
                                 <ShieldCheck className="h-3.5 w-3.5" />
                               </Button>
                             )}
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openFormTab({ title: `Edit ${row.namaLengkap}`, module: 'settings', subPage: 'pengguna', formKey: 'pengguna-edit', formProps: { id: row.id, username: row.username, namaLengkap: row.namaLengkap, email: row.email, role: row.role } })} aria-label={`Edit ${row.namaLengkap}`}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openFormTab({ title: `Edit ${row.namaLengkap}`, module: 'settings', subPage: 'pengguna', formKey: 'pengguna-edit', formProps: { id: row.id, username: row.username, namaLengkap: row.namaLengkap, email: row.email, role: row.role } })} aria-label={`Edit ${row.namaLengkap}`} title="Edit">
                               <Pencil className="h-3.5 w-3.5" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeleteTarget(row)} aria-label={`Hapus ${row.namaLengkap}`} disabled={isSelf || isNonaktif} title={isSelf ? 'Tidak dapat menonaktifkan akun sendiri' : isNonaktif ? 'Pengguna sudah nonaktif' : undefined}>
+                            {isNonaktif ? (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" onClick={() => setActivateTarget(row)} aria-label={`Aktifkan ${row.namaLengkap}`} title="Aktifkan ulang">
+                                <Power className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50" onClick={() => setDeleteTarget(row)} aria-label={`Nonaktifkan ${row.namaLengkap}`} disabled={isSelf} title={isSelf ? 'Tidak dapat menonaktifkan akun sendiri' : 'Nonaktifkan (bisa diaktifkan lagi nanti)'}>
+                                <PowerOff className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setPermanentTarget(row)} aria-label={`Hapus permanen ${row.namaLengkap}`} disabled={isSelf} title={isSelf ? 'Tidak dapat menghapus akun sendiri' : 'Hapus permanen (tidak dapat dibatalkan)'}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>
                           </div>
@@ -538,13 +617,64 @@ function PenggunaListContent({ refreshKey }: { refreshKey?: number }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Nonaktifkan Pengguna</AlertDialogTitle>
             <AlertDialogDescription>
-              Apakah Anda yakin ingin menonaktifkan pengguna <span className="font-semibold text-foreground">&quot;{deleteTarget?.namaLengkap}&quot;</span> ({deleteTarget?.username})? Pengguna yang dinonaktifkan tidak akan dapat login namun data historis tetap tersimpan.
+              Apakah Anda yakin ingin menonaktifkan pengguna <span className="font-semibold text-foreground">&quot;{deleteTarget?.namaLengkap}&quot;</span> ({deleteTarget?.username})? Pengguna yang dinonaktifkan tidak akan dapat login namun data historis tetap tersimpan. {/* === Update #073 — jelaskan bahwa ini bisa dibatalkan lewat aksi Aktifkan === */} Anda bisa mengaktifkannya kembali kapan saja.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Batal</AlertDialogCancel>
-            <AlertDialogAction onClick={executeDelete} disabled={deleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-2">
+            <AlertDialogAction onClick={executeDelete} disabled={deleting} className="bg-amber-600 text-white hover:bg-amber-700 gap-2">
               {deleting && <Loader2 className="h-4 w-4 animate-spin" />} Nonaktifkan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Update #073 — Dialog Aktifkan Ulang ── */}
+      <AlertDialog
+        open={!!activateTarget}
+        onOpenChange={(open) => {
+          if (!open) setActivateTarget(null);
+        }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Aktifkan Ulang Pengguna</AlertDialogTitle>
+            <AlertDialogDescription>
+              Aktifkan kembali <span className="font-semibold text-foreground">&quot;{activateTarget?.namaLengkap}&quot;</span> ({activateTarget?.username})? Pengguna akan bisa login kembali dengan izin role-nya seperti sebelumnya.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={activating}>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={executeActivate} disabled={activating} className="gap-2">
+              {activating && <Loader2 className="h-4 w-4 animate-spin" />} Aktifkan
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Update #073 — Dialog Hapus Permanen ── */}
+      <AlertDialog
+        open={!!permanentTarget}
+        onOpenChange={(open) => {
+          if (!open) setPermanentTarget(null);
+        }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Permanen Pengguna</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <span className="space-y-2">
+                <span className="block">
+                  Hapus permanen <span className="font-semibold text-foreground">&quot;{permanentTarget?.namaLengkap}&quot;</span> ({permanentTarget?.username})? Tindakan ini <span className="font-semibold text-destructive">tidak dapat dibatalkan</span> — akun beserta username-nya hilang selamanya.
+                </span>
+                <span className="block">
+                  Jika pengguna ini pernah membuat dokumen/jurnal, sistem akan menolak penghapusan dan menyarankan <span className="font-medium text-foreground">Nonaktifkan</span> sebagai gantinya agar jejak historis tetap utuh.
+                </span>
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={permanentDeleting}>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={executePermanentDelete} disabled={permanentDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90 gap-2">
+              {permanentDeleting && <Loader2 className="h-4 w-4 animate-spin" />} Ya, Hapus Permanen
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
