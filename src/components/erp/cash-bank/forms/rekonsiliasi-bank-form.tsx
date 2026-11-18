@@ -105,7 +105,8 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
   const refreshListTab = useTabStore((s) => s.refreshListTab);
 
   // Update #052 — judul tab salah ketik ('Simpan Bank') -> judul sesuai form.
-  const title = 'Buat Rekonsiliasi Bank';
+  // === Update #072 — rename "Rekonsiliasi Bank" → "Rekonsiliasi". ===
+  const title = 'Buat Rekonsiliasi';
 
   // ── Draft otomatis (form ini selalu mode create) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -140,7 +141,7 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
     setTanggal(d.tanggal || todayStr());
     setSaldoBank(d.saldoBank || '');
     setKeterangan(d.keterangan || '');
-    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Rekonsiliasi Bank dimuat kembali otomatis.' });
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Rekonsiliasi dimuat kembali otomatis.' });
   }, []);
 
   // ── Draft otomatis: simpan tiap perubahan (lewati render pertama agar form kosong tidak menimpa draft) ──
@@ -346,7 +347,7 @@ export default function RekonsiliasiBankForm({ mode }: Props) {
 
           <div className="flex flex-wrap items-center justify-end gap-2 mt-6">
             <div className="mr-auto">
-              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Rekonsiliasi Bank" />
+              <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Rekonsiliasi" />
             </div>
             <Button variant="outline" onClick={handleClose} disabled={submitting}>
               Batal

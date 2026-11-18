@@ -414,7 +414,7 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
     if (activeTabId) closeTab(activeTabId);
   }, [activeTabId, closeTab]);
 
-  const title = detail ? `Rekonsiliasi #${detail.kasBank?.nama || rekonsiliasiId.slice(0, 8)}` : 'Detail Rekonsiliasi Bank';
+  const title = detail ? `Rekonsiliasi #${detail.kasBank?.nama || rekonsiliasiId.slice(0, 8)}` : 'Detail Rekonsiliasi';
 
   // m-02: sisa selisih setelah penyesuaian (untuk DRAFT) — formula balance
   // backend: saldo_buku + penyesuaian_net = saldo_bank + memo_net, dengan
@@ -476,7 +476,7 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <CardTitle className="text-lg">Detail Rekonsiliasi Bank</CardTitle>
+                  <CardTitle className="text-lg">Detail Rekonsiliasi</CardTitle>
                   <StatusBadge status={detail.status} />
                 </div>
               </CardHeader>
@@ -494,7 +494,7 @@ function RekonsiliasiBankDetailView({ rekonsiliasiId }: { rekonsiliasiId: string
                     <p className="text-sm font-medium mt-0.5">{formatDate(detail.tanggalAkhir)}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground">Saldo Bank</p>
+                    <p className="text-xs font-medium text-muted-foreground">Saldo</p>
                     <p className="text-sm font-mono font-semibold mt-0.5">{fmtRp(detail.saldoBank)}</p>
                   </div>
                   <div>
@@ -850,7 +850,7 @@ function RekonsiliasiBankListContent({ refreshKey }: { refreshKey?: number }) {
   // ── Create → open form tab ──
   const openCreateTab = useCallback(() => {
     openFormTab({
-      title: 'Buat Rekonsiliasi Bank',
+      title: 'Buat Rekonsiliasi',
       module: 'cash-bank',
       subPage: 'rekonsiliasi-bank',
       formKey: 'rekonsiliasi-bank-create'
@@ -998,7 +998,7 @@ function RekonsiliasiBankListContent({ refreshKey }: { refreshKey?: number }) {
                   <TableHead className="w-12 text-center">No</TableHead>
                   <TableHead>Kas/Bank</TableHead>
                   <TableHead>Tgl Statement</TableHead>
-                  <TableHead className="text-right">Saldo Bank</TableHead>
+                  <TableHead className="text-right">Saldo</TableHead>
                   <TableHead className="text-right">Saldo Buku</TableHead>
                   <TableHead className="text-right">Selisih</TableHead>
                   <TableHead className="text-center">Status</TableHead>

@@ -11,7 +11,7 @@
 export type HeaderCOA = 'AKTIVA' | 'KEWAJIBAN' | 'MODAL' | 'PENDAPATAN' | 'HPP' | 'BEBAN';
 export type SaldoNormal = 'DEBIT' | 'KREDIT';
 export type TingkatAkun = 'HEADER' | 'GROUP' | 'DETAIL';
-export type RolePengguna = 'ADMINISTRATOR' | 'MANAJER_KEUANGAN' | 'STAFF_AKUNTANSI' | 'STAFF_GUDANG' | 'STAFF_PENJUALAN' | 'STAFF_PEMBELIAN' | 'STAFF_ENGINEERING';
+export type RolePengguna = 'ADMINISTRATOR' | 'MANAJER_KEUANGAN' | 'STAFF_AKUNTANSI' | 'STAFF_GUDANG' | 'STAFF_PENJUALAN' | 'STAFF_PEMBELIAN' | 'STAFF_ENGINEERING' | 'IT_ADMIN' | 'HR_ADMIN' | 'MANAGEMENT_VIEWER';
 
 // ── Auth ──────────────────────────────────────────────────────────────
 
@@ -1651,8 +1651,9 @@ export interface PenerimaanKasResponse {
 export type JenisTransaksiKas = 'PELUNASAN_INVOICE' | 'TRANSAKSI_LAINNYA' | 'TERMIN_SO';
 
 export const JENIS_TRANSAKSI_KAS_LABELS: Record<JenisTransaksiKas, string> = {
-  PELUNASAN_INVOICE: 'Pelunasan Invoice',
-  TRANSAKSI_LAINNYA: 'Transaksi Lainnya',
+  // === Update #072 — rename label (nilai enum tetap). ===
+  PELUNASAN_INVOICE: 'Pembayaran Invoice',
+  TRANSAKSI_LAINNYA: 'Pembayaran Lainnya',
   // Update #031 — penerimaan pembayaran termin Sales Order (DP / cicilan)
   TERMIN_SO: 'Pembayaran Termin SO'
 };
@@ -3896,6 +3897,9 @@ export interface InvoiceSaldoDetailResponse extends InvoiceSaldoResponse {
 // ── === Update #044 — Voucher Memorial (Gagal Tagih / penghapusan piutang) ── ─
 // Cabang "Gagal Tagih" alur Penerimaan Piutang modul Kas & Bank:
 // dokumen non-kas — Dr Beban Penghapusan Piutang, Cr Piutang Usaha.
+// === Update #072 — jenis HUTANG: penghapusan HUTANG atas supplier —
+// Dr Hutang Usaha (kontrol), Cr Pendapatan Penghapusan Hutang
+// (aksi Gagal Tagih di daftar Outstanding Memorial). ===
 
 export interface VoucherMemorialAlokasiCreate {
   invoiceId: string;
@@ -3904,11 +3908,17 @@ export interface VoucherMemorialAlokasiCreate {
 }
 
 export interface VoucherMemorialCreate {
-  pelangganId: string;
+  /** PIUTANG (default) | HUTANG — Update #072. */
+  jenis?: 'PIUTANG' | 'HUTANG';
+  /** Wajib untuk jenis PIUTANG. */
+  pelangganId?: string | null;
+  /** === Update #072 — wajib untuk jenis HUTANG. === */
+  supplierId?: string | null;
   tanggal: string;
   alokasi: VoucherMemorialAlokasiCreate[];
   catatan?: string | null;
-  /** Opsional — kosong → default Setting Akun BEBAN_PENGHAPUSAN_PIUTANG */
+  /** Opsional — kosong → default Setting Akun (PIUTANG: BEBAN_PENGHAPUSAN_
+   * PIUTANG; HUTANG: PENDAPATAN_PENGHAPUSAN_HUTANG). */
   akunBebanId?: string | null;
 }
 
@@ -3925,8 +3935,13 @@ export interface VoucherMemorialResponse {
   id: string;
   noBukti: string;
   tanggal: string;
-  pelangganId: string;
+  /** === Update #072 — PIUTANG | HUTANG. === */
+  jenis: string;
+  pelangganId: string | null;
   pelanggan: { id: string; nama: string; alamat?: string | null } | null;
+  /** === Update #072 — pihak jenis HUTANG. === */
+  supplierId: string | null;
+  supplier: { id: string; nama: string; alamat?: string | null } | null;
   akunBebanId: string | null;
   akunBeban: { id: string; kode: string; nama: string } | null;
   catatan: string | null;
@@ -3945,12 +3960,53 @@ export interface VoucherMemorialSummaryResponse {
   id: string;
   noBukti: string;
   tanggal: string;
+  /** === Update #072 — PIUTANG | HUTANG. === */
+  jenis?: string;
   totalNilai: number | string;
   status: string;
   jurnalUmumId: string | null;
-  pelangganId: string;
+  pelangganId: string | null;
+  /** === Update #072 — pihak jenis HUTANG. === */
+  supplierId: string | null;
   akunBebanId: string | null;
   alokasi: VoucherMemorialAlokasiCreate[];
+}
+
+// ── === Update #072 — Outstanding Memorial (uraian hutang & piutang) ── ─
+// Daftar invoice piutang & hutang yang masih outstanding + aksi Penerimaan
+// / Pembayaran Penuh, Sebagian, dan Gagal Tagih (berlaku untuk keduanya).
+
+export interface OutstandingMemorialRowResponse {
+  /** PIUTANG | HUTANG */
+  jenis: 'PIUTANG' | 'HUTANG';
+  invoiceId: string;
+  pihakId: string;
+  noDokumen: string;
+  tanggal: string;
+  pihakNama: string;
+  /** Referensi eksternal: hutang → No Faktur supplier; piutang → No SO asal. */
+  inv: string | null;
+  nilaiTagihan: string | number;
+  totalBayar: string | number;
+  totalRetur: string | number;
+  uangMuka: string | number;
+  totalGagalTagih: string | number;
+  /** Sisa tagihan/hutang outstanding — angka yang diproses aksi. */
+  nominal: string | number;
+  kelebihan: string | number;
+  /** BELUM_DIBAYAR | PARSIAL | LUNAS | LEBIH_BAYAR */
+  status: string;
+  jatuhTempo: string | null;
+  aktif: boolean;
+}
+
+export interface OutstandingMemorialListResponse {
+  totalPiutang: string | number;
+  totalHutang: string | number;
+  data: OutstandingMemorialRowResponse[];
+  total: number;
+  skip: number;
+  limit: number;
 }
 
 // ── Import & Export Excel (Update #5) ────────────────────────────────────

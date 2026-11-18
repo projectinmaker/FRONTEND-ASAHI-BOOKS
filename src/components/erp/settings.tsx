@@ -2,6 +2,12 @@
 
 import dynamic from 'next/dynamic';
 
+// === Update #072 — modul Preferensi digabung ke Pengaturan (grup sidebar
+// "Preferensi"): seluruh halamannya dirutekan lewat router modul Pengaturan
+// ini. Komponen bersama dipakai ulang dari @/components/erp/preferensi
+// (header modul diganti deskripsi Pengaturan). ===
+const PreferensiModule = dynamic(() => import('@/components/erp/preferensi'), { ssr: false });
+
 const COAPage = dynamic(() => import('@/components/erp/settings/coa-page'), { ssr: false });
 // Update ASAHI: identitas perusahaan untuk header cetak/PDF (logo + nama)
 // === Update ASAHI #019 — subPage 'umum' (rename dari 'profil-perusahaan') ===
@@ -31,6 +37,14 @@ export default function SettingsModule({ subPage, refreshKey, formMode, formProp
   const sp = subPage || 'coa';
 
   const pageProps = { refreshKey, formMode, formProps };
+
+  // === Update #072 — subPage grup Preferensi (perusahaan, fitur, akun-default,
+  // pengingat, penjualan-pembelian, perpajakan, font, penomoran, persetujuan)
+  // dirutekan ke modul Preferensi (halaman sama seperti sebelumnya). ===
+  const PREFERENSI_SUBPAGES = ['perusahaan', 'fitur', 'akun-default', 'pengingat', 'penjualan-pembelian', 'perpajakan', 'font', 'penomoran', 'persetujuan'];
+  if (PREFERENSI_SUBPAGES.includes(sp)) {
+    return <PreferensiModule subPage={sp} refreshKey={refreshKey} />;
+  }
 
   // Form mode — render the specific page in form mode
   if (formMode) {
@@ -62,10 +76,12 @@ export default function SettingsModule({ subPage, refreshKey, formMode, formProp
     <div className="space-y-6">
       {/* === Update ASAHI #019 — judul modul diperbarui: Pengaturan kini dua
           grup (Informasi Perusahaan + Master Data); konfigurasi perilaku
-          aplikasi pindah ke modul Preferensi. === */}
+          aplikasi pindah ke modul Preferensi.
+          === Update #072 — Preferensi kini GRUP di dalam Pengaturan
+          (Informasi Perusahaan ▸ Preferensi ▸ Master Data). === */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Pengaturan</h1>
-        <p className="text-muted-foreground">Informasi perusahaan (umum, periode akuntansi, pajak) dan data master — akun perkiraan, pelanggan, supplier, gudang, satuan, pengguna, karyawan. Konfigurasi perilaku aplikasi ada di modul Preferensi.</p>
+        <p className="text-muted-foreground">Informasi perusahaan (umum, periode akuntansi, pajak), preferensi aplikasi (perusahaan, fitur, akun default, pengingat, penjualan &amp; pembelian, perpajakan, font, penomoran dokumen, persetujuan), dan data master — akun perkiraan, pelanggan, supplier, gudang, satuan, pengguna, karyawan.</p>
       </div>
       {/* === Update ASAHI #019 — routing grup "Informasi Perusahaan":
           'umum' (ex-Profil Perusahaan; tab lama tetap diarahkan ke sini),

@@ -630,7 +630,7 @@ export function PenawaranTab({ pelangganOptions, refreshKey }: { pelangganOption
         formProps: { penawaranId: d.id }
       });
       toast.info(`Form Sales Order terbuka dengan isian ${d.noPenawaran}${rev}`, {
-        description: 'Simpan SO dengan nilai penuh (tanpa PPN) — terbitkan Invoice dari SO ini (bisa berkali-kali) dan atur DP bertahap / pelunasan lewat field DP/Pelunasan di invoice, lalu lunasi lewat Pelunasan Invoice (Kas & Bank).'
+        description: 'Simpan SO dengan nilai penuh (tanpa PPN) — terbitkan Invoice dari SO ini (bisa berkali-kali) dan atur DP bertahap / pelunasan lewat field DP/Pelunasan di invoice, lalu lunasi lewat Pembayaran Invoice (Kas & Bank).'
       });
     },
     [openFormTab]

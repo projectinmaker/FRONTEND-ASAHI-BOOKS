@@ -139,7 +139,9 @@ export default function TransferBankForm({ mode, id }: Props) {
 
   const isEdit = !!id || mode === 'edit';
   const isCreate = !isEdit;
-  const title = isEdit ? 'Edit Transfer Bank' : 'Transfer Bank';
+  // === Update #072 — rename label "Transfer Bank" → "Pindah Buku"
+  // (endpoint/kode backend TIDAK berubah). ===
+  const title = isEdit ? 'Edit Pindah Buku' : 'Pindah Buku';
 
   // ── Draft otomatis (mode create saja; form edit memuat data server) ──
   const userId = useAuthStore((s) => s.user?.id ?? 'anon');
@@ -178,7 +180,7 @@ export default function TransferBankForm({ mode, id }: Props) {
     setNilaiTransfer(d.nilaiTransfer || '');
     setBiayaTransfer(d.biayaTransfer || '');
     setInformasi(d.informasi || '');
-    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Transfer Bank dimuat kembali otomatis.' });
+    toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Pindah Buku dimuat kembali otomatis.' });
   }, []);
 
   // ── Draft otomatis: simpan tiap perubahan (lewati render pertama agar form kosong tidak menimpa draft) ──
@@ -431,7 +433,7 @@ export default function TransferBankForm({ mode, id }: Props) {
           <div className="flex flex-wrap items-center justify-end gap-2 mt-6">
             {isCreate && (
               <div className="mr-auto">
-                <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Transfer Bank" />
+                <DraftIndicator hasDraft={draft.hasDraft} ageLabel={draft.draftAgeLabel} onDiscard={handleDiscardDraft} formLabel="Pindah Buku" />
               </div>
             )}
             <Button variant="outline" onClick={handleClose} disabled={submitting}>

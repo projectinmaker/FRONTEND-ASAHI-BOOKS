@@ -28,13 +28,22 @@ const PAGE_SIZE = 20;
 const ROLE_OPTIONS: { value: RolePengguna; label: string }[] = [
   { value: 'ADMINISTRATOR', label: 'Administrator' },
   { value: 'MANAJER_KEUANGAN', label: 'Manajer Keuangan' },
-  { value: 'STAFF_AKUNTANSI', label: 'Staff Akuntansi' },
+  // === Update #072 — rename tampilan "Staff Akuntansi" → "Staf Keuangan"
+  // (nama template RBAC backend FINANCE_STAFF memang "Staf Keuangan";
+  // enum/kode STAFF_AKUNTANSI TIDAK berubah supaya data lama aman). ===
+  { value: 'STAFF_AKUNTANSI', label: 'Staf Keuangan' },
   { value: 'STAFF_GUDANG', label: 'Staff Gudang' },
   { value: 'STAFF_PENJUALAN', label: 'Staff Penjualan' },
   // Update #018 — role Pembelian & Engineering (template RBAC sudah ada di
   // backend; enum+dropdown ini yang membuat keduanya bisa dipilih).
   { value: 'STAFF_PEMBELIAN', label: 'Staf Pembelian' },
-  { value: 'STAFF_ENGINEERING', label: 'Staf Engineering (Produksi)' }
+  { value: 'STAFF_ENGINEERING', label: 'Staf Engineering (Produksi)' },
+  // === Update #072 — 3 role yang selama ini hanya bisa di-assign lewat UI
+  // Role & Akses kini bisa dipilih langsung (enum baru migration
+  // rbac00000003; template RBAC-nya sudah lama ada di backend). ===
+  { value: 'IT_ADMIN', label: 'Admin IT' },
+  { value: 'HR_ADMIN', label: 'Admin HR' },
+  { value: 'MANAGEMENT_VIEWER', label: 'Viewer Management' }
 ];
 
 // ─── Badge helpers ──────────────────────────────────────────────────────────
@@ -48,10 +57,15 @@ const roleBadge = (role: string) => {
     STAFF_PENJUALAN: 'bg-rose-100 text-rose-700 border-rose-200',
     // Update #018
     STAFF_PEMBELIAN: 'bg-orange-100 text-orange-700 border-orange-200',
-    STAFF_ENGINEERING: 'bg-teal-100 text-teal-700 border-teal-200'
+    STAFF_ENGINEERING: 'bg-teal-100 text-teal-700 border-teal-200',
+    // === Update #072 — role IT / HR / Viewer Management. ===
+    IT_ADMIN: 'bg-slate-100 text-slate-700 border-slate-200',
+    HR_ADMIN: 'bg-pink-100 text-pink-700 border-pink-200',
+    MANAGEMENT_VIEWER: 'bg-sky-100 text-sky-700 border-sky-200'
   };
   const cls = map[role] || 'bg-gray-100 text-gray-700 border-gray-200';
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>{role}</span>;
+  const label = ROLE_OPTIONS.find((o) => o.value === role)?.label || role;
+  return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${cls}`}>{label}</span>;
 };
 
 const statusBadge = (status: string) => {

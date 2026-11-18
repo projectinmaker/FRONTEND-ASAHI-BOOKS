@@ -35,7 +35,8 @@ const PEMBATALAN_LIMIT = 100;
 const DOC_TYPE_LABELS: Record<string, string> = {
   pembayaran_kas: 'Pembayaran Kas',
   penerimaan_kas: 'Penerimaan Kas',
-  transfer_bank: 'Transfer Bank',
+  // === Update #072 — rename label (kode jenis dokumen tetap). ===
+  transfer_bank: 'Pindah Buku',
   sales_order: 'Pesanan Penjualan',
   sales_invoice: 'Invoice Penjualan',
   sales_retur: 'Retur Penjualan',

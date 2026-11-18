@@ -63,8 +63,11 @@ const subPageLabels: Record<string, string> = {
   // Kas & Bank
   pembayaran: 'Pembayaran',
   penerimaan: 'Penerimaan',
-  'transfer-bank': 'Transfer Bank',
-  'rekonsiliasi-bank': 'Rekonsiliasi Bank',
+  // === Update #072 — rename label (id subPage & endpoint tidak berubah). ===
+  'transfer-bank': 'Pindah Buku',
+  'rekonsiliasi-bank': 'Rekonsiliasi',
+  // === Update #072 — modul Voucher Memorial diganti Outstanding Memorial. ===
+  'voucher-memorial': 'Outstanding Memorial',
   // Update #14 — fitur Belum Teridentifikasi dihapus; label dipertahankan
   // untuk tab tersimpan versi lama (di-remap ke Penerimaan di bawah).
   'belum-teridentifikasi': 'Belum Teridentifikasi',
@@ -126,7 +129,9 @@ const subPageLabels: Record<string, string> = {
   // === Update ASAHI #019 — subPage baru Pengaturan (grup Informasi
   // Perusahaan) + seluruh submenu Preferensi. 'profil-perusahaan' label
   // lama dipertahankan untuk tab tersimpan versi sebelumnya (di-remap
-  // ke 'umum' di ModuleContent). ===
+  // ke 'umum' di ModuleContent).
+  // === Update #072 — submenu Preferensi kini grup dalam modul Pengaturan
+  // (label dipindahkan ke sini; 'persetujuan' ditambahkan). ===
   'profil-perusahaan': 'Profil Perusahaan',
   umum: 'Umum',
   'periode-akuntansi': 'Periode Akuntansi',
@@ -139,7 +144,8 @@ const subPageLabels: Record<string, string> = {
   'penjualan-pembelian': 'Penjualan & Pembelian',
   perpajakan: 'Perpajakan',
   font: 'Font',
-  penomoran: 'Penomoran Dokumen'
+  penomoran: 'Penomoran Dokumen',
+  persetujuan: 'Persetujuan'
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -148,10 +154,10 @@ const subPageLabels: Record<string, string> = {
 
 function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: { moduleId: string; subPage?: string; refreshKey?: number; formMode?: string; formProps?: Record<string, unknown> }) {
   // Update #02 — koreksi miskom catatan-update-01: Pelunasan Piutang/Hutang
-  // kini JENIS TRANSAKSI 'Pelunasan Invoice' di form Penerimaan/Pembayaran
+  // kini JENIS TRANSAKSI 'Pembayaran Invoice' (Update #072) di form Penerimaan/Pembayaran
   // Kas & Bank (bukan halaman terpisah). Tab tersimpan dari versi lama
   // di-remap ke daftar Penerimaan/Pembayaran (alur pelunasan dibuka dari
-  // tombol Tambah di list masing-masing → jenis 'Pelunasan Invoice').
+  // tombol Tambah di list masing-masing → jenis 'Pembayaran Invoice').
   let activeModule = moduleId;
   let activeSubPage = subPage;
   if (activeModule === 'sales' && subPage === 'pelunasan-piutang') {
@@ -172,9 +178,16 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
   }
   // === Update ASAHI #019 — tab lama Pengaturan → 'profil-perusahaan'
   // di-remap ke subPage 'umum' (rename menu; router settings.tsx juga
-  // menerima keduanya). ===
+  // menerima keduanya).
+  // === Update #072 — modul Preferensi kini grup dalam Pengaturan: tab
+  // tersimpan lama (module 'preferensi') di-remap ke modul 'settings'
+  // dengan subPage yang sama (semua halaman Preferensi dirutekan di
+  // settings.tsx). ===
   if (activeModule === 'settings' && subPage === 'profil-perusahaan') {
     activeSubPage = 'umum';
+  }
+  if (activeModule === 'preferensi') {
+    activeModule = 'settings';
   }
   switch (activeModule) {
     case 'dashboard':
@@ -203,6 +216,9 @@ function ModuleContent({ moduleId, subPage, refreshKey, formMode, formProps }: {
     case 'settings':
       return <Settings subPage={activeSubPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     // === Update ASAHI #019 — modul Preferensi ===
+    // === Update #072 — modul Preferensi digabung ke Pengaturan; case ini
+    // dipertahankan sebagai pengaman (tab 'preferensi' sudah di-remap ke
+    // 'settings' di atas, sehingga jalur ini praktis tak terpakai). ===
     case 'preferensi':
       return <PreferensiModule subPage={activeSubPage} refreshKey={refreshKey} formMode={formMode} formProps={formProps} />;
     default:
@@ -250,7 +266,10 @@ export default function HomePage() {
   }
 
   // Breadcrumb from active tab
-  const breadcrumbModule = activeTab?.module || 'dashboard';
+  // === Update #072 — modul Preferensi digabung ke Pengaturan: tab lama
+  // ditampilkan sebagai Pengaturan ▸ <subPage> di breadcrumb. ===
+  const breadcrumbModuleRaw = activeTab?.module || 'dashboard';
+  const breadcrumbModule = breadcrumbModuleRaw === 'preferensi' ? 'settings' : breadcrumbModuleRaw;
   const breadcrumbSubPage = activeTab?.subPage;
   const moduleLabel = moduleLabels[breadcrumbModule] || breadcrumbModule;
   const subPageLabel = breadcrumbSubPage ? subPageLabels[breadcrumbSubPage] || breadcrumbSubPage : null;

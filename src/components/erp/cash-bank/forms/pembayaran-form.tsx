@@ -346,9 +346,9 @@ export default function PembayaranForm({ mode, id }: Props) {
   const isPelunasanInvoice = jenisTransaksi === 'PELUNASAN_INVOICE';
 
   // ── Update #13 (Kas & Bank) — kembali ke kartu pilihan Jenis Transaksi dari
-  // alur Pelunasan Invoice. dirty dilaporkan EmbeddedSettlementForm; isian
+  // alur Pembayaran Invoice. dirty dilaporkan EmbeddedSettlementForm; isian
   // pelunasan tersimpan otomatis sebagai draft dan dipulihkan bila user memilih
-  // Pelunasan Invoice kembali, jadi konfirmasi hanya untuk menghindari klik salah. ──
+  // Pembayaran Invoice kembali, jadi konfirmasi hanya untuk menghindari klik salah. ──
   const [settlementDirty, setSettlementDirty] = useState(false);
   const [backConfirmOpen, setBackConfirmOpen] = useState(false);
 
@@ -508,7 +508,7 @@ export default function PembayaranForm({ mode, id }: Props) {
     // Update #16 — validasi No Bukti dihapus (field tidak ada lagi ala Accurate;
     // backend auto-isi = nomor dokumen)
     if (!isEdit) {
-      // Update #02 — validasi rincian Transaksi Lainnya
+      // Update #02 — validasi rincian Pembayaran Lainnya
       if (rincianRows.length === 0) e.rincian = 'Rincian pembayaran wajib diisi';
       const hasEmptyNilai = rincianRows.some((r) => !r.nilai || parseInt(r.nilai.replace(/\D/g, ''), 10) <= 0);
       if (hasEmptyNilai) e.rincian = 'Semua rincian harus memiliki nilai lebih dari 0';
@@ -537,7 +537,7 @@ export default function PembayaranForm({ mode, id }: Props) {
         await api.put<PembayaranKasResponse>(`/kas-bank/pembayaran/${id}`, payload);
         toast.success('Pembayaran berhasil diperbarui');
       } else {
-        // Update #02 — payload Transaksi Lainnya (Pelunasan Invoice lewat alur settlement)
+        // Update #02 — payload Pembayaran Lainnya (Pembayaran Invoice lewat alur settlement)
         const payload: PembayaranKasCreate = {
           tanggal,
           kasBankId,
@@ -578,7 +578,7 @@ export default function PembayaranForm({ mode, id }: Props) {
     if (activeTabId) closeTab(activeTabId);
   }, [activeTabId, closeTab]);
 
-  // ── Update #13 — kembali ke kartu pilihan Jenis Transaksi (alur Pelunasan Invoice) ──
+  // ── Update #13 — kembali ke kartu pilihan Jenis Transaksi (alur Pembayaran Invoice) ──
   const handleBackToJenisSelector = useCallback(() => {
     if (settlementDirty) {
       setBackConfirmOpen(true);
@@ -603,13 +603,13 @@ export default function PembayaranForm({ mode, id }: Props) {
     );
   }
 
-  // ── Update #02 — jenis Pelunasan Invoice: render alur pelunasan embedded ──
+  // ── Update #02 — jenis Pembayaran Invoice: render alur pelunasan embedded ──
   // (pilih supplier → invoice pembelian outstanding → nominal → posting).
   // Update #13 — banner jenis transaksi + tombol "Ganti Jenis Transaksi" agar
   // user bisa kembali ke kartu pilihan Jenis Transaksi tanpa menutup tab.
   if (isCreate && isPelunasanInvoice) {
     return (
-      <FormTabShell title="Tambah Pembayaran — Pelunasan Invoice">
+      <FormTabShell title="Tambah Pembayaran — Pembayaran Invoice">
         <div className="max-w-5xl space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
             <div className="flex items-center gap-1.5 text-sm">
@@ -630,7 +630,7 @@ export default function PembayaranForm({ mode, id }: Props) {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Kembali ke pilihan Jenis Transaksi?</AlertDialogTitle>
-              <AlertDialogDescription>Isian pelunasan Anda sudah tersimpan otomatis sebagai draft — bila nanti memilih &quot;Pelunasan Invoice&quot; kembali, isian akan dipulihkan. Lanjutkan ganti jenis transaksi?</AlertDialogDescription>
+              <AlertDialogDescription>Isian pelunasan Anda sudah tersimpan otomatis sebagai draft — bila nanti memilih &quot;Pembayaran Invoice&quot; kembali, isian akan dipulihkan. Lanjutkan ganti jenis transaksi?</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Batal</AlertDialogCancel>

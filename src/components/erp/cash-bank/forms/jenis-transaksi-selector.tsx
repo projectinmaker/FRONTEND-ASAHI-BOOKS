@@ -5,15 +5,17 @@
  * (modul Kas & Bank). Dua pilihan (Update #14 — 'Belum Teridentifikasi'
  * dihapus bersama fitur Identifikasi & Alokasi):
  *
- * 1. PELUNASAN_INVOICE — Pelunasan Piutang di Penerimaan (pilih pelanggan →
- *    invoice penjualan outstanding → nominal → posting) / Pelunasan Hutang
- *    di Pembayaran (pilih supplier → invoice pembelian outstanding).
- * 2. TRANSAKSI_LAINNYA — penerimaan modal, pendapatan lain, biaya operasional,
- *    transaksi non-invoice; akun lawan dipilih dari COA (rincian).
+ * 1. PELUNASAN_INVOICE — "Pembayaran Invoice" (Update #072 — rename dari
+ *    "Pelunasan Invoice"): piutang di Penerimaan (pilih pelanggan → invoice
+ *    penjualan outstanding → nominal → posting) / hutang di Pembayaran
+ *    (pilih supplier → invoice pembelian outstanding).
+ * 2. TRANSAKSI_LAINNYA — "Pembayaran Lainnya" (Update #072 — rename dari
+ *    "Transaksi Lainnya"): penerimaan modal, pendapatan lain, biaya
+ *    operasional, transaksi non-invoice; akun lawan dipilih dari COA.
  *
  * === Update #040 — opsi "Pembayaran Termin SO" (TERMIN_SO, #031) DIHAPUS
  * dari pilihan penerimaan baru: penerimaan dari pelanggan kini murni lewat
- * Invoice (Pelunasan Invoice). Badge histori TERMIN_SO tetap dipertahankan
+ * Invoice (Pembayaran Invoice). Badge histori TERMIN_SO tetap dipertahankan
  * (JenisTransaksiBadge) supaya dokumen LAMA tetap terbaca jenisnya. ===
  */
 
@@ -33,7 +35,9 @@ export function jenisTransaksiOptions(jenisDokumen: 'penerimaan' | 'pembayaran')
   return [
     {
       value: 'PELUNASAN_INVOICE',
-      title: 'Pelunasan Invoice',
+      // === Update #072 — rename label "Pelunasan Invoice" → "Pembayaran
+      // Invoice" (nilai enum/kode backend TIDAK berubah). ===
+      title: 'Pembayaran Invoice',
       description: isPenerimaan ? 'Pilih pelanggan → invoice penjualan outstanding → nominal → posting ke akun piutang & Kas/Bank' : 'Pilih supplier → invoice pembelian outstanding → nominal → posting ke akun hutang & Kas/Bank',
       icon: HandCoins
     },
@@ -42,7 +46,9 @@ export function jenisTransaksiOptions(jenisDokumen: 'penerimaan' | 'pembayaran')
     // menyimpan jenis ini dibersihkan oleh penerimaan-form saat dipulihkan. ===
     {
       value: 'TRANSAKSI_LAINNYA',
-      title: 'Transaksi Lainnya',
+      // === Update #072 — rename label "Transaksi Lainnya" → "Pembayaran
+      // Lainnya" (nilai enum/kode backend TIDAK berubah). ===
+      title: 'Pembayaran Lainnya',
       description: isPenerimaan ? 'Penerimaan modal, pendapatan lain, dan transaksi non-invoice — akun lawan dipilih dari COA' : 'Biaya operasional, pembelian tunai, dan transaksi non-invoice — akun lawan dipilih dari COA',
       icon: ReceiptText
     }
@@ -86,11 +92,13 @@ import { Badge } from '@/components/ui/badge';
 export function JenisTransaksiBadge({ jenis }: { jenis: string }) {
   switch (jenis) {
     case 'PELUNASAN_INVOICE':
-      return <Badge className="border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-100">Pelunasan Invoice</Badge>;
+      // === Update #072 — rename label (enum tetap). ===
+      return <Badge className="border-violet-200 bg-violet-100 text-violet-700 hover:bg-violet-100">Pembayaran Invoice</Badge>;
     // Update #031 — penerimaan pembayaran termin Sales Order (DP / cicilan).
     case 'TERMIN_SO':
       return <Badge className="border-amber-200 bg-amber-100 text-amber-700 hover:bg-amber-100">Pembayaran Termin SO</Badge>;
     default:
-      return <Badge variant="secondary">Transaksi Lainnya</Badge>;
+      // === Update #072 — rename label (enum tetap). ===
+      return <Badge variant="secondary">Pembayaran Lainnya</Badge>;
   }
 }

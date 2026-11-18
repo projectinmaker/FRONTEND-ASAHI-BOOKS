@@ -170,7 +170,7 @@ const MODE_PENERIMAAN_OPTIONS: { value: ModePenerimaan; title: string; descripti
 ];
 
 // ─── === Update #065 — Mode Pembayaran Hutang (Pembayaran Pemasok /
-// Pelunasan Invoice Pembelian): Pembayaran Penuh / Pembayaran Sebagian.
+// Pembayaran Invoice Pembelian): Pembayaran Penuh / Pembayaran Sebagian.
 // Permintaan user: "pembayaran pemasok atau pelunasan invoice harus bisa
 // kondisi bayar sebagian — nominal tidak harus langsung lunas."
 // Backend settlement hutang sejak awal menerima 0 < nilai ≤ sisa
@@ -497,7 +497,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
   // (form Penerimaan/Pembayaran). Dipakai tombol "Ganti Jenis Transaksi" untuk
   // meminta konfirmasi sebelum kembali ke kartu pilihan Jenis Transaksi.
   // Isian pelunasan sendiri tetap aman — draft tersimpan otomatis (useFormDraft)
-  // dan dipulihkan bila user memilih Pelunasan Invoice kembali.
+  // dan dipulihkan bila user memilih Pembayaran Invoice kembali.
   const isDirty = Boolean(pihakFilter) || selectedList.length > 0 || Boolean(kasBankId) || Boolean(noNukti) || Boolean(catatan) || Boolean(noCek) || Boolean(tanggalCek) || Boolean(jumlahCek) || Boolean(penaltiDisplay) || Boolean(akunPenaltiId) || Boolean(akunBebanId);
 
   useEffect(() => {
@@ -738,7 +738,8 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
     try {
       // === Update #044 — mode Gagal Tagih: submit Voucher Memorial (non-kas,
       // penghapusan piutang) — Dr Beban Penghapusan Piutang, Cr Piutang Usaha.
-      // Hasil dokumen muncul di daftar "Voucher Memorial" modul Kas & Bank. ===
+      // Hasil dokumen muncul di daftar "Dokumen Memorial"
+      // (sub-tampilan modul Outstanding Memorial, Kas & Bank). ===
       if (isGagalTagih) {
         const payload: VoucherMemorialCreate = {
           pelangganId: selectedPihakId || pihakFilter,
@@ -752,7 +753,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         };
         const res = await voucherMemorialApi.create(payload);
         toast.success(`Voucher Memorial ${res.noBukti} dibuat`, {
-          description: approvalEnabled ? 'Menunggu persetujuan — setujui lewat kolom Persetujuan pada daftar Voucher Memorial (Kas & Bank) agar jurnal penghapusan piutang diposting.' : 'Jurnal penghapusan piutang langsung diposting otomatis (Dr Beban Penghapusan, Cr Piutang Usaha) — invoice terkait menjadi lunas.',
+          description: approvalEnabled ? 'Menunggu persetujuan — setujui lewat aksi ringkas di bawah badge Status pada daftar Dokumen Memorial (Kas & Bank → Outstanding Memorial) agar jurnal penghapusan piutang diposting.' : 'Jurnal penghapusan piutang langsung diposting otomatis (Dr Beban Penghapusan, Cr Piutang Usaha) — invoice terkait menjadi lunas.',
           duration: 9000
         });
         skipNextSaveRef.current = true;
@@ -765,7 +766,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
         setRiwayatData(null);
         setTanggal('');
         void fetchTagihan();
-        // Refresh daftar Voucher Memorial (Kas & Bank) + Penerimaan.
+        // Refresh daftar Dokumen Memorial (Outstanding Memorial) + Penerimaan.
         useTabStore.getState().refreshListTab('cash-bank', 'voucher-memorial');
         useTabStore.getState().refreshListTab('cash-bank', 'penerimaan');
         if (embedded && onFinished) onFinished();
@@ -833,7 +834,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
       // terlihat di list kas/bank (tab terbuka ikut memuat ulang).
       useTabStore.getState().refreshListTab('cash-bank', isPiutang ? 'penerimaan' : 'pembayaran');
       // Update #02 — mode embedded (form Penerimaan/Pembayaran, jenis
-      // Pelunasan Invoice): setelah posting sukses, tutup tab form &
+      // Pembayaran Invoice): setelah posting sukses, tutup tab form &
       // kembali ke daftar — sama seperti perilaku form kas umum.
       if (embedded && onFinished) onFinished();
     } catch (err) {
@@ -1159,10 +1160,12 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
             {/* === Update #044 — Mode Penerimaan Piutang (Penuh / Sebagian /
                 Gagal Tagih).
                 === Update #065 — selector kini juga tampil untuk HUTANG
-                (Pembayaran Pemasok / Pelunasan Invoice Pembelian) dengan 2
+                (Pembayaran Pemasok / Pembayaran Invoice Pembelian) dengan 2
                 pilihan: Pembayaran Penuh / Pembayaran Sebagian — nominal
                 bayar tidak harus langsung lunas. Gagal Tagih tetap khusus
-                piutang (penghapusan piutang non-kas). === */}
+                piutang di form ini (penghapusan piutang non-kas); untuk
+                HUTANG, Gagal Tagih tersedia lewat aksi pada daftar
+                Outstanding Memorial — Update #072). === */}
             <div className="space-y-2">
               <Label className="text-sm font-medium">
                 Mode {isPiutang ? 'Penerimaan Piutang' : 'Pembayaran Hutang'} <span className="text-destructive">*</span>
@@ -1506,7 +1509,7 @@ function PelunasanTab({ jenis, refreshKey, embedded, onFinished, onDirtyChange }
 
 // ─── Standalone Views ────────────────────────────────────────────────────────
 // Update #02 — koreksi miskom catatan-update-01: Pelunasan Piutang/Hutang
-// BUKAN menu/subPage terpisah, melainkan JENIS TRANSAKSI 'Pelunasan Invoice'
+// BUKAN menu/subPage terpisah, melainkan JENIS TRANSAKSI 'Pembayaran Invoice'
 // di dalam form Penerimaan (piutang) / Pembayaran (hutang) modul Kas & Bank
 // (lihat forms/penerimaan-form.tsx & forms/pembayaran-form.tsx yang memakai
 // EmbeddedSettlementForm di bawah). View standalone dipertahankan hanya

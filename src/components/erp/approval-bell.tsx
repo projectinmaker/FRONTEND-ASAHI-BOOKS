@@ -50,10 +50,13 @@ const DOC_TYPE_LABEL: Record<string, string> = {
   penerimaan_barang: 'Penerimaan Barang',
   purchase_invoice: 'Invoice Pembelian',
   purchase_retur: 'Retur Pembelian',
-  transfer_bank: 'Transfer Bank',
+  // === Update #072 — rename label (kode jenis dokumen tetap). ===
+  transfer_bank: 'Pindah Buku',
   pembayaran_kas: 'Pembayaran Kas',
   penerimaan_kas: 'Penerimaan Kas',
-  voucher_memorial: 'Voucher Memorial',
+  // === Update #072 — modul Voucher Memorial diganti Outstanding
+  // Memorial (dokumen memorial tetap di sub-tab Dokumen Memorial). ===
+  voucher_memorial: 'Outstanding Memorial',
   penyesuaian_stok: 'Penyesuaian Stok',
   pemindahan_barang: 'Pemindahan Barang',
   permintaan_barang: 'Permintaan Barang',
@@ -69,8 +72,8 @@ const DOC_TYPE_LABEL: Record<string, string> = {
 const DOC_TYPE_TARGET: Record<string, { module: ModuleId; subPage: string; title: string }> = {
   pembayaran_kas: { module: 'cash-bank', subPage: 'pembayaran', title: 'Pembayaran' },
   penerimaan_kas: { module: 'cash-bank', subPage: 'penerimaan', title: 'Penerimaan' },
-  transfer_bank: { module: 'cash-bank', subPage: 'transfer-bank', title: 'Transfer Bank' },
-  voucher_memorial: { module: 'cash-bank', subPage: 'voucher-memorial', title: 'Voucher Memorial' },
+  transfer_bank: { module: 'cash-bank', subPage: 'transfer-bank', title: 'Pindah Buku' },
+  voucher_memorial: { module: 'cash-bank', subPage: 'voucher-memorial', title: 'Outstanding Memorial' },
   penyesuaian_stok: { module: 'inventory', subPage: 'penyesuaian', title: 'Penyesuaian' },
   pemindahan_barang: { module: 'inventory', subPage: 'pemindahan-barang', title: 'Pemindahan Barang' },
   permintaan_barang: { module: 'inventory', subPage: 'permintaan-barang', title: 'Permintaan Barang' },

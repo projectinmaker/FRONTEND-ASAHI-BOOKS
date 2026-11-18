@@ -339,9 +339,9 @@ export default function PenerimaanForm({ mode, id }: Props) {
   // dari pelanggan murni lewat Invoice. Tidak ada lagi form khusus termin. ===
 
   // ── Update #13 (Kas & Bank) — kembali ke kartu pilihan Jenis Transaksi dari
-  // alur Pelunasan Invoice. dirty dilaporkan EmbeddedSettlementForm; isian
+  // alur Pembayaran Invoice. dirty dilaporkan EmbeddedSettlementForm; isian
   // pelunasan tersimpan otomatis sebagai draft dan dipulihkan bila user memilih
-  // Pelunasan Invoice kembali, jadi konfirmasi hanya untuk menghindari klik salah. ──
+  // Pembayaran Invoice kembali, jadi konfirmasi hanya untuk menghindari klik salah. ──
   const [settlementDirty, setSettlementDirty] = useState(false);
   const [backConfirmOpen, setBackConfirmOpen] = useState(false);
 
@@ -361,7 +361,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     // Update #02 — pulihkan jenis transaksi.
     // Update #040 — TERMIN_SO tidak lagi ditawarkan (opsi dihapus dari
     // selector); draft lama yang kebetulan menyimpan jenis itu tidak
-    // dipulihkan → jatuh ke default Transaksi Lainnya supaya form tetap
+    // dipulihkan → jatuh ke default Pembayaran Lainnya supaya form tetap
     // konsisten dengan pilihan jenis yang sekarang ada.
     if (d.jenisTransaksi && d.jenisTransaksi !== 'TERMIN_SO') setJenisTransaksi(d.jenisTransaksi);
     toast.info('Draft isian dipulihkan', { description: 'Isian terakhir form Penerimaan dimuat kembali otomatis.' });
@@ -418,7 +418,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
   // === Update #16 — preview nomor dokumen berikutnya (form ala Accurate).
   // PB ASI/YYYY/NNN untuk Penerimaan Lain; di-refetch saat tahun tanggal
   // berubah. Indikatif — nomor final di-generate backend saat create.
-  // (Update #031 — skip untuk jenis embedded: Pelunasan Invoice punya preview
+  // (Update #031 — skip untuk jenis embedded: Pembayaran Invoice punya preview
   // nomornya sendiri di komponen embedded. Update #040 — TERMIN_SO dihapus.) ===
   useEffect(() => {
     if (isEdit || isPelunasanInvoice) return;
@@ -498,7 +498,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     // Update #16 — validasi No Bukti dihapus (field tidak ada lagi ala Accurate;
     // backend auto-isi = nomor dokumen)
     if (!isEdit) {
-      // Update #02 — validasi rincian Transaksi Lainnya
+      // Update #02 — validasi rincian Pembayaran Lainnya
       if (rincianRows.length === 0) e.rincian = 'Rincian penerimaan wajib diisi';
       const hasEmptyNilai = rincianRows.some((r) => !r.nilai || parseInt(r.nilai.replace(/\D/g, ''), 10) <= 0);
       if (hasEmptyNilai) e.rincian = 'Semua rincian harus memiliki nilai lebih dari 0';
@@ -523,7 +523,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
         await api.put<PenerimaanKasResponse>(`/kas-bank/penerimaan/${id}`, payload);
         toast.success('Penerimaan berhasil diperbarui');
       } else {
-        // Update #02 — payload Transaksi Lainnya (Pelunasan Invoice lewat alur settlement)
+        // Update #02 — payload Pembayaran Lainnya (Pembayaran Invoice lewat alur settlement)
         const payload: PenerimaanKasCreate = {
           tanggal,
           kasBankId,
@@ -560,7 +560,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     if (activeTabId) closeTab(activeTabId);
   }, [activeTabId, closeTab]);
 
-  // ── Update #13 — kembali ke kartu pilihan Jenis Transaksi (alur Pelunasan Invoice) ──
+  // ── Update #13 — kembali ke kartu pilihan Jenis Transaksi (alur Pembayaran Invoice) ──
   const handleBackToJenisSelector = useCallback(() => {
     if (settlementDirty) {
       setBackConfirmOpen(true);
@@ -585,7 +585,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
     );
   }
 
-  // ── Update #02 — jenis Pelunasan Invoice: render alur pelunasan embedded ──
+  // ── Update #02 — jenis Pembayaran Invoice: render alur pelunasan embedded ──
   // (pilih pelanggan → invoice penjualan outstanding → nominal → posting).
   // Komponen ini punya field, validasi, draft, dan submit-nya sendiri —
   // jadi form penerimaan umum tidak dirender.
@@ -593,7 +593,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
   // user bisa kembali ke kartu pilihan Jenis Transaksi tanpa menutup tab.
   if (isCreate && isPelunasanInvoice) {
     return (
-      <FormTabShell title="Tambah Penerimaan — Pelunasan Invoice">
+      <FormTabShell title="Tambah Penerimaan — Pembayaran Invoice">
         <div className="max-w-5xl space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
             <div className="flex items-center gap-1.5 text-sm">
@@ -614,7 +614,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Kembali ke pilihan Jenis Transaksi?</AlertDialogTitle>
-              <AlertDialogDescription>Isian pelunasan Anda sudah tersimpan otomatis sebagai draft — bila nanti memilih &quot;Pelunasan Invoice&quot; kembali, isian akan dipulihkan. Lanjutkan ganti jenis transaksi?</AlertDialogDescription>
+              <AlertDialogDescription>Isian pelunasan Anda sudah tersimpan otomatis sebagai draft — bila nanti memilih &quot;Pembayaran Invoice&quot; kembali, isian akan dipulihkan. Lanjutkan ganti jenis transaksi?</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Batal</AlertDialogCancel>
@@ -627,7 +627,7 @@ export default function PenerimaanForm({ mode, id }: Props) {
   }
 
   // === Update #040 — cabang render jenis TERMIN_SO (#031) DIHAPUS penuh:
-  // penerimaan dari pelanggan murni lewat Invoice (Pelunasan Invoice);
+  // penerimaan dari pelanggan murni lewat Invoice (Pembayaran Invoice);
   // selector tidak lagi menawarkan jenis ini sehingga cabang ini tak terjangkau. ===
 
   return (

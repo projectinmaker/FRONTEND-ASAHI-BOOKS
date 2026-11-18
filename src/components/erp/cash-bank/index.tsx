@@ -30,6 +30,9 @@ import type { KasBankAkunResponse, COADropdownResponse, PembayaranKasResponse, P
 import { HardDeleteCancelDialog } from '@/components/erp/hard-delete-cancel-dialog';
 import { Wallet, Building2, ArrowRightLeft, Plus, Download, Printer, X, Search, ChevronLeft, ChevronRight, Loader2, Pencil, Undo2, BookX, type LucideIcon } from 'lucide-react';
 import RekonsiliasiBankTab from '@/components/erp/cash-bank/rekonsiliasi-bank';
+// === Update #072 — Outstanding Memorial (uraian hutang & piutang;
+// pengganti tab Voucher Memorial). ===
+import OutstandingMemorialTab from '@/components/erp/cash-bank/outstanding-memorial';
 import PembayaranForm from '@/components/erp/cash-bank/forms/pembayaran-form';
 import PenerimaanForm from '@/components/erp/cash-bank/forms/penerimaan-form';
 import TransferBankForm from '@/components/erp/cash-bank/forms/transfer-bank-form';
@@ -258,8 +261,8 @@ function HistoryTable({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Semua</SelectItem>
-                  <SelectItem value="PELUNASAN_INVOICE">Pelunasan Invoice</SelectItem>
-                  <SelectItem value="TRANSAKSI_LAINNYA">Transaksi Lainnya</SelectItem>
+                  <SelectItem value="PELUNASAN_INVOICE">Pembayaran Invoice</SelectItem>
+                  <SelectItem value="TRANSAKSI_LAINNYA">Pembayaran Lainnya</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -377,7 +380,7 @@ function HistoryTable({
 
 function PDFPreviewDialog({ open, onClose, data }: { open: boolean; onClose: () => void; data: TransferBankData | null }) {
   const handleDownload = useCallback(() => {
-    generatePDF('pdf-content', 'Bukti-Transfer-Bank.pdf');
+    generatePDF('pdf-content', 'Bukti-Pindah-Buku.pdf');
   }, []);
 
   const handlePrint = useCallback(() => {
@@ -388,7 +391,7 @@ function PDFPreviewDialog({ open, onClose, data }: { open: boolean; onClose: () 
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Preview Bukti Transfer Bank</DialogTitle>
+          <DialogTitle>Preview Bukti Pindah Buku</DialogTitle>
           <DialogDescription>Preview dokumen sebelum mencetak atau mengunduh.</DialogDescription>
         </DialogHeader>
         <div className="border rounded-md p-2 bg-white">{data && <TransferBankPDFTemplate data={data} />}</div>
@@ -408,7 +411,7 @@ function PDFPreviewDialog({ open, onClose, data }: { open: boolean; onClose: () 
   );
 }
 
-// ─── Transfer Bank Tab ────────────────────────────────────────────────────
+// ─── Pindah Buku Tab (rename "Transfer Bank" — Update #072) ────────────────
 
 function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOptions: KasBankAkunResponse[]; onPreview: (data: TransferBankData) => void; refreshKey?: number }) {
   // ── History data state ──
@@ -466,7 +469,7 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
       setData(res.data);
       setTotal(res.total);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : 'Gagal memuat data transfer');
+      setError(err instanceof ApiError ? err.detail : 'Gagal memuat data pindah buku');
     } finally {
       setLoading(false);
     }
@@ -542,7 +545,7 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
   // ── Create → open form tab ──
   const openCreateTab = useCallback(() => {
     openFormTab({
-      title: 'Transfer Bank',
+      title: 'Pindah Buku',
       module: 'cash-bank',
       subPage: 'transfer-bank',
       formKey: 'transfer-bank-create'
@@ -581,12 +584,12 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
             <div>
               <CardTitle className="flex items-center gap-2 text-base">
                 <ArrowRightLeft className="h-5 w-5 text-emerald-600" />
-                Formulir Transfer Bank
+                Formulir Pindah Buku
               </CardTitle>
-              <CardDescription>Lakukan transfer dana antar kas atau rekening bank</CardDescription>
+              <CardDescription>Pindahkan dana antar kas atau rekening bank</CardDescription>
             </div>
             <Button size="sm" className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={openCreateTab}>
-              <Plus className="h-4 w-4" /> Buat Transfer
+              <Plus className="h-4 w-4" /> Buat Pindah Buku
             </Button>
           </div>
         </CardHeader>
@@ -595,8 +598,8 @@ function TransferBankTab({ kasBankOptions, onPreview, refreshKey }: { kasBankOpt
       {/* History Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Riwayat Transfer Bank</CardTitle>
-          <CardDescription>Daftar seluruh transfer antar kas dan rekening bank yang telah diproses</CardDescription>
+          <CardTitle className="text-base">Riwayat Pindah Buku</CardTitle>
+          <CardDescription>Daftar seluruh pindah buku antar kas dan rekening bank yang telah diproses</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Filters */}
@@ -1412,9 +1415,9 @@ function CetakTab({ type, id, filters, initialJenis, initialJenisPenerimaan }: {
   // jenis dokumen (settlement = Bayar Pemasok, non-settlement = Pembayaran Lain).
   // === Update #044 — penerimaan: "Cetak Voucher Penerimaan Bank/Kas" sesuai
   // jenis akun tujuan; voucher-memorial: "Cetak Voucher Memorial". ===
-  const title = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Cetak Bayar Pemasok' : 'Cetak Pembayaran Lain') : type === 'rincian-pembayaran' ? 'Cetak Rincian Pembayaran' : type === 'rincian-penerimaan' ? 'Cetak Rincian Penerimaan' : type === 'voucher-memorial' ? 'Cetak Voucher Memorial' : type === 'penerimaan' ? (penerimaanJenisAkun === 'BANK' ? 'Cetak Voucher Penerimaan Bank' : penerimaanJenisAkun === 'KAS' ? 'Cetak Voucher Penerimaan Kas' : 'Cetak Bukti Penerimaan Kas') : 'Cetak Bukti Transfer Bank';
+  const title = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Cetak Bayar Pemasok' : 'Cetak Pembayaran Lain') : type === 'rincian-pembayaran' ? 'Cetak Rincian Pembayaran' : type === 'rincian-penerimaan' ? 'Cetak Rincian Penerimaan' : type === 'voucher-memorial' ? 'Cetak Voucher Memorial' : type === 'penerimaan' ? (penerimaanJenisAkun === 'BANK' ? 'Cetak Voucher Penerimaan Bank' : penerimaanJenisAkun === 'KAS' ? 'Cetak Voucher Penerimaan Kas' : 'Cetak Bukti Penerimaan Kas') : 'Cetak Bukti Pindah Buku';
 
-  const filename = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Bayar-Pemasok.pdf' : 'Pembayaran-Lain.pdf') : type === 'rincian-pembayaran' ? (jenis === 'lain' ? 'Rincian-Pembayaran-Lain.pdf' : jenis === 'pemasok' ? 'Rincian-Bayar-Pemasok.pdf' : 'Rincian-Pembayaran.pdf') : type === 'rincian-penerimaan' ? (jenisPenerimaan === 'lain' ? 'Rincian-Penerimaan-Lain.pdf' : jenisPenerimaan === 'pelanggan' ? 'Rincian-Pelunasan-Piutang.pdf' : 'Rincian-Penerimaan.pdf') : type === 'voucher-memorial' ? 'Voucher-Memorial.pdf' : type === 'penerimaan' ? (penerimaanJenisAkun === 'BANK' ? 'Voucher-Penerimaan-Bank.pdf' : penerimaanJenisAkun === 'KAS' ? 'Voucher-Penerimaan-Kas.pdf' : 'Bukti-Penerimaan-Kas.pdf') : 'Bukti-Transfer-Bank.pdf';
+  const filename = type === 'pembayaran' ? (pembayaranIsSettlement ? 'Bayar-Pemasok.pdf' : 'Pembayaran-Lain.pdf') : type === 'rincian-pembayaran' ? (jenis === 'lain' ? 'Rincian-Pembayaran-Lain.pdf' : jenis === 'pemasok' ? 'Rincian-Bayar-Pemasok.pdf' : 'Rincian-Pembayaran.pdf') : type === 'rincian-penerimaan' ? (jenisPenerimaan === 'lain' ? 'Rincian-Penerimaan-Lain.pdf' : jenisPenerimaan === 'pelanggan' ? 'Rincian-Pelunasan-Piutang.pdf' : 'Rincian-Penerimaan.pdf') : type === 'voucher-memorial' ? 'Voucher-Memorial.pdf' : type === 'penerimaan' ? (penerimaanJenisAkun === 'BANK' ? 'Voucher-Penerimaan-Bank.pdf' : penerimaanJenisAkun === 'KAS' ? 'Voucher-Penerimaan-Kas.pdf' : 'Bukti-Penerimaan-Kas.pdf') : 'Bukti-Pindah-Buku.pdf';
 
   // Update cetak "Rincian Pembayaran": turunkan data laporan dari seluruh
   // pembayaran + pilihan jenis (filter client-side — tidak perlu refetch).
@@ -1561,13 +1564,31 @@ function CetakTab({ type, id, filters, initialJenis, initialJenisPenerimaan }: {
   );
 }
 
-// ─── === Update #044 — Voucher Memorial Tab (Gagal Tagih) ─────────────────────
-// Daftar dokumen penghapusan piutang non-kas (Dr Beban Penghapusan Piutang,
-// Cr Piutang Usaha). Dibuat lewat form Penerimaan → Pelunasan Invoice →
-// mode "Gagal Tagih"; workflow submit/approve/post seperti dokumen kas lain.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── === Update #072 — Outstanding Memorial Section ─────────────────────
+// Modul "Voucher Memorial" diganti "Outstanding Memorial": tampilan utama
+// = uraian hutang & piutang (aksi Penerimaan/Pembayaran Penuh, Sebagian,
+// Gagal Tagih); daftar dokumen memorial (gagal tagih lama & baru) tetap
+// tersedia lewat tombol "Dokumen Memorial".
+// ─────────────────────────────────────────────────────────────────────────
 
-function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
+function OutstandingMemorialSection({ refreshKey }: { refreshKey?: number }) {
+  const [view, setView] = useState<'outstanding' | 'dokumen'>('outstanding');
+  if (view === 'dokumen') {
+    return <VoucherMemorialTab refreshKey={refreshKey} onBack={() => setView('outstanding')} />;
+  }
+  return <OutstandingMemorialTab refreshKey={refreshKey} onOpenDokumen={() => setView('dokumen')} />;
+}
+
+// ─── === Update #044 — Voucher Memorial Tab (Gagal Tagih) ─────────────────
+// Daftar dokumen penghapusan non-kas (sejak #072 mencakup PIUTANG dan
+// HUTANG). Kini menjadi sub-tampilan "Dokumen Memorial" di dalam modul
+// Outstanding Memorial; dokumen baru dibuat lewat aksi "Gagal Tagih"
+// pada baris uraian hutang/piutang.
+// === Update #072 — kolom "Persetujuan" DIHAPUS (permintaan user); aksi
+// persetujuan (bila konfigurasi persetujuan aktif) tampil ringkas di bawah
+// badge Status. ─────────────────────────────────────────────────────────────
+
+function VoucherMemorialTab({ refreshKey, onBack }: { refreshKey?: number; onBack?: () => void }) {
   // ── History data state ──
   const [data, setData] = useState<VoucherMemorialResponse[]>([]);
   const [total, setTotal] = useState(0);
@@ -1590,13 +1611,16 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
 
   // ── Tab store + workflow ──
   const openFormTab = useTabStore((s) => s.openFormTab);
-  // === Update #071 — kolom "Persetujuan" kondisional (lihat catatan Transfer):
-  // tampil bila voucher_memorial diaktifkan ATAU ada baris non-final. ===
+  // === Update #071 — kolom "Persetujuan" kondisional (lihat catatan Transfer).
+  // === Update #072 — kolom "Persetujuan" DIHAPUS dari tabel (permintaan
+  // user); state workflow tetap dimuat supaya dokumen non-final (bila
+  // persetujuan voucher_memorial diaktifkan) bisa disetujui lewat kontrol
+  // ringkas di bawah badge Status. ===
   const approvalOn = useAccessStore((s) => s.approvalEnabled.includes('voucher_memorial'));
   const ids = useMemo(() => (approvalOn ? data.map((d) => d.id) : data.filter((d) => d.status === 'DRAFT' || d.status === 'DIPROSES').map((d) => d.id)), [data, approvalOn]);
   const wfStates = useWorkflowStates('voucher_memorial', ids, refreshKey);
-  const showApprovalCol = approvalOn || Object.keys(wfStates.states).length > 0;
-  const voucherCols = showApprovalCol ? 8 : 7;
+  const showApprovalUi = approvalOn || Object.keys(wfStates.states).length > 0;
+  const voucherCols = 8;
 
   // ── Debounce search ──
   useEffect(() => {
@@ -1627,7 +1651,7 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
       setData(res.data);
       setTotal(res.total);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : 'Gagal memuat data Voucher Memorial');
+      setError(err instanceof ApiError ? err.detail : 'Gagal memuat data Dokumen Memorial');
     } finally {
       setLoading(false);
     }
@@ -1654,7 +1678,7 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
         setCancelTarget(null);
         fetchData();
       } catch (err) {
-        toast.error(err instanceof ApiError ? err.detail : 'Gagal membatalkan Voucher Memorial');
+        toast.error(err instanceof ApiError ? err.detail : 'Gagal membatalkan Dokumen Memorial');
       } finally {
         setCancelSubmitting(false);
       }
@@ -1690,12 +1714,18 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <BookX className="h-4 w-4 text-amber-600" aria-hidden="true" />
-              Voucher Memorial (Gagal Tagih)
+              Dokumen Memorial (Gagal Tagih)
             </CardTitle>
             <CardDescription>
-              Penghapusan piutang non-kas — Dr Beban Penghapusan Piutang, Cr Piutang Usaha. Dibuat lewat Penerimaan → Pelunasan Invoice → mode <strong>Gagal Tagih</strong>.
+              Penghapusan non-kas piutang (Dr Beban Penghapusan Piutang, Cr Piutang Usaha) maupun hutang (Dr Hutang Usaha, Cr Pendapatan Penghapusan Hutang). Dibuat lewat aksi <strong>Gagal Tagih</strong> pada baris hutang/piutang di Outstanding Memorial.
             </CardDescription>
           </div>
+          {onBack && (
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={onBack}>
+              <ChevronLeft className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+              Kembali ke Outstanding
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -1703,7 +1733,7 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input placeholder="Cari no bukti / catatan…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" aria-label="Cari Voucher Memorial" />
+            <Input placeholder="Cari no bukti / catatan…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8" aria-label="Cari Dokumen Memorial" />
           </div>
           <div className="w-full sm:w-36">
             <Select value={statusFilter || 'ALL'} onValueChange={(v) => setStatusFilter(v === 'ALL' ? '' : v)}>
@@ -1737,13 +1767,15 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
                 <TableRow className="bg-muted/50">
                   <TableHead className="w-[150px]">No Dokumen</TableHead>
                   <TableHead className="w-[100px]">Tanggal</TableHead>
-                  <TableHead>Pelanggan</TableHead>
+                  {/* === Update #072 — kolom Pihak: pelanggan (piutang) atau
+                      supplier (hutang) sesuai jenis dokumen. === */}
+                  <TableHead>Pelanggan/Supplier</TableHead>
                   <TableHead className="hidden md:table-cell">Akun Beban (Dr)</TableHead>
                   <TableHead className="text-right w-[140px]">Total</TableHead>
                   <TableHead className="w-[110px] text-center">Status</TableHead>
-                  {/* === Update #071 — kolom "Persetujuan" (dulu "Workflow")
-                      tampil kondisional mengikuti konfigurasi persetujuan. === */}
-                  {showApprovalCol && <TableHead className="w-[150px]">Persetujuan</TableHead>}
+                  {/* === Update #072 — kolom "Persetujuan" DIHAPUS
+                      (permintaan user; aksi persetujuan yang aktif tampil
+                      ringkas di bawah badge Status). === */}
                   <TableHead className="w-24 text-center">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1761,7 +1793,7 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
                 ) : data.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={voucherCols} className="h-24 text-center text-sm text-muted-foreground">
-                      Belum ada Voucher Memorial. Buat lewat <strong>Kas &amp; Bank → Penerimaan → Pelunasan Invoice → mode Gagal Tagih</strong>.
+                      Belum ada Dokumen Memorial. Buat lewat aksi <strong>Gagal Tagih</strong> pada baris hutang/piutang di <strong>Kas &amp; Bank → Outstanding Memorial</strong>.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -1769,33 +1801,30 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
                     <TableRow key={row.id} className={row.status === 'BATAL' ? 'opacity-60' : ''}>
                       <TableCell className="font-mono text-xs font-medium">{row.noBukti}</TableCell>
                       <TableCell className="text-xs">{formatDate(row.tanggal)}</TableCell>
-                      <TableCell className="text-xs">{row.pelanggan?.nama || '-'}</TableCell>
+                      {/* === Update #072 — pihak: pelanggan (PIUTANG) / supplier
+                          (HUTANG). === */}
+                      <TableCell className="text-xs">{row.jenis === 'HUTANG' ? row.supplier?.nama || '-' : row.pelanggan?.nama || '-'}</TableCell>
                       <TableCell className="hidden md:table-cell text-xs">{row.akunBeban ? `${row.akunBeban.kode} — ${row.akunBeban.nama}` : '-'}</TableCell>
                       <TableCell className="text-right font-mono text-xs font-semibold">{formatRp(Number(row.totalNilai) || 0)}</TableCell>
                       <TableCell className="text-center">
                         <StatusBadge status={row.status} />
+                        {/* === Update #072 — aksi persetujuan ringkas (bila
+                            persetujuan voucher_memorial aktif / ada dokumen
+                            non-final) menggantikan kolom Persetujuan. === */}
+                        {showApprovalUi && wfStates.states[row.id] && !['POSTED', 'EXECUTED', 'CANCELLED', 'APPROVED'].includes(wfStates.states[row.id].state) && (
+                          <div className="mt-1 flex flex-col items-center gap-1">
+                            <WorkflowBadgeWithHistory state={wfStates.states[row.id].state} documentType="voucher_memorial" documentId={row.id} />
+                            <WorkflowActionsCell documentType="voucher_memorial" documentId={row.id} version={wfStates.states[row.id].version} availableActions={wfStates.states[row.id].availableActions} onDone={onWorkflowDone} />
+                          </div>
+                        )}
                       </TableCell>
-                      {showApprovalCol && (
-                        <TableCell>
-                          {wfStates.states[row.id] ? (
-                            <div className="flex flex-col items-start gap-1">
-                              <WorkflowBadgeWithHistory state={wfStates.states[row.id].state} documentType="voucher_memorial" documentId={row.id} />
-                              <WorkflowActionsCell documentType="voucher_memorial" documentId={row.id} version={wfStates.states[row.id].version} availableActions={wfStates.states[row.id].availableActions} onDone={onWorkflowDone} />
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      )}
                       <TableCell>
                         <div className="flex items-center justify-center gap-1">
-                          {/* === Update #071 — aksi persetujuan kini di kolom
-                              "Persetujuan" (bukan duplikat di Aksi). === */}
                           <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => openCetakTab(row.id)} title="Cetak Voucher Memorial" aria-label={`Cetak ${row.noBukti}`}>
                             <Printer className="h-4 w-4" />
                           </Button>
                           {row.status !== 'BATAL' && (
-                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => confirmCancel(row.id)} title="Batalkan Voucher Memorial" aria-label={`Batalkan ${row.noBukti}`}>
+                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => confirmCancel(row.id)} title="Batalkan Dokumen Memorial" aria-label={`Batalkan ${row.noBukti}`}>
                               <Undo2 className="h-4 w-4" />
                             </Button>
                           )}
@@ -1834,8 +1863,8 @@ function VoucherMemorialTab({ refreshKey }: { refreshKey?: number }) {
             setCancelTarget(null);
           }
         }}
-        title="Batalkan Voucher Memorial?"
-        formLabel="Voucher Memorial"
+        title="Batalkan Dokumen Memorial?"
+        formLabel="Dokumen Memorial"
         submitting={cancelSubmitting}
         onConfirm={(reason) => handleCancel(reason)}
       />
@@ -1935,7 +1964,7 @@ function CashBankListContent({ subPage: subPageProp, refreshKey, formMode, formP
     <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Kas &amp; Bank</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Kelola arus kas, pembayaran, penerimaan, dan transfer antar rekening</p>
+        <p className="text-muted-foreground mt-1 text-sm">Kelola arus kas, pembayaran, penerimaan, dan pindah buku antar kas/rekening</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -1952,8 +1981,10 @@ function CashBankListContent({ subPage: subPageProp, refreshKey, formMode, formP
           {subPage === 'penerimaan' && <PenerimaanTab kasBankOptions={kasBankOptions} coaOptions={coaOptions} refreshKey={refreshKey} />}
           {subPage === 'transfer-bank' && <TransferBankTab kasBankOptions={kasBankOptions} onPreview={setPreviewData} refreshKey={refreshKey} />}
           {subPage === 'rekonsiliasi-bank' && <RekonsiliasiBankTab formMode={formMode} formProps={formProps} refreshKey={refreshKey} />}
-          {/* === Update #044 — daftar Voucher Memorial (Gagal Tagih) === */}
-          {subPage === 'voucher-memorial' && <VoucherMemorialTab refreshKey={refreshKey} />}
+          {/* === Update #072 — modul Voucher Memorial diganti Outstanding
+              Memorial (uraian hutang & piutang + aksi); daftar dokumen
+              memorial menjadi sub-tampilan di dalamnya. === */}
+          {subPage === 'voucher-memorial' && <OutstandingMemorialSection refreshKey={refreshKey} />}
         </>
       )}
 

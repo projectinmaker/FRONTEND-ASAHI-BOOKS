@@ -32,9 +32,13 @@ export default function PreferensiModule({ subPage, refreshKey }: PreferensiModu
 
   return (
     <div className="space-y-6">
+      {/* === Update #072 — modul Preferensi kini grup dalam Pengaturan
+          (sidebar: Pengaturan ▸ Preferensi). Judul modul besar diganti
+          sub-judul ringkas — judul "Pengaturan" sudah dirender settings.tsx
+          sehingga tidak diduplikasi di sini. === */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Preferensi</h1>
-        <p className="text-muted-foreground">Konfigurasi perilaku aplikasi — perusahaan, fitur, akun default, pengingat, penjualan &amp; pembelian, perpajakan, font, penomoran dokumen, dan persetujuan.</p>
+        <h2 className="text-lg font-semibold tracking-tight">Preferensi</h2>
+        <p className="text-muted-foreground text-sm">Konfigurasi perilaku aplikasi — perusahaan, fitur, akun default, pengingat, penjualan &amp; pembelian, perpajakan, font, penomoran dokumen, dan persetujuan.</p>
       </div>
       {sp === 'perusahaan' && <PerusahaanPage refreshKey={refreshKey} />}
       {sp === 'fitur' && <FiturPage refreshKey={refreshKey} />}

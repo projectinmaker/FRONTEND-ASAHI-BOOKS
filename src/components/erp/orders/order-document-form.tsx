@@ -1275,7 +1275,7 @@ export default function OrderDocumentForm({ kind, editId, subPage = 'pesanan', i
                               Termin tersimpan: <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminDibayar ?? 0, original.currency)}</span> dari <span className="font-mono font-medium text-foreground">{formatOrderMoney((original as SalesOrderResponse).terminTotal ?? 0, original.currency)}</span> sudah dibayar (detail pembayaran terlihat di modul Kas &amp; Bank).
                             </p>
                           ) : (
-                            <p className="text-xs text-muted-foreground">SO ini tanpa termin pembayaran — pembayaran lewat alur Invoice: terbitkan Invoice dari SO ini lalu lunasi lewat Pelunasan Invoice (Kas &amp; Bank).</p>
+                            <p className="text-xs text-muted-foreground">SO ini tanpa termin pembayaran — pembayaran lewat alur Invoice: terbitkan Invoice dari SO ini lalu lunasi lewat Pembayaran Invoice (Kas &amp; Bank).</p>
                           )}
                         </>
                       )}

@@ -204,7 +204,7 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// 1. BUKTI TRANSFER BANK
+// 1. BUKTI PINDAH BUKU (rename "Transfer Bank" — Update #072)
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function TransferBankPDFTemplate({ data, elementId = 'pdf-content' }: { data: TransferBankData; elementId?: string }) {
@@ -213,7 +213,7 @@ export function TransferBankPDFTemplate({ data, elementId = 'pdf-content' }: { d
       {/* ── Header ── */}
       <div className="flex justify-between items-start mb-4">
         <CompanyBrand />
-        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Bukti Transfer Bank</div>
+        <div style={{ fontSize: DOC_TITLE_FONT_SIZE, fontWeight: 'bold' }}>Bukti Pindah Buku</div>
       </div>
 
       {/* ── Info Section ── */}

@@ -1,8 +1,9 @@
 'use client';
 
 import * as React from 'react';
-// === Update ASAHI #019 — ikon baru modul Preferensi (SlidersHorizontal) + submenu ===
-import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, ClipboardCheck, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, HandCoins, Activity, RefreshCw, Trash2, Factory, SlidersHorizontal, Bell, Type, Hash, CalendarRange, BookX, ShieldCheck } from 'lucide-react';
+// === Update ASAHI #019 — ikon submenu Preferensi (kini grup dalam modul
+// Pengaturan — Update #072; SlidersHorizontal tidak lagi dipakai). ===
+import { Building2, LayoutDashboard, Wallet, TrendingDown, Building, Warehouse, BookOpen, FileBarChart, Percent, Settings, Settings2, ChevronRight, CreditCard, ArrowDownToLine, ArrowLeftRight, FileText, FileCheck, Truck, Receipt, RotateCcw, ClipboardList, ClipboardCheck, Scale, Tags, Package, FolderTree, Layers, Landmark, TrendingUp, PieChart, DollarSign, Banknote, FileSpreadsheet, Users, UserCircle, FileQuestion, LogOut, UserPlus, Store, Clock, Ruler, BarChart3, AlertTriangle, ArrowUpRight, Lock, GitCompareArrows, Calculator, HandCoins, Activity, RefreshCw, Trash2, Factory, Bell, Type, Hash, CalendarRange, BookX, ShieldCheck } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -57,16 +58,22 @@ const modules: NavModule[] = [
     subPages: [
       { id: 'pembayaran', label: 'Pembayaran', icon: CreditCard },
       { id: 'penerimaan', label: 'Penerimaan', icon: ArrowDownToLine },
-      { id: 'transfer-bank', label: 'Transfer Bank', icon: ArrowLeftRight },
-      { id: 'rekonsiliasi-bank', label: 'Rekonsiliasi Bank', icon: GitCompareArrows },
-      // === Update #044 — daftar Voucher Memorial (Gagal Tagih): cabang
-      // penghapusan piutang non-kas alur Penerimaan Piutang. ===
-      { id: 'voucher-memorial', label: 'Voucher Memorial', icon: BookX }
+      // === Update #072 — rename menu "Transfer Bank" → "Pindah Buku"
+      // (endpoint & id subPage 'transfer-bank' TIDAK berubah — tab tersimpan
+      // versi lama tetap terbuka). ===
+      { id: 'transfer-bank', label: 'Pindah Buku', icon: ArrowLeftRight },
+      // === Update #072 — rename menu "Rekonsiliasi Bank" → "Rekonsiliasi". ===
+      { id: 'rekonsiliasi-bank', label: 'Rekonsiliasi', icon: GitCompareArrows },
+      // === Update #072 — modul "Voucher Memorial" diganti "Outstanding Memorial":
+      // uraian hutang & piutang + aksi Penerimaan/Pembayaran Penuh, Sebagian,
+      // dan Gagal Tagih (berlaku untuk keduanya). Daftar dokumen memorial
+      // (gagal tagih) tersedia di dalamnya (sub-tab "Dokumen Memorial"). ===
+      { id: 'voucher-memorial', label: 'Outstanding Memorial', icon: BookX }
       // Update #02 — koreksi miskom catatan-update-01: Pelunasan Piutang &
       // Hutang BUKAN menu terpisah — kini menjadi pilihan Jenis Transaksi
-      // 'Pelunasan Invoice' di dalam form Penerimaan (piutang) & Pembayaran
-      // (hutang). (Update #14 — menu 'Belum Teridentifikasi' dihapus bersama
-      // fitur Identifikasi & Alokasi.)
+      // 'Pembayaran Invoice' (Update #072) di dalam form Penerimaan (piutang)
+      // & Pembayaran (hutang). (Update #14 — menu 'Belum Teridentifikasi'
+      // dihapus bersama fitur Identifikasi & Alokasi.)
     ]
   },
   {
@@ -213,7 +220,12 @@ const modules: NavModule[] = [
   },
   // === Update ASAHI #019 — modul Pengaturan di-restrukturisasi menjadi dua
   // grup: "Informasi Perusahaan" (Umum[ex-Profil Perusahaan], Periode
-  // Akuntansi, Pajak) + "Master Data" (10 item yang sudah ada). ===
+  // Akuntansi, Pajak) + "Master Data" (10 item yang sudah ada).
+  // === Update #072 — menu Preferensi dipindahkan KE DALAM modul Pengaturan
+  // (grup "Preferensi", 9 item) — sidebar dirapikan: modul top-level
+  // Preferensi dihapus; id subPage & permission TIDAK berubah sehingga tab
+  // tersimpan versi lama tetap terbuka (module 'preferensi' di-remap ke
+  // 'settings' di page.tsx). ===
   {
     id: 'settings',
     label: 'Pengaturan',
@@ -227,6 +239,23 @@ const modules: NavModule[] = [
           { id: 'umum', label: 'Umum', icon: Building2 },
           { id: 'periode-akuntansi', label: 'Periode Akuntansi', icon: CalendarRange },
           { id: 'pajak', label: 'Pajak', icon: Percent }
+        ]
+      },
+      {
+        // === Update #072 — grup Preferensi (pindah dari modul mandiri). ===
+        label: 'Preferensi',
+        items: [
+          { id: 'perusahaan', label: 'Perusahaan', icon: Building2 },
+          { id: 'fitur', label: 'Fitur', icon: Settings2 },
+          { id: 'akun-default', label: 'Akun Default', icon: Landmark },
+          { id: 'pengingat', label: 'Pengingat', icon: Bell },
+          { id: 'penjualan-pembelian', label: 'Penjualan & Pembelian', icon: ArrowLeftRight },
+          { id: 'perpajakan', label: 'Perpajakan', icon: Percent },
+          { id: 'font', label: 'Font', icon: Type },
+          { id: 'penomoran', label: 'Penomoran Dokumen', icon: Hash },
+          // === Update #071 — konfigurasi persetujuan per jenis dokumen
+          //     (gating 'workflow.config.view' → hanya Super Admin). ===
+          { id: 'persetujuan', label: 'Persetujuan', icon: ShieldCheck }
         ]
       },
       {
@@ -245,26 +274,6 @@ const modules: NavModule[] = [
           { id: 'karyawan', label: 'Karyawan', icon: UserCircle }
         ]
       }
-    ]
-  },
-  // === Update ASAHI #019 — modul BARU Preferensi (konfigurasi aplikasi
-  // terpusat; sebelumnya tersebar/hardcoded di beberapa halaman). ===
-  {
-    id: 'preferensi',
-    label: 'Preferensi',
-    icon: SlidersHorizontal,
-    subPages: [
-      { id: 'perusahaan', label: 'Perusahaan', icon: Building2 },
-      { id: 'fitur', label: 'Fitur', icon: Settings2 },
-      { id: 'akun-default', label: 'Akun Default', icon: Landmark },
-      { id: 'pengingat', label: 'Pengingat', icon: Bell },
-      { id: 'penjualan-pembelian', label: 'Penjualan & Pembelian', icon: ArrowLeftRight },
-      { id: 'perpajakan', label: 'Perpajakan', icon: Percent },
-      { id: 'font', label: 'Font', icon: Type },
-      { id: 'penomoran', label: 'Penomoran Dokumen', icon: Hash },
-      // === Update #071 — konfigurasi persetujuan per jenis dokumen
-      //     (gating 'workflow.config.view' → hanya Super Admin). ===
-      { id: 'persetujuan', label: 'Persetujuan', icon: ShieldCheck }
     ]
   }
 ];
@@ -360,12 +369,11 @@ const SUBPAGE_PERMISSIONS: Record<string, Record<string, string>> = {
     satuan: 'master.satuan.view',
     'syarat-bayar': 'master.syarat_bayar.view',
     pengguna: 'system.users.view',
-    karyawan: 'master.karyawan.view'
-  },
-  // === Update ASAHI #019 — modul Preferensi: seluruh submenu digating
-  // 'master.preference.view' (view; pengeditan tetap dicek backend via
-  // 'master.preference.edit'). ===
-  preferensi: {
+    karyawan: 'master.karyawan.view',
+    // === Update #072 — submenu Preferensi pindah KE DALAM modul Pengaturan
+    // (sebelumnya modul mandiri; kode permission tidak berubah). Seluruh
+    // submenu digating 'master.preference.view' (view; pengeditan tetap
+    // dicek backend via 'master.preference.edit'). ===
     perusahaan: 'master.preference.view',
     fitur: 'master.preference.view',
     'akun-default': 'master.preference.view',
@@ -390,15 +398,22 @@ const REPORTS_PERMISSIONS = ['reports.financial.view', 'reports.ledger.view', 'r
 
 /** Label role untuk footer sidebar (Update #018) — enum legacy dari /auth/login
  * ditampilkan dengan nama yang sama seperti di halaman Pengguna & template
- * RBAC backend (sebelumnya tampil mentah, mis. "STAFF_AKUNTANSI"). */
+ * RBAC backend (sebelumnya tampil mentah, mis. "STAFF_AKUNTANSI").
+ * === Update #072 — "Staff Akuntansi" → "Staf Keuangan" (paritas nama
+ * template RBAC FINANCE_STAFF) + 3 role baru (enum rbac00000003). === */
 const ROLE_LABEL: Record<string, string> = {
   ADMINISTRATOR: 'Administrator',
   MANAJER_KEUANGAN: 'Manajer Keuangan',
-  STAFF_AKUNTANSI: 'Staff Akuntansi',
+  STAFF_AKUNTANSI: 'Staf Keuangan',
   STAFF_GUDANG: 'Staff Gudang',
   STAFF_PENJUALAN: 'Staff Penjualan',
   STAFF_PEMBELIAN: 'Staf Pembelian',
-  STAFF_ENGINEERING: 'Staf Engineering (Produksi)'
+  STAFF_ENGINEERING: 'Staf Engineering (Produksi)',
+  // === Update #072 — role IT / HR / Viewer Management kini bisa dipilih
+  // langsung di form Pengguna. ===
+  IT_ADMIN: 'Admin IT',
+  HR_ADMIN: 'Admin HR',
+  MANAGEMENT_VIEWER: 'Viewer Management'
 };
 
 function roleLabel(role?: string | null): string {
@@ -409,10 +424,14 @@ function roleLabel(role?: string | null): string {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function ERPSidebar() {
-  const activeModule = useTabStore((s) => {
+  const activeModuleRaw = useTabStore((s) => {
     const active = s.tabs.find((t) => t.id === s.activeTabId);
     return active?.module || 'dashboard';
   });
+  // === Update #072 — modul Preferensi kini grup dalam Pengaturan: tab
+  // tersimpan versi lama (module 'preferensi') dianggap modul 'settings'
+  // supaya highlight menu tetap benar (konten di-remap di page.tsx). ===
+  const activeModule = activeModuleRaw === 'preferensi' ? 'settings' : activeModuleRaw;
   const activeSubPage = useTabStore((s) => {
     const active = s.tabs.find((t) => t.id === s.activeTabId);
     return active?.subPage || null;
