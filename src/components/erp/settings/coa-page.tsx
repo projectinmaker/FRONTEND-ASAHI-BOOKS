@@ -512,11 +512,13 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
   const editParentLabel = editAccount ? (editAccount.indukKode ? `${editAccount.indukKode} — induk saat ini` : 'Akun level root (tanpa induk)') : '—';
   const showJenisKasBank = mode === 'create' ? !!selectedTemplate?.requiresJenisKasBank : !!editAccount && (editAccount.accountSubclass === 'CASH_BANK' || !!editAccount.jenisKasBank);
 
-  // ── Kategori akun & kelayakan saldo awal (hanya 9 kategori didukung) ──
-  // Kategori: Kas dan Bank, Aset Lancar Lainnya, Kewajiban Lainnya, Modal,
-  // Pendapatan, HPP, Beban, Pendapatan Lainnya, Beban Lainnya. Kategori lain
-  // (Piutang Usaha, Persediaan, Aset Tetap, Hutang Usaha, saldo laba, dll.)
-  // dinonaktifkan + dialihkan ke modul terkait.
+  // ── Kategori akun & kelayakan saldo awal ──
+  // === Update #075 — SEMUA kategori bisnis didukung (semua akun
+  // perkiraan, sama seperti Kas & Bank): piutang, persediaan, aset tetap,
+  // hutang, kewajiban jangka panjang, dll. Pengecualian tetap: kategori
+  // yang dikelola sistem (saldo laba, clearing, penampung selisih, HPP
+  // legacy) + control account / sub-akun subledger mitra (saldo awalnya
+  // via modul subledger terkait). ===
   const saldoAwalCategory =
     mode === 'edit'
       ? editAccount
@@ -532,7 +534,12 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
   const saldoAwalInfo = getCoaCategoryInfo(saldoAwalCategory);
   const createTingkat: TingkatAkun | undefined = preview?.tingkat ?? (form.isSub ? 'DETAIL' : form.structuralType);
   const tingkatIsDetail = mode === 'edit' ? editAccount?.tingkat === 'DETAIL' : createTingkat === 'DETAIL';
-  const saldoAwalEligible = !!saldoAwalInfo?.saldoAwalEligible && tingkatIsDetail && form.status === 'AKTIF';
+  // === Update #075 — control account (akar subledger AR/AP/Persediaan)
+  // tidak boleh saldo awal langsung: saldonya harus terbentuk dari subledger
+  // per-mitra/per-barang. Mode create cek dari preview (server-side), mode
+  // edit dari data akun. ===
+  const isControlAkun = mode === 'edit' ? !!editAccount?.isControlAccount : !!preview?.isControlAccount;
+  const saldoAwalEligible = !!saldoAwalInfo?.saldoAwalEligible && tingkatIsDetail && form.status === 'AKTIF' && !isControlAkun;
   const saldoNormalDisplay = (mode === 'edit' ? editAccount?.saldoNormal : (preview?.saldoNormal ?? selectedTemplate?.saldoNormal ?? saldoAwalInfo?.saldoNormal ?? null)) || null;
   const saldoSekarang = mode === 'edit' ? (editAccount?.saldo ?? 0) : 0;
   // === Update #030 — nilai saldo awal akun ini DI SET GLOBAL AKTIF. 0 = akun
@@ -941,8 +948,8 @@ function COAForm({ mode, editId }: { mode: FormMode; editId?: string }) {
                   <Alert>
                     <Info className="h-4 w-4" />
                     <AlertDescription>
-                      {!tingkatIsDetail ? 'Hanya akun level DETAIL yang dapat diberi saldo awal.' : saldoAwalInfo?.hint ? saldoAwalInfo.hint : mode === 'create' && !form.typeCode ? 'Pilih Tipe Akun terlebih dahulu untuk menentukan kelayakan saldo awal.' : 'Kategori akun ini tidak didukung saldo awal langsung.'}
-                      {tingkatIsDetail && saldoAwalInfo && <span className="text-muted-foreground"> (Kategori: {saldoAwalInfo.label})</span>}
+                      {!tingkatIsDetail ? 'Hanya akun level DETAIL yang dapat diberi saldo awal.' : isControlAkun ? 'Akun control account (akar subledger) — saldo awalnya dikelola subledger terkait (piutang per pelanggan di halaman Pelanggan, hutang per supplier di halaman Supplier, atau stok awal per barang di modul Persediaan).' : saldoAwalInfo?.hint ? saldoAwalInfo.hint : mode === 'create' && !form.typeCode ? 'Pilih Tipe Akun terlebih dahulu untuk menentukan kelayakan saldo awal.' : 'Kategori akun ini tidak didukung saldo awal langsung.'}
+                      {tingkatIsDetail && !isControlAkun && saldoAwalInfo && <span className="text-muted-foreground"> (Kategori: {saldoAwalInfo.label})</span>}
                     </AlertDescription>
                   </Alert>
                 )}
@@ -1358,15 +1365,17 @@ function COAListContent({ refreshKey }: { refreshKey?: number }) {
                   data.map((row) => {
                     const isHeader = row.tingkat === 'HEADER';
                     // === Update #030 — kelayakan ikon Saldo Awal per baris:
-                    // hanya akun DETAIL + AKTIF yang kategorinya didukung
-                    // saldo awal (9 kategori via classifier yang sama dengan
-                    // form). Piutang/hutang OTOMATIS tidak dapat ikon
-                    // (kategori PIUTANG_USAHA/HUTANG_USAHA → saldo awalnya
-                    // diinput per mitra di halaman Pelanggan/Supplier #028
-                    // supaya daftar COA rapih); persediaan/aset tetap/hutang
-                    // jangka panjang juga dialihkan ke modulnya. ===
+                    // hanya akun DETAIL + AKTIF yang kategorinya didukung.
+                    // === Update #075 — SEMUA kategori bisnis kini dapat
+                    // ikon (semua akun perkiraan, sama seperti Kas & Bank).
+                    // Pengecualian tetap: kategori yang dikelola sistem
+                    // (saldo laba, clearing, penampung selisih, HPP
+                    // legacy), CONTROL ACCOUNT (akar subledger AR/AP/
+                    // Persediaan — saldo awalnya via modul subledger), dan
+                    // sub-akun subledger mitra (via halaman Pelanggan/
+                    // Supplier #028). ===
                     const kategoriAkun = classifyCoaCategory({ kode: row.kode, indukKode: row.indukKode, accountSubclass: row.accountSubclass, systemAccountType: row.systemAccountType });
-                    const bolehSetSaldoAwal = isSaldoAwalEligible(kategoriAkun) && row.tingkat === 'DETAIL' && isActive(row);
+                    const bolehSetSaldoAwal = isSaldoAwalEligible(kategoriAkun) && row.tingkat === 'DETAIL' && isActive(row) && !row.isControlAccount && !row.isSubledger;
                     return (
                       <TableRow key={row.id}>
                         <TableCell className="whitespace-nowrap font-mono font-medium">{row.kode}</TableCell>
@@ -1473,12 +1482,13 @@ function COAListContent({ refreshKey }: { refreshKey?: number }) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ══════ Saldo Awal per Akun Dialog (Update #030) ══════ */}
+      {/* ══════ Saldo Awal per Akun Dialog (Update #030, diperluas #075) ══════ */}
       {/* Dipanggil dari ikon buku pada baris akun DETAIL yang kategorinya
-          didukung saldo awal (kecuali piutang/hutang — itu lewat halaman
-          Pelanggan/Supplier). Target = ID akun perkiraan; jurnal kategori
-          SALDO_AWAL (sisi mengikuti saldo normal akun), sekali per akun,
-          batal = jurnal pembalik. */}
+          didukung (Update #075: semua kategori bisnis — control account &
+          sub-akun subledger mitra tetap tanpa ikon; piutang/hutang per
+          mitra tetap lewat halaman Pelanggan/Supplier). Target = ID akun
+          perkiraan; jurnal kategori SALDO_AWAL (sisi mengikuti saldo normal
+          akun), sekali per akun, batal = jurnal pembalik. */}
       <SaldoAwalDialog
         open={!!saldoAwalTarget}
         onOpenChange={(o) => {

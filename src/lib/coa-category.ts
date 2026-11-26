@@ -4,10 +4,13 @@
 // Sesuai catatan update:
 // - Input saldo awal cukup SATU nilai + tanggal; sisi debit/kredit otomatis
 //   mengikuti saldo normal akun.
-// - Fitur saldo awal hanya berlaku untuk 9 kategori: Kas dan Bank, Aset
-//   Lancar Lainnya, Kewajiban Lainnya, Modal, Pendapatan, HPP, Beban,
-//   Pendapatan Lainnya, Beban Lainnya.
-// - Kategori lain dinonaktifkan di form + dialihkan ke modul terkait.
+// - === Update #075 — saldo awal untuk SEMUA akun perkiraan, sama seperti
+//   yang sudah diterapkan untuk Kas & Bank. === Piutang Usaha, Piutang
+//   Lain-lain, Persediaan, Aset Tetap, Hutang Usaha, dan Kewajiban Jangka
+//   Panjang kini didukung, ditambah 9 kategori lama. Pengecualian yang
+//   tetap (dikelola sistem): Modal Saldo Laba, akun Clearing, penampung
+//   selisih saldo awal, dan HPP legacy. Control account & sub-akun
+//   subledger mitra ditolak di layer validasi (bukan kategori).
 //
 // Mirror dari backend: app/services/coa_category.py — jaga keduanya sinkron.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,9 +25,11 @@ export interface CoaCategoryInfo {
   /** Pemetaan saldo normal per kategori (Kas dan Bank/HPP/Beban/Beban
    *  Lainnya/Aset = DEBIT; Kewajiban/Modal/Pendapatan = KREDIT). */
   saldoNormal: 'DEBIT' | 'KREDIT';
-  /** True hanya untuk 9 kategori yang didukung fitur saldo awal. */
+  /** Update #075 — true untuk semua kategori bisnis (semua akun
+   *  perkiraan, sama seperti Kas & Bank); false hanya untuk kategori
+   *  yang dikelola sistem. */
   saldoAwalEligible: boolean;
-  /** Petunjuk bila tidak didukung (dialihkan ke modul terkait). */
+  /** Petunjuk bila tidak didukung (kategori yang dikelola sistem). */
   hint?: string;
 }
 
@@ -34,45 +39,54 @@ const CATEGORY_INFO: Record<CoaCategoryKey, CoaCategoryInfo> = {
     key: 'PIUTANG_USAHA',
     label: 'Piutang Usaha',
     saldoNormal: 'DEBIT',
-    saldoAwalEligible: false,
-    hint: 'Saldo awal piutang diatur melalui modul Pelanggan (piutang per pelanggan).'
+    // Update #075 — didukung saldo awal langsung (semua akun perkiraan,
+    // sama seperti Kas & Bank). Piutang per pelanggan sebaiknya tetap
+    // diinput dari halaman Pelanggan agar subledger rapi; akar AR control
+    // account tetap ditolak layer validasi.
+    saldoAwalEligible: true
   },
   PIUTANG_LAIN_LAIN: {
     key: 'PIUTANG_LAIN_LAIN',
     label: 'Piutang Lain-lain',
     saldoNormal: 'DEBIT',
-    saldoAwalEligible: false,
-    hint: 'Piutang lain-lain tidak didukung saldo awal langsung.'
+    // Update #075 — didukung saldo awal langsung.
+    saldoAwalEligible: true
   },
   PERSEDIAAN: {
     key: 'PERSEDIAAN',
     label: 'Persediaan',
     saldoNormal: 'DEBIT',
-    saldoAwalEligible: false,
-    hint: 'Saldo awal persediaan diatur melalui modul Persediaan (stok awal / penyesuaian per barang).'
+    // Update #075 — didukung saldo awal langsung. Stok awal per barang
+    // tetap lebih disarankan (kartu stok ikut terbentuk); akar INVENTORY
+    // control account tetap ditolak layer validasi.
+    saldoAwalEligible: true
   },
   ASET_LANCAR_LAINNYA: { key: 'ASET_LANCAR_LAINNYA', label: 'Aset Lancar Lainnya', saldoNormal: 'DEBIT', saldoAwalEligible: true },
   ASET_TETAP: {
     key: 'ASET_TETAP',
     label: 'Aset Tetap',
     saldoNormal: 'DEBIT',
-    saldoAwalEligible: false,
-    hint: 'Saldo awal aset tetap diatur melalui modul Aset Tetap (nilai perolehan & akumulasi awal).'
+    // Update #075 — didukung saldo awal langsung. Aset per unit tetap
+    // lebih disarankan lewat modul Aset Tetap (penyusutan otomatis +
+    // register aset).
+    saldoAwalEligible: true
   },
   HUTANG_USAHA: {
     key: 'HUTANG_USAHA',
     label: 'Hutang Usaha',
     saldoNormal: 'KREDIT',
-    saldoAwalEligible: false,
-    hint: 'Saldo awal hutang diatur melalui modul Supplier (hutang per supplier).'
+    // Update #075 — didukung saldo awal langsung. Hutang per supplier
+    // sebaiknya tetap diinput dari halaman Supplier agar subledger rapi;
+    // akar AP control account tetap ditolak layer validasi.
+    saldoAwalEligible: true
   },
   KEWAJIBAN_LAINNYA: { key: 'KEWAJIBAN_LAINNYA', label: 'Kewajiban Lainnya', saldoNormal: 'KREDIT', saldoAwalEligible: true },
   KEWAJIBAN_JANGKA_PANJANG: {
     key: 'KEWAJIBAN_JANGKA_PANJANG',
     label: 'Kewajiban Jangka Panjang',
     saldoNormal: 'KREDIT',
-    saldoAwalEligible: false,
-    hint: 'Hutang jangka panjang tidak didukung saldo awal langsung.'
+    // Update #075 — didukung saldo awal langsung.
+    saldoAwalEligible: true
   },
   MODAL: { key: 'MODAL', label: 'Modal', saldoNormal: 'KREDIT', saldoAwalEligible: true },
   MODAL_SISTEM: {
@@ -214,7 +228,9 @@ export function getCoaCategoryInfo(key: CoaCategoryKey | null): CoaCategoryInfo 
   return key ? (CATEGORY_INFO[key] ?? null) : null;
 }
 
-/** True hanya untuk 9 kategori yang didukung fitur saldo awal. */
+/** True untuk semua kategori bisnis (Update #075 — semua akun
+ *  perkiraan, sama seperti Kas & Bank); false hanya untuk kategori yang
+ *  dikelola sistem. */
 export function isSaldoAwalEligible(key: CoaCategoryKey | null): boolean {
   const info = getCoaCategoryInfo(key);
   return !!info?.saldoAwalEligible;

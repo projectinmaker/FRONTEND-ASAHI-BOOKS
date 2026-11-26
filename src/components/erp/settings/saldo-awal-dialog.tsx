@@ -7,11 +7,13 @@
 // Dialog "Set Saldo Awal":
 //  • Pelanggan (piutang) : sisa piutang sebelum sistem dipakai, sekali per mitra.
 //  • Supplier (hutang)   : sisa hutang sebelum sistem dipakai, sekali per mitra.
-//  • Akun perkiraan (#030): saldo awal akun tingkat DETAIL (9 kategori yang
-//    didukung — kas/bank, aset lancar lainnya, kewajiban lainnya, modal,
-//    pendapatan, HPP, beban, dll.) langsung dari ikon di daftar Akun
-//    Perkiraan. Piutang/hutang TIDAK di sini — tetap lewat Pelanggan/
-//    Supplier supaya daftar COA rapih (keputusan user #030).
+//  • Akun perkiraan (#030): saldo awal akun tingkat DETAIL langsung dari ikon
+//    di daftar Akun Perkiraan. === Update #075 — kini SEMUA kategori bisnis
+//    didukung (semua akun perkiraan, sama seperti Kas & Bank): piutang,
+//    persediaan, aset tetap, hutang, kewajiban jangka panjang, dll. Control
+//    account (akar subledger) & sub-akun subledger mitra tetap TIDAK bisa
+//    di-set dari sini — backend menolak dengan pesan arahan; piutang/hutang
+//    per mitra tetap paling rapih lewat Pelanggan/Supplier. ===
 //
 // Sistem membuat jurnal POSTED (RefModule.SALDO_AWAL):
 //   Piutang : D [Piutang - {Nama}] / K [akun penyeimbang ekuitas]
