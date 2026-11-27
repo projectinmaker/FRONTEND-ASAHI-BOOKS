@@ -61,6 +61,10 @@ import { ChevronDown, ChevronLeft, ChevronRight, Download, FileStack, HardDrive,
 import { toast } from 'sonner';
 
 import { api, ApiError } from '@/lib/api';
+// === Uniform tanggal: formatDate sentral dari pdf-utils (sadar preferensi
+// FORMAT_TANGGAL, default DD/MM/YYYY) — sebelumnya log aktivitas memakai
+// id-ID "03 Okt 2026" sendiri. ===
+import { formatDate as formatDateUtil } from '@/lib/pdf-utils';
 import { useAccessStore } from '@/store/access-store';
 import type { AuditLogEntry, AuditLogListResponse } from '@/types/api';
 
@@ -132,21 +136,18 @@ const actionBadge = (action: string) => {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${meta ? meta.cls : 'bg-gray-100 text-gray-600 border-gray-200'}`}>{meta ? meta.label : action}</span>;
 };
 
-/** Format waktu lengkap (tanggal + jam + detik) untuk baris log. */
+/** Format waktu lengkap (tanggal + jam + detik) untuk baris log.
+ *  Bagian tanggal lewat formatter sentral (uniform DD/MM/YYYY); jam tetap
+ *  id-ID — "03/01/2026, 14.30.05". */
 const formatWaktu = (iso: string | null) => {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return `${formatDateUtil(iso)}, ${d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
 };
 
-/** Format tanggal singkat (untuk cutoff retensi). */
-const formatTanggal = (iso: string | null) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
-};
+/** Format tanggal singkat (untuk cutoff retensi) — formatter sentral. */
+const formatTanggal = (iso: string | null) => (iso ? formatDateUtil(iso) : '—');
 
 const formatJam = (d: Date | null) => {
   if (!d) return '—';

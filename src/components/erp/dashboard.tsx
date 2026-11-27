@@ -10,6 +10,10 @@ import { CalendarDays, RefreshCw, TrendingUp, TrendingDown, DollarSign, ArrowUpR
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
+// === Uniform tanggal: formatDate sentral dari pdf-utils (sadar preferensi
+// FORMAT_TANGGAL, default DD/MM/YYYY) — sebelumnya dashboard memakai id-ID
+// "3 Okt 2026" sendiri. ===
+import { formatDate } from '@/lib/pdf-utils';
 import type { DashboardSummaryResponse, FakturJatuhTempoItem, AktivitasItem, RekonsiliasiPersediaanRingkasanResponse } from '@/types/api';
 import { useTabStore } from '@/store/tab-store';
 import { useAccessStore } from '@/store/access-store';
@@ -26,18 +30,6 @@ function formatShort(value: number): string {
   if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}Jt`;
   if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(1)}Rb`;
   return String(value);
-}
-
-function formatDate(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  } catch {
-    return dateStr;
-  }
 }
 
 function todayStr(): string {

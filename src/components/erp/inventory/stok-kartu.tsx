@@ -15,6 +15,10 @@ import { Package, Search, RefreshCw, Scale, Layers, ChevronDown, ChevronLeft, Ch
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
+// === Uniform tanggal: formatDate sentral dari pdf-utils (sadar preferensi
+// FORMAT_TANGGAL, default DD/MM/YYYY) — sebelumnya stok kartu memakai id-ID
+// "03 Okt 2026" sendiri. ===
+import { formatDate as formatDateUtil } from '@/lib/pdf-utils';
 import type { StokKartuEntryResponse, StokKartuSummaryResponse, MetodeValuasiOption, BarangDropdown, GudangResponse, StokRekonsiliasiResponse } from '@/types/api';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { downloadExcelFile } from '@/lib/excel';
@@ -24,32 +28,18 @@ import { exportDateStamp } from '@/components/erp/excel-import-dialog';
 
 const formatRp = (val: number | null | undefined) => (val == null ? '-' : formatRpIDR(val));
 
-const formatDate = (d: string | null) => {
-  if (!d) return '-';
-  try {
-    return new Date(d).toLocaleDateString('id-ID', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    });
-  } catch {
-    return d;
-  }
-};
+// === Uniform tanggal (fix stok kartu): delegasi ke formatDate sentral ===
+// (preferensi FORMAT_TANGGAL, default DD/MM/YYYY); null tetap '-'. ===
+const formatDate = (d: string | null) => (d ? formatDateUtil(d) : '-');
 
+// Tanggal + jam: bagian tanggal lewat formatter sentral, jam tetap id-ID
+// (pemisah "." sesuai locale) — tampilan lama "03 Okt 2026, 14.30" kini
+// "03/10/2026, 14.30".
 const formatDateTime = (d: string | null) => {
   if (!d) return '-';
-  try {
-    return new Date(d).toLocaleDateString('id-ID', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return d;
-  }
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return d;
+  return `${formatDateUtil(d)}, ${dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
 const PAGE_SIZE = 25;

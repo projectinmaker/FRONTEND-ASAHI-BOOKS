@@ -16,6 +16,9 @@ import { Lock, Unlock, Loader2, RefreshCw, AlertCircle, ChevronLeft, ChevronRigh
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
+// === Uniform tanggal: formatDate sentral dari pdf-utils (sadar preferensi
+// FORMAT_TANGGAL, default DD/MM/YYYY) — sebelumnya memakai id-ID sendiri. ===
+import { formatDate as formatDateUtil } from '@/lib/pdf-utils';
 import { useTabStore } from '@/store/tab-store';
 import { useAuthStore } from '@/store/auth-store';
 import { FormTabShell } from '@/components/erp/form-tab-shell';
@@ -25,19 +28,13 @@ import type { PenutupanPeriodeResponse, PeriodeStatusResponse, PreCloseReadiness
 
 const formatRp = (val: number | null) => (val == null ? '-' : formatRpIDR(val));
 
+// Tanggal + jam (waktu tutup periode): bagian tanggal lewat formatter
+// sentral (uniform DD/MM/YYYY), jam tetap id-ID — "03/01/2026, 14.30".
 const formatDateTime = (d: string | null) => {
   if (!d) return '-';
-  try {
-    return new Date(d).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  } catch {
-    return d;
-  }
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return d;
+  return `${formatDateUtil(d)}, ${dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
 const BULAN_LABELS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];

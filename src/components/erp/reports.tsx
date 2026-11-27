@@ -14,6 +14,9 @@ import { useTabStore } from '@/store/tab-store';
 import { useReportExportStore } from '@/store/report-export-store';
 import { api, ApiError, downloadFile } from '@/lib/api';
 import { formatRp as formatRpIDR } from '@/lib/money';
+// === Uniform tanggal: pakai formatDate sentral (sadar preferensi FORMAT_TANGGAL,
+// default DD/MM/YYYY) — sebelumnya laporan memakai id-ID "3 Okt 2026" sendiri. ===
+import { formatDate as formatDateUtil } from '@/lib/pdf-utils';
 import type { LabaRugiLaporanResponse, NeracaLaporanResponse, ArusKasLaporanResponse, ArusKasItem, BukuBesarLaporanResponse, RekapKasBankLaporanResponse, COADropdownResponse, NeracaSaldoResponse, PerubahanModalResponse, UmurPiutangResponse, UmurHutangResponse, LaporanAkunItem, RekapPpnResponse, RekapPpnMasaItem, RekapPph23Response } from '@/types/api';
 import { FileSpreadsheet, Loader2, AlertCircle, RefreshCw, FileText, CheckCircle2, XCircle, Clock, TrendingUp, Scale, Wallet, BookOpen, PieChart, ArrowLeftRight, Calendar, FileBarChart, Activity, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -37,18 +40,10 @@ const ReconciliationDetailPage = dynamic(() => import('@/components/erp/reports/
 // Format nominal terpusat di @/lib/money — menerima number maupun string Decimal
 // dari backend (Pydantic), output "Rp 20.000.000".
 const formatRp = (val: number | string): string => formatRpIDR(val);
-const formatDate = (d: string | null | undefined) => {
-  if (!d) return '—';
-  try {
-    return new Date(d).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  } catch {
-    return d;
-  }
-};
+// === Uniform tanggal (fix laporan): delegasi ke formatDate sentral pdf-utils
+// (preferensi FORMAT_TANGGAL, default DD/MM/YYYY). Null/undefined tetap '—'
+// (perilaku lama) — sentral mengembalikan string kosong untuk nilai kosong. ===
+const formatDate = (d: string | null | undefined) => (d ? formatDateUtil(d) : '—');
 
 function getFirstDayOfYear(): string {
   const d = new Date();

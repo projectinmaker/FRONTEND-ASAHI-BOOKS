@@ -364,7 +364,9 @@ function PartStokMenipisSection({ supplierOptions, refreshKey }: { supplierOptio
 
       {/* ── Dialog: Buat PO Draft dari seleksi part stok menipis ── */}
       <Dialog open={dialogOpen} onOpenChange={(v) => !submitting && setDialogOpen(v)}>
-        <DialogContent className="sm:max-w-lg">
+        {/* sm:max-w-xl (dulu lg): dilebarkan supaya dropdown supplier tidak */}
+        {/* terpotong — fix umpan balik ROP (nama supplier panjang). */}
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Buat PO Draft dari {selectedRows.length} part stok menipis</DialogTitle>
             <DialogDescription>Part terpilih akan dimasukkan ke SATU Purchase Order berstatus DRAFT untuk supplier yang dipilih. Qty tiap baris otomatis = sisa kekurangan yang belum dibeli.</DialogDescription>
@@ -808,7 +810,9 @@ export function DetailRopTab({ supplierOptions, refreshKey }: { supplierOptions:
 
       {/* ── Dialog: Buat PO Draft dari seleksi (view ROP) ── */}
       <Dialog open={dialogOpen} onOpenChange={(v) => !submitting && setDialogOpen(v)}>
-        <DialogContent className="sm:max-w-lg">
+        {/* sm:max-w-xl (dulu lg): dilebarkan supaya dropdown supplier tidak */}
+        {/* terpotong — fix umpan balik ROP (nama supplier panjang). */}
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Buat PO Draft dari {selectedRows.length} item ROP</DialogTitle>
             <DialogDescription>Item terpilih (bisa dari beberapa ROP) akan dimasukkan ke SATU Purchase Order berstatus DRAFT untuk supplier yang dipilih. Qty tiap baris otomatis = sisa kekurangan.</DialogDescription>

@@ -11,7 +11,7 @@ import { Loader2, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, ApiError } from '@/lib/api';
 import type { GrniReconciliationResponse, CashflowVsBsReconciliationResponse, EquityVsBsReconciliationResponse } from '@/types/api';
-import { formatRp } from '@/lib/pdf-utils';
+import { formatRp, formatDate as formatDateUtil } from '@/lib/pdf-utils';
 
 // Tanggal lokal (bukan UTC) — default "as of" harus hari ini menurut zona user (WIB)
 const todayIso = () => {
@@ -23,20 +23,20 @@ const todayIso = () => {
 // tanpa memilih tanggal (m-12: sebelumnya kosong → Check selalu disabled).
 const firstDayOfYear = () => `${new Date().getFullYear()}-01-01`;
 
-// Format tanggal lokal id-ID (bukan raw ISO) — konsisten dengan halaman Laporan lain.
+// Format tanggal — uniform lewat formatter sentral pdf-utils (preferensi
+// FORMAT_TANGGAL, default DD/MM/YYYY).
 // Backend mengirim dateFrom/dateTo sebagai datetime berzona (mis. "2026-01-01T00:00:00+07:00"),
 // sehingga tanggal di-parse per komponen agar tidak bergeser oleh timezone browser.
 function formatDateID(d: string | null | undefined): string {
   if (!d) return '—';
   try {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d).trim());
-    const date = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(d);
+    // Normalisasi ke tengah malam LOKAL supaya formatter sentral tidak
+    // bergeser zona waktu saat mem-parse.
+    const normalized = m ? `${m[1]}-${m[2]}-${m[3]}T00:00:00` : String(d);
+    const date = new Date(normalized);
     if (Number.isNaN(date.getTime())) return d;
-    return date.toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
+    return formatDateUtil(normalized);
   } catch {
     return d;
   }

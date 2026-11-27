@@ -33,6 +33,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, BookOpen, ShieldCheck, XCircle, Info } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+// === Uniform tanggal: formatDate sentral dari pdf-utils (sadar preferensi
+// FORMAT_TANGGAL, default DD/MM/YYYY) — sebelumnya memakai id-ID "03 Okt 2026". ===
+import { formatDate as formatDateUtil } from '@/lib/pdf-utils';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,9 +68,13 @@ const fmtIDR = (v?: number | null) => (v == null ? '—' : new Intl.NumberFormat
 
 const fmtTanggal = (iso?: string | null) => {
   if (!iso) return '—';
-  const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+  // Normalisasi ke tengah malam LOKAL (pertahankan perilaku lama) supaya
+  // tanggal tidak bergeser zona waktu saat diformat formatter sentral.
+  const normalized = `${String(iso).slice(0, 10)}T00:00:00`;
+  const d = new Date(normalized);
   if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  // === Uniform tanggal: lewat formatDate sentral (DD/MM/YYYY default). ===
+  return formatDateUtil(normalized);
 };
 
 export function SaldoAwalDialog({ open, onOpenChange, jenis, mitra, onSuccess }: SaldoAwalDialogProps) {

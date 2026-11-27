@@ -1580,7 +1580,30 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
               <Label className="text-xs font-medium">
                 Tanggal <span className="text-destructive">*</span>
               </Label>
-              <Input type="date" className="h-9 text-xs" value={fTanggal} onChange={(e) => setFTanggal(e.target.value)} disabled={readOnly} />
+              <Input
+                type="date"
+                className="h-9 text-xs"
+                value={fTanggal}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setFTanggal(v);
+                  // === Auto-sync Bulan/Tahun No Quotation mengikuti Tanggal ===
+                  // (keputusan user, opsi A): saat Tanggal diubah, segmen bulan &
+                  // tahun nomor Quotation ikut otomatis — field tetap bisa
+                  // diganti manual setelahnya. Hanya mode create (mode edit
+                  // tidak mengirim bulan/tahun; field-nya terkunci).
+                  // Parse "YYYY-MM-DD" + T00:00:00 (tengah malam LOKAL) supaya
+                  // bulan/tahun tidak bergeser zona waktu.
+                  if (!editId && v) {
+                    const d = new Date(`${v}T00:00:00`);
+                    if (!Number.isNaN(d.getTime())) {
+                      setFBulan(String(d.getMonth() + 1));
+                      setFTahun(String(d.getFullYear()));
+                    }
+                  }
+                }}
+                disabled={readOnly}
+              />
               {formErrors.tanggal && <p className="text-xs text-destructive mt-1">{formErrors.tanggal}</p>}
             </div>
           </div>
@@ -1634,13 +1657,13 @@ export function PenawaranCreateForm({ editId, subPage = 'penawaran' }: { editId?
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-[11px] text-muted-foreground">Segmen bulan nomor Quotation (angka romawi, mis. Oktober → X).</p>
+              <p className="text-[11px] text-muted-foreground">Segmen bulan nomor Quotation (angka romawi, mis. Oktober → X). Otomatis mengikuti Tanggal; boleh diganti manual.</p>
               {formErrors.bulan && <p className="text-xs text-destructive mt-1">{formErrors.bulan}</p>}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Tahun (No Quotation)</Label>
               <Input type="number" className="h-9 text-xs" value={fTahun} min={2000} max={2100} onChange={(e) => setFTahun(e.target.value)} disabled={!!editId || readOnly} />
-              <p className="text-[11px] text-muted-foreground">Nomor urut reset per tahun, per pelanggan.</p>
+              <p className="text-[11px] text-muted-foreground">Nomor urut reset per tahun, per pelanggan. Otomatis mengikuti Tanggal; boleh diganti manual.</p>
             </div>
           </div>
           {!editId && (
